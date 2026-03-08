@@ -1,5 +1,7 @@
 # CloudTime - Development Rules
 
+- All code, comments, commit messages, docs, and PR descriptions must be in English
+
 ## SDD (Schema Driven Development)
 - `schemas/openapi.yaml` is the Single Source of Truth
 - Always update the schema BEFORE writing implementation code
