@@ -1,0 +1,32 @@
+name = "cloudtime"
+main = "src/index.ts"
+compatibility_date = "2025-03-09"
+
+# D1 Database for heartbeats & statistics
+[[d1_databases]]
+binding = "DB"
+database_name = "cloudtime-db"
+database_id = "" # Set after: wrangler d1 create cloudtime-db
+
+# KV Namespace for API key cache & session
+[[kv_namespaces]]
+binding = "KV"
+id = "" # Set after: wrangler kv namespace create CLOUDTIME_KV
+
+# Cron Triggers for periodic aggregation
+[triggers]
+crons = ["0 * * * *"] # Hourly aggregation
+
+# Instance mode: "single" (default, one user) or "multi" (team/org)
+[vars]
+INSTANCE_MODE = "single"
+
+# OAuth & Session secrets (set via `wrangler secret put <NAME>`)
+# GITHUB_CLIENT_ID
+# GITHUB_CLIENT_SECRET
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# DISCORD_CLIENT_ID
+# DISCORD_CLIENT_SECRET
+# SESSION_SECRET          - HMAC key for session cookie signing
+# ENCRYPTION_KEY          - AES-256 key for encrypting OAuth tokens at rest

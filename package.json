@@ -1,0 +1,24 @@
+{
+  "name": "cloudtime",
+  "version": "0.1.0",
+  "private": false,
+  "license": "MIT",
+  "description": "Self-hosted WakaTime-compatible coding time tracker on Cloudflare Workers + D1",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "generate": "openapi-typescript schemas/openapi.yaml -o src/types/generated.ts",
+    "db:init": "wrangler d1 execute cloudtime-db --local --file=./src/db/schema.sql",
+    "db:init:remote": "wrangler d1 execute cloudtime-db --remote --file=./src/db/schema.sql",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250309.0",
+    "openapi-typescript": "^7.6.1",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "hono": "^4.7.0"
+  }
+}
