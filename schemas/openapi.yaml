@@ -246,6 +246,8 @@ paths:
                         $ref: "#/components/schemas/User"
                       api_key:
                         type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "410":
@@ -1322,7 +1324,7 @@ paths:
     post:
       operationId: createExternalDurationsBulk
       tags: [external_durations]
-      summary: Create up to 1000 external durations
+      summary: Create up to 100 external durations
       requestBody:
         required: true
         content:
@@ -1678,7 +1680,7 @@ paths:
                 required: [data]
                 properties:
                   data:
-                    $ref: "#/components/schemas/Stats"
+                    $ref: "#/components/schemas/GlobalStats"
         "202":
           description: Stats are still being calculated
           content:
@@ -1687,7 +1689,7 @@ paths:
                 type: object
                 properties:
                   data:
-                    $ref: "#/components/schemas/Stats"
+                    $ref: "#/components/schemas/GlobalStats"
                   message:
                     type: string
 
@@ -2102,6 +2104,44 @@ components:
           type: boolean
         is_up_to_date:
           type: boolean
+
+    # ----------------------------------------------------------
+    # Global Stats (public aggregate, no per-user fields)
+    # ----------------------------------------------------------
+    GlobalStats:
+      type: object
+      properties:
+        total_seconds:
+          type: number
+          format: double
+        total_seconds_including_other_language:
+          type: number
+          format: double
+        daily_average:
+          type: number
+          format: double
+        human_readable_total:
+          type: string
+        human_readable_daily_average:
+          type: string
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/SummaryItem"
+        languages:
+          type: array
+          items:
+            $ref: "#/components/schemas/SummaryItem"
+        editors:
+          type: array
+          items:
+            $ref: "#/components/schemas/SummaryItem"
+        operating_systems:
+          type: array
+          items:
+            $ref: "#/components/schemas/SummaryItem"
+        range:
+          $ref: "#/components/schemas/TimeRange"
 
     # ----------------------------------------------------------
     # All Time
