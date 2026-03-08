@@ -2,6 +2,5 @@ node_modules/
 dist/
 .wrangler/
 .dev.vars
-.mcp.json
 .playwright-mcp/
 _local-*
