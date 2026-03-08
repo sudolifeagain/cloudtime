@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS heartbeats (
 );
 
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_time ON heartbeats(user_id, time);
+CREATE INDEX IF NOT EXISTS idx_heartbeats_time ON heartbeats(time);
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_project ON heartbeats(user_id, project);
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_date ON heartbeats(user_id, created_at);
 
@@ -309,6 +310,15 @@ CREATE TABLE IF NOT EXISTS org_dashboards (
   is_manual_time_hidden INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+);
+
+-- ============================================================
+-- Meta (key-value store for internal state)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- ============================================================
