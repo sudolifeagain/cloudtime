@@ -223,7 +223,6 @@ paths:
       operationId: approvePendingLink
       tags: [auth]
       summary: Approve merging an OAuth account into existing user
-      security: []
       parameters:
         - name: pending_link_id
           in: path
@@ -439,6 +438,7 @@ paths:
   /health:
     get:
       operationId: getHealth
+      tags: [meta]
       summary: Health check
       security: []
       responses:
@@ -728,7 +728,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [project, entity, language, dependencies, os, editor, category, machine]
+            enum: [project, entity, language, dependencies, operating_system, editor, category, machine]
       responses:
         "200":
           description: List of durations
@@ -1331,7 +1331,7 @@ paths:
               type: array
               items:
                 $ref: "#/components/schemas/ExternalDurationInput"
-              maxItems: 1000
+              maxItems: 100
       responses:
         "201":
           description: External durations created
@@ -1655,6 +1655,42 @@ paths:
                       version:
                         type: string
 
+  /stats/{range}:
+    get:
+      operationId: getGlobalStats
+      tags: [meta]
+      summary: Aggregate stats of all users
+      security: []
+      parameters:
+        - name: range
+          in: path
+          required: true
+          schema:
+            type: string
+            description: "last_7_days, last_30_days, last_6_months, last_year, all_time, or YYYY / YYYY-MM"
+      responses:
+        "200":
+          description: Aggregate statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Stats"
+        "202":
+          description: Stats are still being calculated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Stats"
+                  message:
+                    type: string
+
 components:
   # ============================================================
   # Security Schemes
@@ -1811,7 +1847,7 @@ components:
               type: string
             user_id:
               type: string
-            machine_name_id:
+            machine:
               type: string
             user_agent_id:
               type: string
@@ -1989,7 +2025,7 @@ components:
           type: string
         category:
           $ref: "#/components/schemas/Category"
-        machine_name_id:
+        machine:
           type: string
 
     # ----------------------------------------------------------
@@ -2325,7 +2361,7 @@ components:
           type: string
         destination:
           type: string
-          enum: [project, language, editor, operating_system, category]
+          enum: [project, language, editor, operating_system, category, entity]
         destination_value:
           type: string
         priority:
@@ -2351,7 +2387,7 @@ components:
           type: string
         destination:
           type: string
-          enum: [project, language, editor, operating_system, category]
+          enum: [project, language, editor, operating_system, category, entity]
         destination_value:
           type: string
         priority:

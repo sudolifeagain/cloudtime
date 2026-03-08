@@ -1,5 +1,8 @@
 # cloudtime
 
+> **Warning**
+> This project is under active development and is not yet ready for use. APIs may change without notice and core features are still being implemented.
+
 A self-hosted, WakaTime-compatible coding time tracker built on Cloudflare Workers + D1.
 
 Designed for **individual developers** who want full control over their coding metrics. Each person deploys their own instance.
