@@ -1,0 +1,33 @@
+get:
+  operationId: oauthRedirect
+  tags:
+    - auth
+  summary: Initiate OAuth flow with a provider
+  security: []
+  parameters:
+    - name: provider
+      in: path
+      required: true
+      schema:
+        $ref: ../../components/schemas/OAuthProvider.yaml
+  responses:
+    '302':
+      description: Redirect to OAuth provider
+      headers:
+        Location:
+          schema:
+            type: string
+            format: uri
+        Set-Cookie:
+          description: Contains an opaque value used to correlate the PKCE OAuth flow; short-lived HttpOnly cookie
+          schema:
+            type: string
+    '400':
+      description: Invalid or unsupported provider
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string

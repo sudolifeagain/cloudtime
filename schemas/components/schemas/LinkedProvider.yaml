@@ -1,0 +1,18 @@
+type: object
+required:
+  - provider
+  - provider_user_id
+  - provider_username
+  - created_at
+properties:
+  provider:
+    $ref: ./OAuthProvider.yaml
+  provider_user_id:
+    type: string
+  provider_username:
+    type: string
+  provider_email:
+    type: string
+  created_at:
+    type: string
+    format: date-time

@@ -1,0 +1,22 @@
+type: object
+required:
+  - id
+  - provider
+  - provider_username
+  - provider_email
+  - expires_at
+properties:
+  id:
+    type: string
+  provider:
+    $ref: ./OAuthProvider.yaml
+  provider_username:
+    type: string
+  provider_email:
+    type: string
+  existing_username:
+    type: string
+    description: Username of the existing account to merge into
+  expires_at:
+    type: string
+    format: date-time

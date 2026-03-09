@@ -15,3 +15,9 @@ schemas/paths/meta/meta.yaml:
 schemas/paths/meta/global-stats.yaml:
   operation-4xx-response:
     - '#/get/responses'
+schemas/paths/auth/provider.yaml:
+  operation-2xx-response:
+    - '#/get/responses'
+schemas/paths/auth/link-provider.yaml:
+  operation-2xx-response:
+    - '#/post/responses'

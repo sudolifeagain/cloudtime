@@ -1,0 +1,29 @@
+type: object
+required:
+  - id
+  - type
+  - status
+properties:
+  id:
+    type: string
+  type:
+    type: string
+    enum:
+      - daily
+      - heartbeats
+  status:
+    type: string
+    enum:
+      - pending
+      - processing
+      - completed
+      - failed
+  download_url:
+    type: string
+    format: uri
+  created_at:
+    type: string
+    format: date-time
+  expires_at:
+    type: string
+    format: date-time

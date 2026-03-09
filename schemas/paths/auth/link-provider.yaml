@@ -1,0 +1,21 @@
+post:
+  operationId: oauthLinkStart
+  tags:
+    - auth
+  summary: Link additional OAuth provider to current account
+  parameters:
+    - name: provider
+      in: path
+      required: true
+      schema:
+        $ref: ../../components/schemas/OAuthProvider.yaml
+  responses:
+    '302':
+      description: Redirect to OAuth provider for linking
+      headers:
+        Location:
+          schema:
+            type: string
+            format: uri
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
