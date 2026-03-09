@@ -41,9 +41,10 @@ export default {
     ctx.waitUntil(
       Promise.all([
         aggregateHeartbeats(env.DB),
-        // Cleanup expired sessions and pending links
+        // Cleanup expired and idle sessions, and expired pending links
         env.DB.batch([
           env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')"),
+          env.DB.prepare("DELETE FROM sessions WHERE last_active_at < datetime('now', '-1 day')"),
           env.DB.prepare("DELETE FROM pending_links WHERE expires_at < datetime('now')"),
         ]),
       ]),

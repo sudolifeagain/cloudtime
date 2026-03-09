@@ -3,7 +3,6 @@
  */
 import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import { sha256Hex } from "./crypto";
 import type { Env } from "../types";
 
 // ─── Constants ───────────────────────────────────────────
@@ -62,19 +61,31 @@ export async function validateSession(
   const cacheKey = `session:${tokenHash}`;
   const cached = await kv.get(cacheKey);
   if (cached) {
-    const data = JSON.parse(cached) as SessionData;
+    let data: SessionData;
+    try {
+      data = JSON.parse(cached) as SessionData;
+    } catch {
+      await kv.delete(cacheKey);
+      return null;
+    }
     const now = new Date();
     const expiresAt = new Date(data.expiresAt.replace(" ", "T") + "Z");
     const lastActive = new Date(data.lastActiveAt.replace(" ", "T") + "Z");
 
     // Check absolute expiry
     if (now > expiresAt) {
-      await kv.delete(cacheKey);
+      await Promise.all([
+        kv.delete(cacheKey),
+        db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run(),
+      ]);
       return null;
     }
     // Check idle timeout
     if ((now.getTime() - lastActive.getTime()) / 1000 > IDLE_TIMEOUT) {
-      await kv.delete(cacheKey);
+      await Promise.all([
+        kv.delete(cacheKey),
+        db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run(),
+      ]);
       return null;
     }
 
@@ -195,16 +206,19 @@ export async function invalidateAllUserSessions(
 
 // ─── Cookie Helpers ──────────────────────────────────────
 
+function isDev(env: Env): boolean {
+  return env.ENVIRONMENT === "development" || env.ENVIRONMENT === undefined;
+}
+
 export function getSessionCookieName(env: Env): string {
-  return env.ENVIRONMENT === "development" ? "session" : "__Host-session";
+  return isDev(env) ? "session" : "__Host-session";
 }
 
 export function setSessionCookie(c: Context, token: string, env: Env): void {
   const name = getSessionCookieName(env);
-  const isDev = env.ENVIRONMENT === "development";
   setCookie(c, name, token, {
     httpOnly: true,
-    secure: !isDev,
+    secure: !isDev(env),
     sameSite: "Lax",
     path: "/",
     maxAge: ABSOLUTE_EXPIRY,
@@ -251,15 +265,14 @@ export async function consumeOAuthState(
 // ─── State Cookie (double-submit) ────────────────────────
 
 function getStateCookieName(env: Env): string {
-  return env.ENVIRONMENT === "development" ? "oauth_state" : "__Host-oauth_state";
+  return isDev(env) ? "oauth_state" : "__Host-oauth_state";
 }
 
 export function setStateCookie(c: Context, state: string, env: Env): void {
-  const isDev = env.ENVIRONMENT === "development";
   const name = getStateCookieName(env);
   setCookie(c, name, state, {
     httpOnly: true,
-    secure: !isDev,
+    secure: !isDev(env),
     sameSite: "Lax",
     path: "/",
     maxAge: STATE_TTL,

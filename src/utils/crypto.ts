@@ -84,15 +84,21 @@ export async function encryptToken(plaintext: string, keyHex: string): Promise<s
   return `${base64url(iv)}.${base64urlFromBuffer(ciphertext)}`;
 }
 
+function base64urlDecode(input: string): Uint8Array {
+  // Restore standard base64: replace URL-safe chars and add padding
+  let b64 = input.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = b64.length % 4;
+  if (pad === 2) b64 += "==";
+  else if (pad === 3) b64 += "=";
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
 export async function decryptToken(encrypted: string, keyHex: string): Promise<string> {
   const key = await importAesKey(keyHex);
-  const [ivB64, ctB64] = encrypted.split(".");
-  const iv = Uint8Array.from(atob(ivB64.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
-    c.charCodeAt(0),
-  );
-  const ciphertext = Uint8Array.from(atob(ctB64.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
-    c.charCodeAt(0),
-  );
+  const parts = encrypted.split(".");
+  if (parts.length !== 2) throw new Error("Invalid encrypted token format");
+  const iv = base64urlDecode(parts[0]);
+  const ciphertext = base64urlDecode(parts[1]);
   const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
   return new TextDecoder().decode(plainBuf);
 }

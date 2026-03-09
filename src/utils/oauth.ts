@@ -39,6 +39,7 @@ export function buildAuthorizeUrl(
       const url = new URL("https://github.com/login/oauth/authorize");
       url.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
       url.searchParams.set("redirect_uri", redirectUri);
+      url.searchParams.set("scope", "read:user user:email");
       url.searchParams.set("state", state);
       url.searchParams.set("code_challenge", codeChallenge);
       url.searchParams.set("code_challenge_method", "S256");
@@ -164,9 +165,12 @@ export async function fetchUserInfo(
   switch (provider) {
     case "github":
       return fetchGitHubUser(tokenResponse.access_token, tokenResponse.refresh_token ?? null, expiresAt);
-    case "google":
+    case "google": {
+      if (!tokenResponse.id_token) {
+        throw new Error("Google OAuth response missing id_token — ensure 'openid' scope is requested");
+      }
       return validateGoogleIdToken(
-        tokenResponse.id_token!,
+        tokenResponse.id_token,
         tokenResponse.access_token,
         tokenResponse.refresh_token ?? null,
         expiresAt,
@@ -174,6 +178,7 @@ export async function fetchUserInfo(
         kv,
         nonce,
       );
+    }
     case "discord":
       return fetchDiscordUser(tokenResponse.access_token, tokenResponse.refresh_token ?? null, expiresAt);
   }

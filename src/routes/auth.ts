@@ -27,7 +27,6 @@ import {
   validateSession,
   invalidateSession,
   invalidateOtherSessions,
-  invalidateAllUserSessions,
   setSessionCookie,
   clearSessionCookie,
   getSessionTokenFromCookie,
@@ -238,15 +237,20 @@ auth.delete("/providers/:provider", sessionMw, async (c) => {
     return c.json({ error: "Invalid provider" }, 400);
   }
 
-  // Ensure user has at least one other auth method (another provider or API key)
-  const { results: linked } = await c.env.DB.prepare(
-    "SELECT provider FROM oauth_accounts WHERE user_id = ?",
-  )
-    .bind(userId)
-    .all<{ provider: string }>();
+  // Ensure user keeps at least one other auth method
+  const [{ results: linked }, userRow] = await Promise.all([
+    c.env.DB.prepare("SELECT provider FROM oauth_accounts WHERE user_id = ?")
+      .bind(userId)
+      .all<{ provider: string }>(),
+    c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
+      .bind(userId)
+      .first<{ api_key_hash: string | null }>(),
+  ]);
 
-  if (linked.length <= 1) {
-    return c.json({ error: "Cannot unlink the only authentication provider" }, 400);
+  const hasApiKey = !!userRow?.api_key_hash;
+  const otherProviders = linked.filter((p) => p.provider !== provider).length;
+  if (otherProviders === 0 && !hasApiKey) {
+    return c.json({ error: "Cannot unlink the only authentication method" }, 400);
   }
 
   await c.env.DB.prepare("DELETE FROM oauth_accounts WHERE user_id = ? AND provider = ?")
@@ -403,71 +407,75 @@ auth.get("/link/:provider/callback", async (c) => {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const redirectUri = getRedirectUri(c, provider, true);
-  const tokenResponse = await exchangeCode(provider, code, stateData.codeVerifier, redirectUri, c.env);
-  const userInfo = await fetchUserInfo(provider, tokenResponse, c.env, c.env.KV, stateData.nonce);
+  try {
+    const redirectUri = getRedirectUri(c, provider, true);
+    const tokenResponse = await exchangeCode(provider, code, stateData.codeVerifier, redirectUri, c.env);
+    const userInfo = await fetchUserInfo(provider, tokenResponse, c.env, c.env.KV, stateData.nonce);
 
-  // Check if this provider account is already linked to a different user
-  const existingLink = await c.env.DB.prepare(
-    "SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?",
-  )
-    .bind(provider, userInfo.providerUserId)
-    .first<{ user_id: string }>();
-
-  if (existingLink && existingLink.user_id !== stateData.linkUserId) {
-    return c.json({ error: "This provider account is already linked to another user" }, 409);
-  }
-
-  // Encrypt tokens
-  const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY);
-  const refreshTokenEnc = userInfo.refreshToken
-    ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY)
-    : null;
-
-  if (existingLink) {
-    // Update existing link
-    await c.env.DB.prepare(
-      `UPDATE oauth_accounts SET provider_username = ?, provider_email = ?, email_verified = ?,
-       access_token_encrypted = ?, refresh_token_encrypted = ?, token_expires_at = ?
-       WHERE provider = ? AND provider_user_id = ?`,
+    // Check if this provider account is already linked to a different user
+    const existingLink = await c.env.DB.prepare(
+      "SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?",
     )
-      .bind(
-        userInfo.providerUsername,
-        userInfo.providerEmail,
-        userInfo.emailVerified ? 1 : 0,
-        accessTokenEnc,
-        refreshTokenEnc,
-        userInfo.tokenExpiresAt,
-        provider,
-        userInfo.providerUserId,
-      )
-      .run();
-  } else {
-    // Create new link
-    await c.env.DB.prepare(
-      `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        crypto.randomUUID(),
-        stateData.linkUserId,
-        provider,
-        userInfo.providerUserId,
-        userInfo.providerUsername,
-        userInfo.providerEmail,
-        userInfo.emailVerified ? 1 : 0,
-        accessTokenEnc,
-        refreshTokenEnc,
-        userInfo.tokenExpiresAt,
-      )
-      .run();
-  }
+      .bind(provider, userInfo.providerUserId)
+      .first<{ user_id: string }>();
 
-  return c.json(
-    { data: { provider, provider_username: userInfo.providerUsername } },
-    200,
-    securityHeaders(),
-  );
+    if (existingLink && existingLink.user_id !== stateData.linkUserId) {
+      return c.json({ error: "This provider account is already linked to another user" }, 409);
+    }
+
+    // Encrypt tokens
+    const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY);
+    const refreshTokenEnc = userInfo.refreshToken
+      ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY)
+      : null;
+
+    if (existingLink) {
+      // Update existing link
+      await c.env.DB.prepare(
+        `UPDATE oauth_accounts SET provider_username = ?, provider_email = ?, email_verified = ?,
+         access_token_encrypted = ?, refresh_token_encrypted = ?, token_expires_at = ?
+         WHERE provider = ? AND provider_user_id = ?`,
+      )
+        .bind(
+          userInfo.providerUsername,
+          userInfo.providerEmail,
+          userInfo.emailVerified ? 1 : 0,
+          accessTokenEnc,
+          refreshTokenEnc,
+          userInfo.tokenExpiresAt,
+          provider,
+          userInfo.providerUserId,
+        )
+        .run();
+    } else {
+      // Create new link
+      await c.env.DB.prepare(
+        `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          crypto.randomUUID(),
+          stateData.linkUserId,
+          provider,
+          userInfo.providerUserId,
+          userInfo.providerUsername,
+          userInfo.providerEmail,
+          userInfo.emailVerified ? 1 : 0,
+          accessTokenEnc,
+          refreshTokenEnc,
+          userInfo.tokenExpiresAt,
+        )
+        .run();
+    }
+
+    return c.json(
+      { data: { provider, provider_username: userInfo.providerUsername } },
+      200,
+      securityHeaders(),
+    );
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 // ─── Public routes (parameterized, last) ─────────────────
@@ -515,198 +523,210 @@ auth.get("/:provider/callback", async (c) => {
     return c.json({ error: "Invalid or expired state" }, 400);
   }
 
-  // 2. Exchange code for tokens
-  const redirectUri = getRedirectUri(c, provider);
-  const tokenResponse = await exchangeCode(provider, code, stateData.codeVerifier, redirectUri, c.env);
+  try {
+    // 2. Exchange code for tokens
+    const redirectUri = getRedirectUri(c, provider);
+    const tokenResponse = await exchangeCode(provider, code, stateData.codeVerifier, redirectUri, c.env);
 
-  // 3. Fetch/validate user info
-  const userInfo = await fetchUserInfo(provider, tokenResponse, c.env, c.env.KV, stateData.nonce);
+    // 3. Fetch/validate user info
+    const userInfo = await fetchUserInfo(provider, tokenResponse, c.env, c.env.KV, stateData.nonce);
 
-  // 4. Email verification gate
-  if (!userInfo.emailVerified) {
-    return c.json({ error: "Email not verified with provider. Please verify your email first." }, 400);
-  }
+    // 4. Email verification gate
+    if (!userInfo.emailVerified) {
+      return c.json({ error: "Email not verified with provider. Please verify your email first." }, 400);
+    }
 
-  // 5. Account matching
-  // Encrypt tokens for storage
-  const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY);
-  const refreshTokenEnc = userInfo.refreshToken
-    ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY)
-    : null;
+    // 5. Account matching
+    // Encrypt tokens for storage
+    const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY);
+    const refreshTokenEnc = userInfo.refreshToken
+      ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY)
+      : null;
 
-  // Check for existing OAuth link
-  const existingOAuth = await c.env.DB.prepare(
-    "SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?",
-  )
-    .bind(provider, userInfo.providerUserId)
-    .first<{ user_id: string }>();
-
-  if (existingOAuth) {
-    // ─── Existing user login ─────────────────────
-    // Update provider tokens
-    await c.env.DB.prepare(
-      `UPDATE oauth_accounts SET provider_username = ?, provider_email = ?, email_verified = ?,
-       access_token_encrypted = ?, refresh_token_encrypted = ?, token_expires_at = ?
-       WHERE provider = ? AND provider_user_id = ?`,
+    // Check for existing OAuth link
+    const existingOAuth = await c.env.DB.prepare(
+      "SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?",
     )
-      .bind(
-        userInfo.providerUsername,
-        userInfo.providerEmail,
-        userInfo.emailVerified ? 1 : 0,
-        accessTokenEnc,
-        refreshTokenEnc,
-        userInfo.tokenExpiresAt,
-        provider,
-        userInfo.providerUserId,
-      )
-      .run();
+      .bind(provider, userInfo.providerUserId)
+      .first<{ user_id: string }>();
 
-    // Create session
-    const sessionToken = generateSessionToken();
-    const sessionTokenHash = await sha256Hex(sessionToken);
-    await createSession(c.env.DB, existingOAuth.user_id, sessionTokenHash, c.req.raw);
-    setSessionCookie(c, sessionToken, c.env);
-
-    const userRow = await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-      .bind(existingOAuth.user_id)
-      .first<UserRow>();
-
-    if (!userRow) return c.json({ error: "User not found" }, 500);
-
-    return c.json(
-      { data: { user: rowToUser(userRow), is_new_user: false } },
-      200,
-      securityHeaders(),
-    );
-  }
-
-  // No existing OAuth link — check if email matches an existing user
-  if (userInfo.providerEmail) {
-    const emailMatch = await c.env.DB.prepare("SELECT id, username FROM users WHERE email = ?")
-      .bind(userInfo.providerEmail)
-      .first<{ id: string; username: string }>();
-
-    if (emailMatch) {
-      // Create pending link for manual approval
-      const pendingId = crypto.randomUUID();
-      const pendingExpiry = new Date(Date.now() + 3600_000) // 1 hour
-        .toISOString()
-        .replace("T", " ")
-        .replace("Z", "");
-
+    if (existingOAuth) {
+      // ─── Existing user login ─────────────────────
+      // Update provider tokens
       await c.env.DB.prepare(
-        `INSERT INTO pending_links (id, existing_user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `UPDATE oauth_accounts SET provider_username = ?, provider_email = ?, email_verified = ?,
+         access_token_encrypted = ?, refresh_token_encrypted = ?, token_expires_at = ?
+         WHERE provider = ? AND provider_user_id = ?`,
       )
         .bind(
-          pendingId,
-          emailMatch.id,
-          provider,
-          userInfo.providerUserId,
           userInfo.providerUsername,
           userInfo.providerEmail,
           userInfo.emailVerified ? 1 : 0,
           accessTokenEnc,
           refreshTokenEnc,
           userInfo.tokenExpiresAt,
-          pendingExpiry,
+          provider,
+          userInfo.providerUserId,
         )
         .run();
 
-      // Return pending link info (no session — user needs to log in with existing account)
+      // Create session
+      const sessionToken = generateSessionToken();
+      const sessionTokenHash = await sha256Hex(sessionToken);
+      await createSession(c.env.DB, existingOAuth.user_id, sessionTokenHash, c.req.raw);
+      setSessionCookie(c, sessionToken, c.env);
+
+      const userRow = await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
+        .bind(existingOAuth.user_id)
+        .first<UserRow>();
+
+      if (!userRow) return c.json({ error: "User not found" }, 500);
+
       return c.json(
-        {
-          data: {
-            user: rowToUser(
-              (await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-                .bind(emailMatch.id)
-                .first<UserRow>())!,
-            ),
-            pending_link: {
-              id: pendingId,
-              provider: provider as OAuthProvider,
-              provider_username: userInfo.providerUsername,
-              provider_email: userInfo.providerEmail!,
-              existing_username: emailMatch.username,
-              expires_at: normalizeDateTime(pendingExpiry),
-            },
-          },
-        },
+        { data: { user: rowToUser(userRow), is_new_user: false } },
         200,
         securityHeaders(),
       );
     }
-  }
 
-  // No existing account — new user creation
-  const isSingleUser = c.env.INSTANCE_MODE !== "multi";
+    // No existing OAuth link — check if email matches an existing user
+    if (userInfo.providerEmail) {
+      const emailMatch = await c.env.DB.prepare("SELECT id, username FROM users WHERE email = ?")
+        .bind(userInfo.providerEmail)
+        .first<{ id: string; username: string }>();
 
-  if (isSingleUser) {
-    // Check if any users exist
-    const userCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users")
-      .first<{ count: number }>();
+      if (emailMatch) {
+        // Create pending link for manual approval
+        const pendingId = crypto.randomUUID();
+        const pendingExpiry = new Date(Date.now() + 3600_000) // 1 hour
+          .toISOString()
+          .replace("T", " ")
+          .replace("Z", "");
 
-    if (userCount && userCount.count > 0) {
-      return c.json(
-        { error: "Registration closed. This instance only allows one user." },
-        403,
-      );
+        await c.env.DB.prepare(
+          `INSERT INTO pending_links (id, existing_user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+          .bind(
+            pendingId,
+            emailMatch.id,
+            provider,
+            userInfo.providerUserId,
+            userInfo.providerUsername,
+            userInfo.providerEmail,
+            userInfo.emailVerified ? 1 : 0,
+            accessTokenEnc,
+            refreshTokenEnc,
+            userInfo.tokenExpiresAt,
+            pendingExpiry,
+          )
+          .run();
+
+        // Return pending link info (no session — user needs to log in with existing account)
+        return c.json(
+          {
+            data: {
+              user: rowToUser(
+                (await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
+                  .bind(emailMatch.id)
+                  .first<UserRow>())!,
+              ),
+              pending_link: {
+                id: pendingId,
+                provider: provider as OAuthProvider,
+                provider_username: userInfo.providerUsername,
+                provider_email: userInfo.providerEmail!,
+                existing_username: emailMatch.username,
+                expires_at: normalizeDateTime(pendingExpiry),
+              },
+            },
+          },
+          200,
+          securityHeaders(),
+        );
+      }
     }
-  }
 
-  // Create user
-  const userId = crypto.randomUUID();
-  const { plaintext: apiKeyPlaintext, hash: apiKeyHash } = await generateApiKey();
+    // No existing account — new user creation
+    const isSingleUser = c.env.INSTANCE_MODE !== "multi";
 
-  const username = userInfo.providerUsername.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64) || `user_${userId.slice(0, 8)}`;
+    if (isSingleUser) {
+      // Check if any users exist
+      const userCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users")
+        .first<{ count: number }>();
 
-  await c.env.DB.prepare(
-    `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
-     VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
-  )
-    .bind(userId, username, userInfo.providerEmail, apiKeyHash)
-    .run();
+      if (userCount && userCount.count > 0) {
+        return c.json(
+          { error: "Registration closed. This instance only allows one user." },
+          403,
+        );
+      }
+    }
 
-  // Create OAuth account link
-  await c.env.DB.prepare(
-    `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      crypto.randomUUID(),
-      userId,
-      provider,
-      userInfo.providerUserId,
-      userInfo.providerUsername,
-      userInfo.providerEmail,
-      userInfo.emailVerified ? 1 : 0,
-      accessTokenEnc,
-      refreshTokenEnc,
-      userInfo.tokenExpiresAt,
+    // Create user
+    const userId = crypto.randomUUID();
+    const { plaintext: apiKeyPlaintext, hash: apiKeyHash } = await generateApiKey();
+
+    let username = userInfo.providerUsername.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64) || `user_${userId.slice(0, 8)}`;
+
+    // Handle username collision by appending random suffix
+    const existingUsername = await c.env.DB.prepare("SELECT 1 FROM users WHERE username = ?")
+      .bind(username)
+      .first();
+    if (existingUsername) {
+      username = `${username.slice(0, 55)}_${userId.slice(0, 8)}`;
+    }
+
+    await c.env.DB.prepare(
+      `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
+       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
     )
-    .run();
+      .bind(userId, username, userInfo.providerEmail, apiKeyHash)
+      .run();
 
-  // Create session
-  const sessionToken = generateSessionToken();
-  const sessionTokenHash = await sha256Hex(sessionToken);
-  await createSession(c.env.DB, userId, sessionTokenHash, c.req.raw);
-  setSessionCookie(c, sessionToken, c.env);
+    // Create OAuth account link
+    await c.env.DB.prepare(
+      `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        userId,
+        provider,
+        userInfo.providerUserId,
+        userInfo.providerUsername,
+        userInfo.providerEmail,
+        userInfo.emailVerified ? 1 : 0,
+        accessTokenEnc,
+        refreshTokenEnc,
+        userInfo.tokenExpiresAt,
+      )
+      .run();
 
-  const userRow = await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-    .bind(userId)
-    .first<UserRow>();
+    // Create session
+    const sessionToken = generateSessionToken();
+    const sessionTokenHash = await sha256Hex(sessionToken);
+    await createSession(c.env.DB, userId, sessionTokenHash, c.req.raw);
+    setSessionCookie(c, sessionToken, c.env);
 
-  return c.json(
-    {
-      data: {
-        user: rowToUser(userRow!),
-        api_key: apiKeyPlaintext,
-        is_new_user: true,
+    const userRow = await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
+      .bind(userId)
+      .first<UserRow>();
+
+    return c.json(
+      {
+        data: {
+          user: rowToUser(userRow!),
+          api_key: apiKeyPlaintext,
+          is_new_user: true,
+        },
       },
-    },
-    200,
-    securityHeaders(),
-  );
+      200,
+      securityHeaders(),
+    );
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 export default auth;
