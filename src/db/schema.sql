@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS heartbeats (
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_time ON heartbeats(user_id, time);
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_project ON heartbeats(user_id, project);
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_date ON heartbeats(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_heartbeats_time ON heartbeats(time);
 
 -- ============================================================
 -- Summaries (daily aggregated, populated by cron)
@@ -323,4 +324,12 @@ CREATE TABLE IF NOT EXISTS data_dumps (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Key-value store for internal state (e.g., last_aggregated_at)
+-- SQLite note: INSERT OR REPLACE deletes then inserts (triggers ON DELETE).
+-- Use INSERT ... ON CONFLICT (key) DO UPDATE SET value = excluded.value instead.
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );

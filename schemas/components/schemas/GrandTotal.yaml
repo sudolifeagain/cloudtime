@@ -1,0 +1,17 @@
+type: object
+required:
+  - total_seconds
+  - digital
+  - text
+properties:
+  total_seconds:
+    type: number
+    format: double
+  digital:
+    type: string
+  text:
+    type: string
+  hours:
+    type: integer
+  minutes:
+    type: integer
