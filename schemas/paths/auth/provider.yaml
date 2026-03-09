@@ -3,6 +3,36 @@ get:
   tags:
     - auth
   summary: Initiate OAuth flow with a provider
+  description: |
+    Redirects the user to the OAuth provider's authorization page.
+
+    **Security measures applied by the server:**
+    - Generates a cryptographically random `state` parameter (32 bytes, base64url).
+      Stored server-side (KV with 10-minute TTL) and set in an HttpOnly cookie.
+      Validated on callback using double-submit: both the KV entry and the cookie value
+      must match the `state` query parameter. This prevents CSRF even if one store is
+      compromised. Invalidated after use (one-time).
+    - Generates a PKCE `code_verifier` (32 bytes, base64url) and derives `code_challenge`
+      using S256 method (`plain` is not used). The `code_verifier` is stored server-side;
+      only the `code_challenge` is sent to the provider. Prevents authorization code
+      interception attacks. Note: as a confidential client (server-side secret), both PKCE
+      and `client_secret` are used together (defense in depth). PKCE applies only to
+      authorization code exchange, not refresh token grants.
+      Discord supports S256 only (`plain` is rejected); `role_connections.write` scope
+      does not support PKCE. GitHub requires `client_secret` even with PKCE.
+    - For Google: also generates a cryptographic `nonce` (32 bytes, base64url) included in
+      the authorization request and validated against the `id_token` on callback to prevent
+      token replay attacks.
+
+    **Provider-specific authorization URLs:**
+    - GitHub: `https://github.com/login/oauth/authorize` (GitHub App user authorization)
+    - Google: `https://accounts.google.com/o/oauth2/v2/auth` (OpenID Connect)
+    - Discord: `https://discord.com/oauth2/authorize`
+
+    **Provider-specific scopes (minimum required):**
+    - GitHub App: "Email addresses: Read-only" permission (set at app registration, not per-request)
+    - Google: `openid email profile`
+    - Discord: `identify email`
   security: []
   parameters:
     - name: provider
@@ -15,12 +45,21 @@ get:
       description: Redirect to OAuth provider
       headers:
         Location:
+          description: |
+            OAuth authorization URL with query parameters: client_id, redirect_uri,
+            response_type=code, state, code_challenge, code_challenge_method=S256,
+            scope (provider-specific), and nonce (Google only).
           schema:
             type: string
             format: uri
         Set-Cookie:
-          description: Contains an opaque value used to correlate the PKCE OAuth flow; short-lived HttpOnly cookie
+          description: |
+            Short-lived HttpOnly cookie containing the `state` value for CSRF validation
+            on callback. Attributes: HttpOnly, Secure, SameSite=Lax, Max-Age=600, Path=/.
+            SameSite=Lax is required because the OAuth callback is a cross-site navigation.
           schema:
             type: string
     '400':
       $ref: ../../components/responses/BadRequest.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml

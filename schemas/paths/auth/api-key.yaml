@@ -3,9 +3,29 @@ post:
   tags:
     - auth
   summary: Regenerate API key
+  description: |
+    Generates a new API key, immediately invalidating the old one.
+    The new key is the only value returned; it cannot be retrieved again.
+
+    **Security measures:**
+    - New key: 32 bytes of cryptographic randomness, base64url-encoded, prefixed with `ck_`.
+      The `ck_` prefix enables secret scanning in Git repositories.
+    - Storage: only the SHA-256 hash of the key is stored in the database.
+    - KV cache: the old key's cache entry is explicitly deleted (not relying on TTL expiry).
+    - All other active sessions for this user are invalidated (forces re-authentication
+      on other devices to prevent use of a potentially compromised key).
+
+    **Response includes `Cache-Control: no-store`** to prevent the key from being cached.
   responses:
     '200':
       description: New API key generated
+      headers:
+        Cache-Control:
+          description: Set to `no-store` to prevent caching
+          schema:
+            type: string
+            enum:
+              - no-store
       content:
         application/json:
           schema:
@@ -20,5 +40,10 @@ post:
                 properties:
                   api_key:
                     type: string
+                    description: |
+                      New API key (ck_...). This is the only time the plaintext is available.
+                      Store it securely; it cannot be retrieved from the server.
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml

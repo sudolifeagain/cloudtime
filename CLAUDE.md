@@ -20,7 +20,7 @@
 - `master` is production — only updated via `develop` merge
 
 ## Code
-- Framework: Hono on Cloudflare Workers
+- Framework: Hono >= 4.9.7 on Cloudflare Workers (CVE-2025-58362, CVE-2025-59139)
 - DB: Cloudflare D1 (SQLite), Cache: KV
 - Use generated types from `src/types/generated.ts` in all route handlers
 - License: MIT

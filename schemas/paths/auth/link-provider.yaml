@@ -3,6 +3,13 @@ post:
   tags:
     - auth
   summary: Link additional OAuth provider to current account
+  description: |
+    Initiates an OAuth flow to link a new provider to the authenticated user's account.
+    The user must already be logged in (session cookie required).
+
+    Same PKCE and state security measures as the initial OAuth flow (/auth/{provider}).
+    On callback, the provider is linked to the current session's user (identity is
+    already established), which is safer than email-based auto-linking.
   parameters:
     - name: provider
       in: path
@@ -19,3 +26,5 @@ post:
             format: uri
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml

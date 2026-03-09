@@ -27,23 +27,37 @@ export function getApiKey(req: HonoRequest): string | null {
 }
 
 /**
+ * SHA-256 hash a string and return hex-encoded result.
+ */
+async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = new Uint8Array(hashBuffer);
+  return Array.from(hashArray, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * Resolve user_id from API key (uses KV cache)
+ * Hashes the plaintext key with SHA-256 before querying api_key_hash column.
+ * KV cache key uses the hash (never stores plaintext keys).
  */
 export async function getUserId(
   apiKey: string,
   env: Env,
 ): Promise<string | null> {
-  // Check KV cache first
-  const cached = await env.KV.get(`apikey:${apiKey}`);
+  const keyHash = await sha256Hex(apiKey);
+
+  // Check KV cache first (keyed by hash)
+  const cached = await env.KV.get(`apikey:${keyHash}`);
   if (cached) return cached;
 
   // Fallback to D1
-  const row = await env.DB.prepare("SELECT id FROM users WHERE api_key = ?")
-    .bind(apiKey)
+  const row = await env.DB.prepare("SELECT id FROM users WHERE api_key_hash = ?")
+    .bind(keyHash)
     .first<{ id: string }>();
 
   if (row) {
-    await env.KV.put(`apikey:${apiKey}`, row.id, { expirationTtl: 3600 });
+    await env.KV.put(`apikey:${keyHash}`, row.id, { expirationTtl: 3600 });
   }
 
   return row?.id ?? null;

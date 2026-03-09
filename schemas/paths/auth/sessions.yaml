@@ -1,0 +1,49 @@
+get:
+  operationId: listSessions
+  tags:
+    - auth
+  summary: List active sessions
+  description: |
+    Returns all active sessions for the current user, including the current session
+    (marked with `is_current: true`). Never exposes `token_hash` in the response.
+
+    Useful for "manage active sessions" UI to let users see and revoke
+    sessions on other devices.
+  responses:
+    '200':
+      description: List of active sessions
+      headers:
+        Cache-Control:
+          description: Set to `no-store` to prevent caching of session metadata
+          schema:
+            type: string
+            enum:
+              - no-store
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/Session.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+delete:
+  operationId: revokeAllOtherSessions
+  tags:
+    - auth
+  summary: Revoke all other sessions
+  description: |
+    Invalidates all sessions for the current user except the one making the request.
+    Useful as a "sign out everywhere else" feature.
+
+    Also triggered automatically on API key regeneration and credential changes.
+  responses:
+    '204':
+      description: All other sessions revoked
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

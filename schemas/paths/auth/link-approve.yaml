@@ -3,6 +3,14 @@ post:
   tags:
     - auth
   summary: Approve merging an OAuth account into existing user
+  description: |
+    Approves a pending account link created when an OAuth login's verified email
+    matched an existing account. The user must be authenticated as the owner of
+    the existing account.
+
+    Pending links expire after 1 hour (410 Gone if expired).
+    On approval, the OAuth provider is linked to the existing account and the
+    pending link record is deleted.
   parameters:
     - name: pending_link_id
       in: path
@@ -39,3 +47,5 @@ post:
             properties:
               error:
                 type: string
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml

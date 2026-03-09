@@ -1,0 +1,23 @@
+delete:
+  operationId: revokeSession
+  tags:
+    - auth
+  summary: Revoke a specific session
+  description: |
+    Invalidates a specific session by ID. The session must belong to the authenticated user.
+    If the user revokes their current session, the session cookie is also cleared
+    (effectively a logout).
+  parameters:
+    - name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    '204':
+      description: Session revoked
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml

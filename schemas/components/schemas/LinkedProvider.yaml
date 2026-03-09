@@ -3,17 +3,28 @@ required:
   - provider
   - provider_user_id
   - provider_username
+  - email_verified
   - created_at
 properties:
   provider:
     $ref: ./OAuthProvider.yaml
   provider_user_id:
     type: string
+    description: |
+      Immutable provider-specific user identifier.
+      GitHub: numeric id, Google: sub claim, Discord: snowflake id.
+      Never use email or username as identifier (both are mutable).
+      Note: there are unconfirmed reports of Google sub changing in ~0.04%
+      of logins. If a login has a known verified email but unknown sub,
+      create a PendingLink rather than auto-linking.
   provider_username:
     type: string
   provider_email:
     type: string
     format: email
+  email_verified:
+    type: boolean
+    description: Whether the provider confirmed the email address is verified
   created_at:
     type: string
     format: date-time

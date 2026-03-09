@@ -1,0 +1,35 @@
+type: object
+required:
+  - id
+  - created_at
+  - last_active_at
+  - is_current
+properties:
+  id:
+    type: string
+    format: uuid
+  ip:
+    type: string
+    description: IP address at session creation
+  country:
+    type: string
+    description: Country code from Cloudflare cf.country (e.g., "JP", "US")
+  city:
+    type: string
+    description: City name from Cloudflare cf.city (e.g., "Tokyo", "San Francisco")
+  user_agent:
+    type: string
+    description: User-Agent header at session creation
+  created_at:
+    type: string
+    format: date-time
+  last_active_at:
+    type: string
+    format: date-time
+  expires_at:
+    type: string
+    format: date-time
+    description: Absolute expiration (7 days from creation)
+  is_current:
+    type: boolean
+    description: True if this is the session making the request
