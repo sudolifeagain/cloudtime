@@ -58,7 +58,10 @@ meta.get("/stats/:range", async (c) => {
   const cacheKey = `global-stats:${rangeParam}`;
   const cached = await c.env.KV.get(cacheKey, "json") as { data: GlobalStats; status: number } | null;
   if (cached) {
-    return c.json({ data: cached.data }, cached.status as 200 | 202);
+    if (cached.status === 202) {
+      return c.json({ data: cached.data, message: "Stats are being calculated" }, 202);
+    }
+    return c.json({ data: cached.data });
   }
 
   try {
