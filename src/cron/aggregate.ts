@@ -78,15 +78,16 @@ function computeDurations(
 
       if (gap > timeout || gap <= 0) continue;
 
+      // Attribute the interval [prev.time, curr.time) to prev's context
       // Use empty string sentinel for NULL dimensions
-      const date = new Date(curr.time * 1000).toISOString().slice(0, 10);
-      const project = curr.project ?? "";
-      const language = curr.language ?? "";
-      const editor = curr.editor ?? "";
-      const os = curr.operating_system ?? "";
-      const category = curr.category ?? "";
-      const branch = curr.branch ?? "";
-      const machine = curr.machine ?? "";
+      const date = new Date(prev.time * 1000).toISOString().slice(0, 10);
+      const project = prev.project ?? "";
+      const language = prev.language ?? "";
+      const editor = prev.editor ?? "";
+      const os = prev.operating_system ?? "";
+      const category = prev.category ?? "";
+      const branch = prev.branch ?? "";
+      const machine = prev.machine ?? "";
 
       const key = `${userId}|${date}|${project}|${language}|${editor}|${os}|${category}|${branch}|${machine}`;
 
@@ -139,14 +140,23 @@ export async function aggregateHeartbeats(db: D1Database): Promise<void> {
 
   if (heartbeats.length === 0) return;
 
-  const durations = computeDurations(heartbeats, timeouts, lastAggregatedAt);
-
-  if (durations.size === 0) return;
-
   // Find the max time among new heartbeats (those after lastAggregatedAt)
   let maxTime = lastAggregatedAt;
   for (const hb of heartbeats) {
     if (hb.time > maxTime) maxTime = hb.time;
+  }
+
+  const durations = computeDurations(heartbeats, timeouts, lastAggregatedAt);
+
+  // Always advance cursor so we don't re-scan the same heartbeats
+  if (durations.size === 0) {
+    await db
+      .prepare(
+        "INSERT INTO meta (key, value) VALUES ('last_aggregated_at', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+      )
+      .bind(String(maxTime))
+      .run();
+    return;
   }
 
   // Build batch: all UPSERTs + meta update
@@ -183,5 +193,10 @@ DO UPDATE SET total_seconds = total_seconds + excluded.total_seconds`;
       .bind(String(maxTime)),
   );
 
-  await db.batch(statements);
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    console.error("aggregateHeartbeats: failed to persist aggregated summaries");
+    throw error;
+  }
 }
