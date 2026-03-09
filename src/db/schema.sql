@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   city TEXT,
   timezone TEXT NOT NULL DEFAULT 'UTC',
   timeout INTEGER NOT NULL DEFAULT 15,
-  api_key TEXT NOT NULL UNIQUE,
+  api_key_hash TEXT NOT NULL UNIQUE,
   is_hireable INTEGER NOT NULL DEFAULT 0,
   github_username TEXT,
   twitter_username TEXT,
