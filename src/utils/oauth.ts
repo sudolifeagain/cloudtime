@@ -26,13 +26,16 @@ export interface ProviderUserInfo {
 
 // ─── Authorization URLs ──────────────────────────────────
 
+/** Timeout for all outbound OAuth/provider HTTP requests. */
+const FETCH_TIMEOUT = 10_000;
+
 export function buildAuthorizeUrl(
   provider: OAuthProvider,
   env: Env,
   redirectUri: string,
   codeChallenge: string,
   state: string,
-  nonce?: string,
+  nonce: string,
 ): string {
   switch (provider) {
     case "github": {
@@ -55,7 +58,7 @@ export function buildAuthorizeUrl(
       url.searchParams.set("state", state);
       url.searchParams.set("code_challenge", codeChallenge);
       url.searchParams.set("code_challenge_method", "S256");
-      if (nonce) url.searchParams.set("nonce", nonce);
+      url.searchParams.set("nonce", nonce);
       return url.toString();
     }
     case "discord": {
@@ -108,6 +111,7 @@ export async function exchangeCode(
       Accept: "application/json",
     },
     body: body.toString(),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
   });
 
   const data = (await res.json()) as TokenResponse & { error?: string; error_description?: string };
@@ -120,6 +124,10 @@ export async function exchangeCode(
 
   if (!res.ok) {
     throw new Error(`OAuth token exchange failed: HTTP ${res.status}`);
+  }
+
+  if (!data.access_token || !data.token_type) {
+    throw new Error("OAuth token response missing required fields");
   }
 
   return data;
@@ -158,7 +166,7 @@ export async function fetchUserInfo(
   tokenResponse: TokenResponse,
   env: Env,
   kv: KVNamespace,
-  nonce?: string,
+  nonce: string,
 ): Promise<ProviderUserInfo> {
   const expiresAt = tokenResponse.expires_in
     ? new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString()
@@ -200,8 +208,8 @@ async function fetchGitHubUser(
   };
 
   const [userRes, emailsRes] = await Promise.all([
-    fetch("https://api.github.com/user", { headers }),
-    fetch("https://api.github.com/user/emails", { headers }),
+    fetch("https://api.github.com/user", { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT) }),
+    fetch("https://api.github.com/user/emails", { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT) }),
   ]);
 
   if (!userRes.ok) throw new Error(`GitHub /user failed: ${userRes.status}`);
@@ -229,9 +237,15 @@ async function fetchGitHubUser(
 
 // ─── Google (OpenID Connect) ─────────────────────────────
 
+// Module-level JWKS cache: Workers isolates are reused across requests on the
+// same instance, so this serves as a fast in-memory cache layer above KV.
+// This is an intentional Workers-specific optimisation — do not store
+// per-request data at module scope.
 let cachedJWKS: jose.JWTVerifyGetKey | null = null;
 let jwksCachedAt = 0;
+let lastJwksFetchAt = 0;
 const JWKS_MEMORY_TTL = 60_000; // 1 min in-memory, KV has 10min TTL
+const JWKS_COOLDOWN = 10_000; // Min interval between Google JWKS fetches
 
 async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
   // In-memory cache for hot path
@@ -254,8 +268,16 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
     }
   }
 
+  // Cooldown: prevent rapid refetches (e.g. attacker sending tokens with unknown kid)
+  if (Date.now() - lastJwksFetchAt < JWKS_COOLDOWN) {
+    throw new Error("Google JWKS fetch rate limited — try again shortly");
+  }
+
   // Fetch from Google
-  const res = await fetch("https://www.googleapis.com/oauth2/v3/certs");
+  lastJwksFetchAt = Date.now();
+  const res = await fetch("https://www.googleapis.com/oauth2/v3/certs", {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+  });
   if (!res.ok) throw new Error(`Failed to fetch Google JWKS: ${res.status}`);
   const jwks = (await res.json()) as jose.JSONWebKeySet;
 
@@ -274,6 +296,7 @@ async function verifyGoogleJwt(
   const verifyOpts: jose.JWTVerifyOptions = {
     issuer: ["https://accounts.google.com", "accounts.google.com"],
     audience: env.GOOGLE_CLIENT_ID,
+    algorithms: ["RS256"],
     maxTokenAge: "5 minutes",
     clockTolerance: "5 seconds",
   };
@@ -306,7 +329,7 @@ async function validateGoogleIdToken(
   tokenExpiresAt: string | null,
   env: Env,
   kv: KVNamespace,
-  nonce?: string,
+  nonce: string,
 ): Promise<ProviderUserInfo> {
   const payload = await verifyGoogleJwt(idToken, env, kv);
 
@@ -317,17 +340,18 @@ async function validateGoogleIdToken(
     throw new Error("Google id_token azp mismatch");
   }
 
-  // Validate nonce — if we sent one, the token MUST contain it
-  if (nonce) {
-    if (!payload.nonce) {
-      throw new Error("Google id_token missing expected nonce");
-    }
-    if (payload.nonce !== nonce) {
-      throw new Error("Google id_token nonce mismatch");
-    }
+  // Validate nonce — always required (replay attack prevention per OIDC Core 1.0)
+  if (!payload.nonce) {
+    throw new Error("Google id_token missing expected nonce");
+  }
+  if (payload.nonce !== nonce) {
+    throw new Error("Google id_token nonce mismatch");
   }
 
-  // Validate at_hash (access token hash) if present
+  // Validate at_hash (access token hash) if present.
+  // Assumes RS256 (SHA-256, left 128 bits). Google currently only uses RS256;
+  // if they add RS384/RS512 the algorithms restriction above will reject them
+  // before reaching this point, so this is safe.
   if (payload.at_hash && typeof payload.at_hash === "string") {
     const atHashBuf = await crypto.subtle.digest(
       "SHA-256",
@@ -351,7 +375,7 @@ async function validateGoogleIdToken(
 
   return {
     providerUserId: payload.sub,
-    providerUsername: (payload.name as string) ?? (payload.email as string) ?? payload.sub,
+    providerUsername: (payload.name as string) || (payload.email as string) || payload.sub,
     providerEmail: emailVerified ? (payload.email as string) : null,
     emailVerified,
     accessToken,
@@ -372,6 +396,7 @@ async function fetchDiscordUser(
       Authorization: `Bearer ${accessToken}`,
       "User-Agent": "CloudTime/1.0",
     },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
   });
 
   if (!res.ok) throw new Error(`Discord /users/@me failed: ${res.status}`);
