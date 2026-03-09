@@ -1,8 +1,7 @@
-import { formatDate, addDays } from "./time-format";
+import { formatDate, addDays, getToday } from "./time-format";
 
-export function resolveStatsRange(range: string): { start: string; end: string; text: string } | null {
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+export function resolveStatsRange(range: string, tz?: string): { start: string; end: string; text: string } | null {
+  const today = getToday(tz);
 
   switch (range) {
     case "last_7_days":

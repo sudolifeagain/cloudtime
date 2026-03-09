@@ -4,6 +4,41 @@ type SummaryRange = components["schemas"]["SummaryRange"];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Validate an IANA timezone string. Returns true if valid.
+ */
+export function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get "today" as a Date anchored to midnight UTC, optionally shifted by IANA timezone.
+ * When tz is provided, determines what date it is in that timezone, then returns
+ * a UTC midnight Date for that date. Caller must validate tz before calling.
+ */
+export function getToday(tz?: string): Date {
+  const now = new Date();
+  if (tz) {
+    // Format current time in the target timezone to extract the local date
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+    const year = Number(parts.find((p) => p.type === "year")!.value);
+    const month = Number(parts.find((p) => p.type === "month")!.value);
+    const day = Number(parts.find((p) => p.type === "day")!.value);
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
 /** Format seconds as digital clock: "2:30" */
 export function formatDigital(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
@@ -55,10 +90,11 @@ export function addDays(d: Date, days: number): Date {
 export function resolveDateRange(
   range?: string,
   start?: string,
-  end?: string
+  end?: string,
+  tz?: string
 ): { start: string; end: string } | null {
   if (range) {
-    return resolveNamedRange(range as SummaryRange);
+    return resolveNamedRange(range as SummaryRange, tz);
   }
 
   if (start && end) {
@@ -72,9 +108,8 @@ export function resolveDateRange(
   return null;
 }
 
-function resolveNamedRange(range: SummaryRange): { start: string; end: string } | null {
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+function resolveNamedRange(range: SummaryRange, tz?: string): { start: string; end: string } | null {
+  const today = getToday(tz);
   const dayOfWeek = today.getUTCDay(); // 0=Sun
 
   switch (range) {

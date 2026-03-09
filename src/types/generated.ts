@@ -1830,6 +1830,7 @@ export interface operations {
                 /** @description Keystroke timeout in minutes */
                 timeout?: number;
                 writes_only?: boolean;
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. */
                 timezone?: string;
             };
             header?: never;
@@ -1864,6 +1865,8 @@ export interface operations {
             query?: {
                 timeout?: number;
                 writes_only?: boolean;
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. */
+                timezone?: string;
             };
             header?: never;
             path: {
@@ -1901,7 +1904,10 @@ export interface operations {
     };
     getStatusBarToday: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description IANA timezone (e.g. Asia/Tokyo). Determines what "today" means. Defaults to UTC when omitted. */
+                timezone?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2640,7 +2646,10 @@ export interface operations {
     };
     getGlobalStats: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. */
+                timezone?: string;
+            };
             header?: never;
             path: {
                 range: string;

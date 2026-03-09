@@ -30,7 +30,7 @@ export const DIMENSION_TO_KEY: Record<Dimension, string> = {
   machine: "machines",
 };
 
-export function buildSummary(date: string, rows: SummaryRow[]): Summary {
+export function buildSummary(date: string, rows: SummaryRow[], tz?: string): Summary {
   let grandTotalSeconds = 0;
   for (const row of rows) {
     grandTotalSeconds += row.total_seconds;
@@ -56,7 +56,7 @@ export function buildSummary(date: string, rows: SummaryRow[]): Summary {
       start: `${date}T00:00:00Z`,
       end: `${date}T23:59:59Z`,
       text: date,
-      timezone: "UTC",
+      timezone: tz ?? "UTC",
     },
     ...dimensionItems,
     entities: [],
