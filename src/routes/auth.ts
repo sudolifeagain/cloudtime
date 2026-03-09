@@ -42,7 +42,15 @@ import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../uti
 const auth = new Hono<{ Bindings: Env }>();
 
 // CSRF protection — validates Origin header for non-safe methods (POST, DELETE)
-auth.use("/*", csrf());
+auth.use(
+  "/*",
+  csrf({
+    origin: (origin, c) => {
+      const appUrl = (c.env as Env).APP_URL?.replace(/\/+$/, "");
+      return appUrl ? origin === appUrl : true;
+    },
+  }),
+);
 
 // ─── Session Middleware ──────────────────────────────────
 
@@ -59,8 +67,9 @@ const sessionMw = createMiddleware<SessionAuthEnv>(async (c, next) => {
     c.set("sessionId", session.sessionId);
     c.set("sessionTokenHash", tokenHash);
     await next();
-  } catch {
-    return c.json({ error: "Internal server error" }, 500);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
 
@@ -131,8 +140,9 @@ auth.get("/session", sessionMw, async (c) => {
       200,
       { "Cache-Control": "no-store" },
     );
-  } catch {
-    return c.json({ error: "Internal server error" }, 500);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
 
@@ -184,8 +194,9 @@ auth.get("/sessions", sessionMw, async (c) => {
       200,
       { "Cache-Control": "no-store" },
     );
-  } catch {
-    return c.json({ error: "Internal server error" }, 500);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
 
@@ -282,8 +293,9 @@ auth.delete("/providers/:provider", sessionMw, async (c) => {
       .run();
 
     return c.body(null, 204);
-  } catch {
-    return c.json({ error: "Internal server error" }, 500);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
 
@@ -317,8 +329,9 @@ auth.post("/api-key", sessionMw, async (c) => {
       200,
       { "Cache-Control": "no-store" },
     );
-  } catch {
-    return c.json({ error: "Internal server error" }, 500);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
 
@@ -414,7 +427,7 @@ auth.get("/link/:provider/callback", async (c) => {
   const oauthError = c.req.query("error");
   if (oauthError) {
     console.error(`OAuth error from ${provider}: ${oauthError}`);
-    return c.json({ error: "OAuth authorization failed" }, 400);
+    return c.json({ error: "OAuth authorization failed" }, 400, securityHeaders());
   }
 
   // Validate state (double-submit)
@@ -424,16 +437,16 @@ auth.get("/link/:provider/callback", async (c) => {
   clearStateCookie(c, c.env);
 
   if (!stateParam || !code || !stateCookie) {
-    return c.json({ error: "Missing state or code" }, 400);
+    return c.json({ error: "Missing state or code" }, 400, securityHeaders());
   }
 
   if (!(await timingSafeEqual(stateParam, stateCookie))) {
-    return c.json({ error: "State mismatch" }, 400);
+    return c.json({ error: "State mismatch" }, 400, securityHeaders());
   }
 
   const stateData = await consumeOAuthState(c.env.KV, stateParam);
   if (!stateData || !stateData.linkUserId) {
-    return c.json({ error: "Invalid or expired state" }, 400);
+    return c.json({ error: "Invalid or expired state" }, 400, securityHeaders());
   }
 
   // Validate session from cookie
@@ -449,6 +462,15 @@ auth.get("/link/:provider/callback", async (c) => {
     const redirectUri = getRedirectUri(c, provider, true);
     const tokenResponse = await exchangeCode(provider, code, stateData.codeVerifier, redirectUri, c.env);
     const userInfo = await fetchUserInfo(provider, tokenResponse, c.env, c.env.KV, stateData.nonce);
+
+    // Email verification gate (same as login callback)
+    if (!userInfo.emailVerified) {
+      return c.json(
+        { error: "Email not verified with provider. Please verify your email first." },
+        400,
+        securityHeaders(),
+      );
+    }
 
     // Check if this provider account is already linked to a different user
     const existingLink = await c.env.DB.prepare(
@@ -512,8 +534,9 @@ auth.get("/link/:provider/callback", async (c) => {
       200,
       securityHeaders(),
     );
-  } catch {
-    return c.json({ error: "Internal server error" }, 500);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
 
@@ -547,7 +570,7 @@ auth.get("/:provider/callback", async (c) => {
   const oauthError = c.req.query("error");
   if (oauthError) {
     console.error(`OAuth error from ${provider}: ${oauthError}`);
-    return c.json({ error: "OAuth authorization failed" }, 400);
+    return c.json({ error: "OAuth authorization failed" }, 400, securityHeaders());
   }
 
   // 1. Validate state (double-submit)
@@ -557,16 +580,16 @@ auth.get("/:provider/callback", async (c) => {
   clearStateCookie(c, c.env);
 
   if (!stateParam || !code || !stateCookie) {
-    return c.json({ error: "Missing state or code" }, 400);
+    return c.json({ error: "Missing state or code" }, 400, securityHeaders());
   }
 
   if (!(await timingSafeEqual(stateParam, stateCookie))) {
-    return c.json({ error: "State mismatch" }, 400);
+    return c.json({ error: "State mismatch" }, 400, securityHeaders());
   }
 
   const stateData = await consumeOAuthState(c.env.KV, stateParam);
   if (!stateData) {
-    return c.json({ error: "Invalid or expired state" }, 400);
+    return c.json({ error: "Invalid or expired state" }, 400, securityHeaders());
   }
 
   try {
@@ -808,8 +831,9 @@ auth.get("/:provider/callback", async (c) => {
       200,
       securityHeaders(),
     );
-  } catch {
-    return c.json({ error: "Internal server error" }, 500);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
 

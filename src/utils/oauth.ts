@@ -274,7 +274,7 @@ async function verifyGoogleJwt(
     issuer: ["https://accounts.google.com", "accounts.google.com"],
     audience: env.GOOGLE_CLIENT_ID,
     maxTokenAge: "5 minutes",
-    clockTolerance: "30 seconds",
+    clockTolerance: "5 seconds",
   };
 
   try {
@@ -283,7 +283,10 @@ async function verifyGoogleJwt(
     return payload;
   } catch (err) {
     // If signature verification fails, Google may have rotated keys — clear cache and retry
-    if (err instanceof jose.errors.JWSSignatureVerificationFailed) {
+    if (
+      err instanceof jose.errors.JWSSignatureVerificationFailed ||
+      err instanceof jose.errors.JWKSNoMatchingKey
+    ) {
       cachedJWKS = null;
       jwksCachedAt = 0;
       await kv.delete("google:jwks");
@@ -307,8 +310,8 @@ async function validateGoogleIdToken(
   const payload = await verifyGoogleJwt(idToken, env, kv);
 
   // Validate azp (authorized party) — prevents cross-client token reuse
-  if (payload.azp && payload.azp !== env.GOOGLE_CLIENT_ID) {
-    throw new Error("Google id_token azp mismatch");
+  if (!payload.azp || payload.azp !== env.GOOGLE_CLIENT_ID) {
+    throw new Error("Google id_token azp missing or mismatch");
   }
 
   // Validate nonce — if we sent one, the token MUST contain it
@@ -336,9 +339,13 @@ async function validateGoogleIdToken(
     }
   }
 
+  if (!payload.sub) {
+    throw new Error("Google id_token missing sub claim");
+  }
+
   return {
-    providerUserId: payload.sub!,
-    providerUsername: (payload.name as string) ?? (payload.email as string) ?? payload.sub!,
+    providerUserId: payload.sub,
+    providerUsername: (payload.name as string) ?? (payload.email as string) ?? payload.sub,
     providerEmail: (payload.email as string) ?? null,
     emailVerified: payload.email_verified === true,
     accessToken,
@@ -355,7 +362,10 @@ async function fetchDiscordUser(
   tokenExpiresAt: string | null,
 ): Promise<ProviderUserInfo> {
   const res = await fetch("https://discord.com/api/v10/users/@me", {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "User-Agent": "CloudTime/1.0",
+    },
   });
 
   if (!res.ok) throw new Error(`Discord /users/@me failed: ${res.status}`);
