@@ -4,10 +4,10 @@ import type { components } from "../types/generated";
 import { EDITORS } from "../data/editors";
 import { LANGUAGES } from "../data/languages";
 import { resolveStatsRange } from "../utils/stats-range";
-import { aggregateDimension, type SummaryRow } from "../utils/summary-builder";
-import { formatHumanReadable } from "../utils/time-format";
+import { formatDigital, formatHumanReadable } from "../utils/time-format";
 
 type GlobalStats = components["schemas"]["GlobalStats"];
+type SummaryItem = components["schemas"]["SummaryItem"];
 
 declare const __APP_VERSION__: string;
 
@@ -62,17 +62,22 @@ meta.get("/stats/:range", async (c) => {
   }
 
   try {
-    const sql = `SELECT date, project, language, editor, operating_system, category, branch, machine, total_seconds
-      FROM summaries WHERE date >= ? AND date <= ?`;
-    const { results } = await c.env.DB.prepare(sql)
-      .bind(resolved.start, resolved.end)
-      .all<SummaryRow>();
+    // Aggregate in SQL — only aggregated rows come back, not raw data
+    type TotalRow = { total_seconds: number };
+    type DimRow = { name: string; total_seconds: number };
 
-    // Total seconds
-    let totalSeconds = 0;
-    for (const row of results) {
-      totalSeconds += row.total_seconds;
-    }
+    const where = "WHERE date >= ? AND date <= ?";
+    const binds = [resolved.start, resolved.end];
+
+    const [totalResult, catResult, langResult, editorResult, osResult] = await c.env.DB.batch([
+      c.env.DB.prepare(`SELECT COALESCE(SUM(total_seconds), 0) AS total_seconds FROM summaries ${where}`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(category, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY category ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(language, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY language ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(editor, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY editor ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(operating_system, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY operating_system ORDER BY total_seconds DESC`).bind(...binds),
+    ]);
+
+    const totalSeconds = (totalResult.results[0] as TotalRow)?.total_seconds ?? 0;
 
     // Days in range
     const startMs = new Date(resolved.start + "T00:00:00Z").getTime();
@@ -80,18 +85,21 @@ meta.get("/stats/:range", async (c) => {
     const daysInRange = Math.max(1, Math.floor((endMs - startMs) / 86400000) + 1);
     const dailyAverage = totalSeconds / daysInRange;
 
-    // Dimension breakdowns (only the 4 in GlobalStats schema)
-    const GLOBAL_DIMENSIONS = ["category", "language", "editor", "operating_system"] as const;
-    const GLOBAL_DIM_KEYS: Record<string, string> = {
-      category: "categories",
-      language: "languages",
-      editor: "editors",
-      operating_system: "operating_systems",
-    };
-
-    const dimensionItems: Record<string, ReturnType<typeof aggregateDimension>> = {};
-    for (const dim of GLOBAL_DIMENSIONS) {
-      dimensionItems[GLOBAL_DIM_KEYS[dim]] = aggregateDimension(results, dim, totalSeconds);
+    // Convert DB rows to SummaryItem arrays
+    function toSummaryItems(rows: DimRow[], grandTotal: number): SummaryItem[] {
+      return rows.map((row) => {
+        const ts = row.total_seconds;
+        return {
+          name: row.name,
+          total_seconds: ts,
+          percent: grandTotal > 0 ? Math.round((ts / grandTotal) * 10000) / 100 : 0,
+          digital: formatDigital(ts),
+          text: formatHumanReadable(ts),
+          hours: Math.floor(ts / 3600),
+          minutes: Math.floor((ts % 3600) / 60),
+          seconds: Math.floor(ts % 60),
+        };
+      });
     }
 
     const isUpToDate = await checkUpToDate(c.env.DB);
@@ -102,7 +110,10 @@ meta.get("/stats/:range", async (c) => {
       daily_average: dailyAverage,
       human_readable_total: formatHumanReadable(totalSeconds),
       human_readable_daily_average: formatHumanReadable(dailyAverage),
-      ...dimensionItems,
+      categories: toSummaryItems(catResult.results as DimRow[], totalSeconds),
+      languages: toSummaryItems(langResult.results as DimRow[], totalSeconds),
+      editors: toSummaryItems(editorResult.results as DimRow[], totalSeconds),
+      operating_systems: toSummaryItems(osResult.results as DimRow[], totalSeconds),
       range: {
         start: `${resolved.start}T00:00:00Z`,
         end: `${resolved.end}T23:59:59Z`,
