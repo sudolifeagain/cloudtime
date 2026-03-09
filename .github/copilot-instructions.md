@@ -9,13 +9,46 @@ Self-hosted, WakaTime-compatible coding time tracker on Cloudflare Workers + D1.
 - **Database:** Cloudflare D1 (SQLite)
 - **Cache:** Cloudflare KV
 - **Auth:** OAuth 2.0 (GitHub/Google/Discord) + API key for editor plugins
-- **Schema:** OpenAPI 3.1 at `schemas/openapi.yaml` (Single Source of Truth)
+- **Schema:** Multi-file OpenAPI 3.1 under `schemas/` (Single Source of Truth)
 
-## SDD Rules
+## Schema-Driven Development (SDD)
 
-- `schemas/openapi.yaml` defines all API contracts. Code must match the schema.
-- TypeScript types in `src/types/generated.ts` are auto-generated. Never edit manually.
-- DB schema in `src/db/schema.sql` must align with OpenAPI models.
+The OpenAPI schema is the Single Source of Truth for all API contracts.
+
+**Workflow:** Schema YAML → `redocly bundle` → `openapi-typescript` → `src/types/generated.ts` → implement handlers
+
+### Multi-file schema structure
+
+```
+schemas/
+├── openapi.yaml                  # Entry point (paths + security schemes)
+├── paths/                        # One file per endpoint, organized by domain
+│   ├── auth/                     # OAuth & session endpoints (9 files)
+│   ├── heartbeats/               # Heartbeat ingestion (2 files)
+│   ├── summaries/                # Summary queries (1 file)
+│   ├── stats/                    # Stats, status bar, all-time, durations (4 files)
+│   ├── users/                    # User profile & projects (3 files)
+│   ├── goals/                    # Goals CRUD (2 files)
+│   ├── leaderboards/             # Leaderboard endpoints (3 files)
+│   ├── insights/                 # Insights & custom rules (3 files)
+│   ├── tracking/                 # Machine names & user agents (2 files)
+│   ├── external-durations/       # External time entries (2 files)
+│   ├── commits/                  # Git commit tracking (2 files)
+│   ├── orgs/                     # Organization management (4 files)
+│   └── meta/                     # Health, editors, languages, meta (6 files)
+└── components/
+    ├── schemas/                  # One file per data model (38 files)
+    └── responses/                # Shared error responses (2 files)
+```
+
+### SDD rules
+
+- All path files use `$ref` to reference `components/schemas/*.yaml` for request/response bodies.
+- Changes to the schema must come BEFORE implementation code.
+- Run `npm run generate` after any schema change (bundles + generates types).
+- `src/types/generated.ts` is auto-generated — never edit manually.
+- DB schema in `src/db/schema.sql` must align with OpenAPI component schemas.
+- `schemas/_bundled/` is gitignored — only the multi-file source is committed.
 
 ## Code Standards
 
