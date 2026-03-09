@@ -57,92 +57,117 @@ tags:
   - name: meta
     description: Server metadata (public)
 paths:
+  # --- auth ---
   /auth/{provider}:
-    $ref: paths/auth_{provider}.yaml
+    $ref: paths/auth/provider.yaml
   /auth/{provider}/callback:
-    $ref: paths/auth_{provider}_callback.yaml
+    $ref: paths/auth/provider-callback.yaml
   /auth/link/{provider}:
-    $ref: paths/auth_link_{provider}.yaml
+    $ref: paths/auth/link-provider.yaml
   /auth/link/{provider}/callback:
-    $ref: paths/auth_link_{provider}_callback.yaml
+    $ref: paths/auth/link-provider-callback.yaml
   /auth/link/approve/{pending_link_id}:
-    $ref: paths/auth_link_approve_{pending_link_id}.yaml
+    $ref: paths/auth/link-approve.yaml
   /auth/providers:
-    $ref: paths/auth_providers.yaml
+    $ref: paths/auth/providers.yaml
   /auth/providers/{provider}:
-    $ref: paths/auth_providers_{provider}.yaml
+    $ref: paths/auth/providers-provider.yaml
   /auth/session:
-    $ref: paths/auth_session.yaml
+    $ref: paths/auth/session.yaml
   /auth/api-key:
-    $ref: paths/auth_api-key.yaml
-  /users/current/profile:
-    $ref: paths/users_current_profile.yaml
-  /health:
-    $ref: paths/health.yaml
+    $ref: paths/auth/api-key.yaml
+
+  # --- users ---
   /users/current:
-    $ref: paths/users_current.yaml
-  /users/current/heartbeats:
-    $ref: paths/users_current_heartbeats.yaml
-  /users/current/heartbeats.bulk:
-    $ref: paths/users_current_heartbeats.bulk.yaml
-  /users/current/status_bar/today:
-    $ref: paths/users_current_status_bar_today.yaml
-  /users/current/summaries:
-    $ref: paths/users_current_summaries.yaml
-  /users/current/durations:
-    $ref: paths/users_current_durations.yaml
-  /users/current/stats/{range}:
-    $ref: paths/users_current_stats_{range}.yaml
-  /users/current/all_time_since_today:
-    $ref: paths/users_current_all_time_since_today.yaml
+    $ref: paths/users/current.yaml
+  /users/current/profile:
+    $ref: paths/users/profile.yaml
   /users/current/projects:
-    $ref: paths/users_current_projects.yaml
+    $ref: paths/users/projects.yaml
+
+  # --- heartbeats ---
+  /users/current/heartbeats:
+    $ref: paths/heartbeats/heartbeats.yaml
+  /users/current/heartbeats.bulk:
+    $ref: paths/heartbeats/heartbeats-bulk.yaml
+
+  # --- summaries ---
+  /users/current/summaries:
+    $ref: paths/summaries/summaries.yaml
+
+  # --- stats & durations ---
+  /users/current/stats/{range}:
+    $ref: paths/stats/stats.yaml
+  /users/current/status_bar/today:
+    $ref: paths/stats/status-bar.yaml
+  /users/current/all_time_since_today:
+    $ref: paths/stats/all-time.yaml
+  /users/current/durations:
+    $ref: paths/stats/durations.yaml
+
+  # --- goals ---
   /users/current/goals:
-    $ref: paths/users_current_goals.yaml
+    $ref: paths/goals/goals.yaml
   /users/current/goals/{goal_id}:
-    $ref: paths/users_current_goals_{goal_id}.yaml
+    $ref: paths/goals/goal.yaml
+
+  # --- leaderboards ---
   /leaders:
-    $ref: paths/leaders.yaml
+    $ref: paths/leaderboards/leaders.yaml
   /users/current/leaderboards:
-    $ref: paths/users_current_leaderboards.yaml
+    $ref: paths/leaderboards/leaderboards.yaml
   /users/current/leaderboards/{board_id}:
-    $ref: paths/users_current_leaderboards_{board_id}.yaml
+    $ref: paths/leaderboards/leaderboard.yaml
+
+  # --- insights & custom rules ---
   /users/current/insights/{insight_type}/{range}:
-    $ref: paths/users_current_insights_{insight_type}_{range}.yaml
+    $ref: paths/insights/insights.yaml
   /users/current/custom_rules:
-    $ref: paths/users_current_custom_rules.yaml
+    $ref: paths/insights/custom-rules.yaml
   /users/current/custom_rules/{rule_id}:
-    $ref: paths/users_current_custom_rules_{rule_id}.yaml
+    $ref: paths/insights/custom-rule.yaml
+
+  # --- tracking ---
   /users/current/machine_names:
-    $ref: paths/users_current_machine_names.yaml
+    $ref: paths/tracking/machine-names.yaml
   /users/current/user_agents:
-    $ref: paths/users_current_user_agents.yaml
-  /users/current/data_dumps:
-    $ref: paths/users_current_data_dumps.yaml
+    $ref: paths/tracking/user-agents.yaml
+
+  # --- external durations ---
   /users/current/external_durations:
-    $ref: paths/users_current_external_durations.yaml
+    $ref: paths/external-durations/external-durations.yaml
   /users/current/external_durations.bulk:
-    $ref: paths/users_current_external_durations.bulk.yaml
+    $ref: paths/external-durations/external-durations-bulk.yaml
+
+  # --- commits ---
   /users/current/projects/{project}/commits:
-    $ref: paths/users_current_projects_{project}_commits.yaml
+    $ref: paths/commits/commits.yaml
   /users/current/projects/{project}/commits/{hash}:
-    $ref: paths/users_current_projects_{project}_commits_{hash}.yaml
+    $ref: paths/commits/commit.yaml
+
+  # --- orgs ---
   /users/current/orgs:
-    $ref: paths/users_current_orgs.yaml
+    $ref: paths/orgs/orgs.yaml
   /users/current/orgs/{org_id}/dashboards:
-    $ref: paths/users_current_orgs_{org_id}_dashboards.yaml
+    $ref: paths/orgs/dashboards.yaml
   /users/current/orgs/{org_id}/dashboards/{dashboard_id}/members:
-    $ref: paths/users_current_orgs_{org_id}_dashboards_{dashboard_id}_members.yaml
+    $ref: paths/orgs/dashboard-members.yaml
   /users/current/orgs/{org_id}/dashboards/{dashboard_id}/summaries:
-    $ref: paths/users_current_orgs_{org_id}_dashboards_{dashboard_id}_summaries.yaml
+    $ref: paths/orgs/dashboard-summaries.yaml
+
+  # --- meta ---
+  /health:
+    $ref: paths/meta/health.yaml
   /editors:
-    $ref: paths/editors.yaml
+    $ref: paths/meta/editors.yaml
   /program_languages:
-    $ref: paths/program_languages.yaml
+    $ref: paths/meta/program-languages.yaml
   /meta:
-    $ref: paths/meta.yaml
+    $ref: paths/meta/meta.yaml
   /stats/{range}:
-    $ref: paths/stats_{range}.yaml
+    $ref: paths/meta/global-stats.yaml
+  /users/current/data_dumps:
+    $ref: paths/meta/data-dumps.yaml
 components:
   securitySchemes:
     apiKey:

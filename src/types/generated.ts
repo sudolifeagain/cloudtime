@@ -158,6 +158,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get current user's profile */
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/current/profile": {
         parameters: {
             query?: never;
@@ -175,32 +192,15 @@ export interface paths {
         patch: operations["updateProfile"];
         trace?: never;
     };
-    "/health": {
+    "/users/current/projects": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Health check */
-        get: operations["getHealth"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/users/current": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get current user's profile */
-        get: operations["getCurrentUser"];
+        /** List user's projects */
+        get: operations["getProjects"];
         put?: never;
         post?: never;
         delete?: never;
@@ -245,26 +245,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/current/status_bar/today": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Today's coding activity for IDE status bars
-         * @description Cached version of summaries for today. Returns empty summary while cache updates.
-         */
-        get: operations["getStatusBarToday"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/users/current/summaries": {
         parameters: {
             query?: never;
@@ -274,23 +254,6 @@ export interface paths {
         };
         /** Coding activity summaries for a date range */
         get: operations["getSummaries"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/users/current/durations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Coding durations for a day (heartbeats joined by timeout) */
-        get: operations["getDurations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -316,6 +279,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/current/status_bar/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's coding activity for IDE status bars
+         * @description Cached version of summaries for today. Returns empty summary while cache updates.
+         */
+        get: operations["getStatusBarToday"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/current/all_time_since_today": {
         parameters: {
             query?: never;
@@ -333,15 +316,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/current/projects": {
+    "/users/current/durations": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List user's projects */
-        get: operations["getProjects"];
+        /** Coding durations for a day (heartbeats joined by timeout) */
+        get: operations["getDurations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -521,24 +504,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/current/data_dumps": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List data exports */
-        get: operations["getDataDumps"];
-        put?: never;
-        /** Start a data export */
-        post: operations["createDataDump"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/users/current/external_durations": {
         parameters: {
             query?: never;
@@ -677,6 +642,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health check */
+        get: operations["getHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/editors": {
         parameters: {
             query?: never;
@@ -745,6 +727,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/current/data_dumps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List data exports */
+        get: operations["getDataDumps"];
+        put?: never;
+        /** Start a data export */
+        post: operations["createDataDump"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -797,6 +797,25 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        Project: {
+            id: string;
+            name: string;
+            /** Format: uri */
+            repository?: string;
+            /** Format: uri */
+            badge?: string;
+            color?: string;
+            has_public_url?: boolean;
+            human_readable_last_heartbeat_at?: string;
+            /** Format: date-time */
+            last_heartbeat_at?: string;
+            /** Format: date-time */
+            first_heartbeat_at?: string;
+            /** Format: uri */
+            url?: string;
+            /** Format: date-time */
+            created_at?: string;
+        };
         /** @enum {string} */
         Category: "coding" | "building" | "indexing" | "debugging" | "browsing" | "running tests" | "writing tests" | "manual testing" | "writing docs" | "communicating" | "code reviewing" | "notes" | "researching" | "learning" | "designing" | "ai coding";
         HeartbeatInput: {
@@ -833,6 +852,8 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        /** @enum {string} */
+        SummaryRange: "Today" | "Yesterday" | "Last 7 Days" | "Last 7 Days from Yesterday" | "Last 14 Days" | "Last 30 Days" | "This Week" | "Last Week" | "This Month" | "Last Month";
         GrandTotal: {
             /** Format: double */
             total_seconds: number;
@@ -878,8 +899,6 @@ export interface components {
             entities?: components["schemas"]["SummaryItem"][];
             range: components["schemas"]["TimeRange"];
         };
-        /** @enum {string} */
-        SummaryRange: "Today" | "Yesterday" | "Last 7 Days" | "Last 7 Days from Yesterday" | "Last 14 Days" | "Last 30 Days" | "This Week" | "Last Week" | "This Month" | "Last Month";
         CumulativeTotal: {
             /** Format: double */
             seconds?: number;
@@ -890,25 +909,6 @@ export interface components {
             /** Format: double */
             seconds?: number;
             text?: string;
-        };
-        Duration: {
-            project: string;
-            /**
-             * Format: double
-             * @description Start time as UNIX epoch
-             */
-            time: number;
-            /**
-             * Format: double
-             * @description Duration in seconds
-             */
-            duration: number;
-            color?: string;
-            entity?: string;
-            language?: string;
-            branch?: string;
-            category?: components["schemas"]["Category"];
-            machine?: string;
         };
         Stats: {
             /** Format: double */
@@ -953,24 +953,24 @@ export interface components {
             range?: components["schemas"]["TimeRange"];
             project?: string;
         };
-        Project: {
-            id: string;
-            name: string;
-            /** Format: uri */
-            repository?: string;
-            /** Format: uri */
-            badge?: string;
+        Duration: {
+            project: string;
+            /**
+             * Format: double
+             * @description Start time as UNIX epoch
+             */
+            time: number;
+            /**
+             * Format: double
+             * @description Duration in seconds
+             */
+            duration: number;
             color?: string;
-            has_public_url?: boolean;
-            human_readable_last_heartbeat_at?: string;
-            /** Format: date-time */
-            last_heartbeat_at?: string;
-            /** Format: date-time */
-            first_heartbeat_at?: string;
-            /** Format: uri */
-            url?: string;
-            /** Format: date-time */
-            created_at?: string;
+            entity?: string;
+            language?: string;
+            branch?: string;
+            category?: components["schemas"]["Category"];
+            machine?: string;
         };
         Goal: {
             id: string;
@@ -1115,19 +1115,6 @@ export interface components {
             /** Format: date-time */
             created_at?: string;
         };
-        DataDump: {
-            id: string;
-            /** @enum {string} */
-            type: "daily" | "heartbeats";
-            /** @enum {string} */
-            status: "pending" | "processing" | "completed" | "failed";
-            /** Format: uri */
-            download_url?: string;
-            /** Format: date-time */
-            created_at?: string;
-            /** Format: date-time */
-            expires_at?: string;
-        };
         ExternalDurationInput: {
             external_id: string;
             entity: string;
@@ -1224,6 +1211,19 @@ export interface components {
             editors?: components["schemas"]["SummaryItem"][];
             operating_systems?: components["schemas"]["SummaryItem"][];
             range?: components["schemas"]["TimeRange"];
+        };
+        DataDump: {
+            id: string;
+            /** @enum {string} */
+            type: "daily" | "heartbeats";
+            /** @enum {string} */
+            status: "pending" | "processing" | "completed" | "failed";
+            /** Format: uri */
+            download_url?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            expires_at?: string;
         };
     };
     responses: {
@@ -1559,6 +1559,29 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["User"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     updateProfile: {
         parameters: {
             query?: never;
@@ -1611,46 +1634,26 @@ export interface operations {
             };
         };
     };
-    getHealth: {
+    getProjects: {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Server is healthy */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @constant */
-                        status: "ok";
-                    };
-                };
+            query?: {
+                /** @description Search term */
+                q?: string;
             };
-        };
-    };
-    getCurrentUser: {
-        parameters: {
-            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description User profile */
+            /** @description List of projects */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["User"];
+                        data: components["schemas"]["Project"][];
                     };
                 };
             };
@@ -1766,31 +1769,6 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    getStatusBarToday: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Today's status bar data */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Summary"];
-                        /** Format: date-time */
-                        cached_at?: string;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
     getSummaries: {
         parameters: {
             query?: {
@@ -1828,43 +1806,6 @@ export interface operations {
                         end?: string;
                         cumulative_total?: components["schemas"]["CumulativeTotal"];
                         daily_average?: components["schemas"]["DailyAverage"];
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
-    getDurations: {
-        parameters: {
-            query: {
-                date: string;
-                project?: string;
-                branches?: string;
-                timeout?: number;
-                writes_only?: boolean;
-                timezone?: string;
-                slice_by?: "project" | "entity" | "language" | "dependencies" | "operating_system" | "editor" | "category" | "machine";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of durations */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Duration"][];
-                        branches?: string[];
-                        /** Format: date */
-                        start?: string;
-                        /** Format: date */
-                        end?: string;
-                        timezone?: string;
                     };
                 };
             };
@@ -1911,6 +1852,31 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getStatusBarToday: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Today's status bar data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Summary"];
+                        /** Format: date-time */
+                        cached_at?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     getAllTimeSinceToday: {
         parameters: {
             query?: {
@@ -1936,11 +1902,16 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    getProjects: {
+    getDurations: {
         parameters: {
-            query?: {
-                /** @description Search term */
-                q?: string;
+            query: {
+                date: string;
+                project?: string;
+                branches?: string;
+                timeout?: number;
+                writes_only?: boolean;
+                timezone?: string;
+                slice_by?: "project" | "entity" | "language" | "dependencies" | "operating_system" | "editor" | "category" | "machine";
             };
             header?: never;
             path?: never;
@@ -1948,14 +1919,20 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description List of projects */
+            /** @description List of durations */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Project"][];
+                        data: components["schemas"]["Duration"][];
+                        branches?: string[];
+                        /** Format: date */
+                        start?: string;
+                        /** Format: date */
+                        end?: string;
+                        timezone?: string;
                     };
                 };
             };
@@ -2247,61 +2224,6 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    getDataDumps: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of data dumps */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["DataDump"][];
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
-    createDataDump: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @enum {string} */
-                    type: "daily" | "heartbeats";
-                    /** @default true */
-                    email_when_finished?: boolean;
-                };
-            };
-        };
-        responses: {
-            /** @description Export started */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["DataDump"];
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
     getExternalDurations: {
         parameters: {
             query: {
@@ -2575,6 +2497,29 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server is healthy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                    };
+                };
+            };
+        };
+    };
     getEditors: {
         parameters: {
             query?: {
@@ -2680,6 +2625,61 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    getDataDumps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of data dumps */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DataDump"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createDataDump: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    type: "daily" | "heartbeats";
+                    /** @default true */
+                    email_when_finished?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Export started */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DataDump"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
 }

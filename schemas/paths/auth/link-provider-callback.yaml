@@ -1,0 +1,52 @@
+get:
+  operationId: oauthLinkCallback
+  tags:
+    - auth
+  summary: OAuth link callback - links provider to current account
+  parameters:
+    - name: provider
+      in: path
+      required: true
+      schema:
+        $ref: ../../components/schemas/OAuthProvider.yaml
+    - name: code
+      in: query
+      required: true
+      schema:
+        type: string
+    - name: state
+      in: query
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Provider linked successfully
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: object
+                required:
+                  - provider
+                  - provider_username
+                properties:
+                  provider:
+                    $ref: ../../components/schemas/OAuthProvider.yaml
+                  provider_username:
+                    type: string
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '409':
+      description: Provider account already linked to another user
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string

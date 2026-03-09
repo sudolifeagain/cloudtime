@@ -1,0 +1,73 @@
+get:
+  operationId: getSummaries
+  tags:
+    - summaries
+  summary: Coding activity summaries for a date range
+  parameters:
+    - name: start
+      in: query
+      description: Required if range is not provided. Use with end.
+      schema:
+        type: string
+        format: date
+    - name: end
+      in: query
+      description: Required if range is not provided. Use with start.
+      schema:
+        type: string
+        format: date
+    - name: range
+      in: query
+      description: >-
+        Predefined range (alternative to start/end). One of start+end or range
+        is required.
+      schema:
+        $ref: ../../components/schemas/SummaryRange.yaml
+    - name: project
+      in: query
+      schema:
+        type: string
+    - name: branches
+      in: query
+      description: Comma-separated branch names
+      schema:
+        type: string
+    - name: timeout
+      in: query
+      description: Keystroke timeout in minutes
+      schema:
+        type: integer
+    - name: writes_only
+      in: query
+      schema:
+        type: boolean
+    - name: timezone
+      in: query
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Daily summaries
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/Summary.yaml
+              start:
+                type: string
+                format: date
+              end:
+                type: string
+                format: date
+              cumulative_total:
+                $ref: ../../components/schemas/CumulativeTotal.yaml
+              daily_average:
+                $ref: ../../components/schemas/DailyAverage.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
