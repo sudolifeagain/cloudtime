@@ -306,7 +306,7 @@ export interface paths {
         };
         /**
          * Today's coding activity for IDE status bars
-         * @description Cached version of summaries for today. Returns empty summary while cache updates.
+         * @description Cached version of summaries for today. Returns a summary with zero values while cache is being populated.
          */
         get: operations["getStatusBarToday"];
         put?: never;
@@ -1274,11 +1274,22 @@ export interface operations {
             302: {
                 headers: {
                     Location?: string;
-                    /** @description PKCE state and code_verifier stored in KV (TTL 10 min) */
+                    /** @description Contains an opaque value used to correlate the PKCE OAuth flow; short-lived HttpOnly cookie */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Invalid or unsupported provider */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error?: string;
+                    };
+                };
             };
         };
     };
@@ -1307,8 +1318,8 @@ export interface operations {
                     "application/json": {
                         data: {
                             user: components["schemas"]["User"];
-                            /** @description API key for editor plugins (ck_...) */
-                            api_key: string;
+                            /** @description API key for editor plugins (ck_...), only returned on first-time creation */
+                            api_key?: string;
                             is_new_user?: boolean;
                             pending_link?: components["schemas"]["PendingLink"];
                         };
@@ -1412,7 +1423,6 @@ export interface operations {
                     "application/json": {
                         data: {
                             user: components["schemas"]["User"];
-                            api_key: string;
                         };
                     };
                 };
