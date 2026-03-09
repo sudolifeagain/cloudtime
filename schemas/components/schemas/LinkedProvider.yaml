@@ -13,6 +13,7 @@ properties:
     type: string
   provider_email:
     type: string
+    format: email
   created_at:
     type: string
     format: date-time
