@@ -1,5 +1,6 @@
 import type { HonoRequest } from "hono";
 import type { Env } from "../types";
+import { sha256Hex } from "./crypto";
 
 /**
  * Extract API key from request (WakaTime-compatible auth)
@@ -24,16 +25,6 @@ export function getApiKey(req: HonoRequest): string | null {
   }
 
   return req.query("api_key") ?? null;
-}
-
-/**
- * SHA-256 hash a string and return hex-encoded result.
- */
-async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = new Uint8Array(hashBuffer);
-  return Array.from(hashArray, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /**
