@@ -783,6 +783,7 @@ export interface components {
             id: string;
             provider: components["schemas"]["OAuthProvider"];
             provider_username: string;
+            /** Format: email */
             provider_email: string;
             /** @description Username of the existing account to merge into */
             existing_username?: string;
@@ -793,6 +794,7 @@ export interface components {
             provider: components["schemas"]["OAuthProvider"];
             provider_user_id: string;
             provider_username: string;
+            /** Format: email */
             provider_email?: string;
             /** Format: date-time */
             created_at: string;
@@ -1227,6 +1229,18 @@ export interface components {
         };
     };
     responses: {
+        /** @description Invalid request parameters */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @example Bad request */
+                    error?: string;
+                };
+            };
+        };
         /** @description Authentication required or invalid credentials */
         Unauthorized: {
             headers: {
@@ -1235,6 +1249,18 @@ export interface components {
             content: {
                 "application/json": {
                     /** @example Unauthorized */
+                    error?: string;
+                };
+            };
+        };
+        /** @description Resource conflict */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @example Conflict */
                     error?: string;
                 };
             };
@@ -1280,17 +1306,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Invalid or unsupported provider */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: string;
-                    };
-                };
-            };
+            400: components["responses"]["BadRequest"];
         };
     };
     oauthCallback: {
@@ -1326,17 +1342,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid OAuth callback (bad code/state) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: string;
-                    };
-                };
-            };
+            400: components["responses"]["BadRequest"];
         };
     };
     oauthLinkStart: {
@@ -1390,17 +1396,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Provider account already linked to another user */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: string;
-                    };
-                };
-            };
+            409: components["responses"]["Conflict"];
         };
     };
     approvePendingLink: {
@@ -1483,17 +1479,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Cannot unlink last provider */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: string;
-                    };
-                };
-            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1631,17 +1617,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Username already taken */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: string;
-                    };
-                };
-            };
+            409: components["responses"]["Conflict"];
         };
     };
     getProjects: {
@@ -1747,6 +1723,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1774,6 +1751,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1804,6 +1782,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1831,6 +1810,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };

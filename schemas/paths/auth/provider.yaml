@@ -23,11 +23,4 @@ get:
           schema:
             type: string
     '400':
-      description: Invalid or unsupported provider
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
-                type: string
+      $ref: ../../components/responses/BadRequest.yaml

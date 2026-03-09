@@ -51,11 +51,4 @@ patch:
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
     '409':
-      description: Username already taken
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
-                type: string
+      $ref: ../../components/responses/Conflict.yaml
