@@ -29,6 +29,23 @@ export interface ProviderUserInfo {
 /** Timeout for all outbound OAuth/provider HTTP requests. */
 const FETCH_TIMEOUT = 10_000;
 
+/** Shared fetch options for outbound provider requests (SSRF defense-in-depth). */
+const PROVIDER_FETCH_OPTS = {
+  redirect: "error" as const,
+  signal: AbortSignal.timeout(FETCH_TIMEOUT),
+};
+
+/**
+ * Validate that redirectUri matches the configured APP_URL origin.
+ * Prevents Open Redirect / Authorization Code Interception when the caller
+ * constructs redirectUri from the request Host header (RFC 9700).
+ */
+function validateRedirectUri(redirectUri: string, env: Env): void {
+  if (env.APP_URL && !redirectUri.startsWith(env.APP_URL)) {
+    throw new Error("redirect_uri does not match APP_URL");
+  }
+}
+
 export function buildAuthorizeUrl(
   provider: OAuthProvider,
   env: Env,
@@ -37,8 +54,12 @@ export function buildAuthorizeUrl(
   state: string,
   nonce: string,
 ): string {
+  validateRedirectUri(redirectUri, env);
+
   switch (provider) {
     case "github": {
+      // NOTE: PKCE (code_challenge) is only enforced by GitHub Apps, not OAuth Apps.
+      // GitHub OAuth Apps silently ignore these parameters.
       const url = new URL("https://github.com/login/oauth/authorize");
       url.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
       url.searchParams.set("redirect_uri", redirectUri);
@@ -93,6 +114,7 @@ export async function exchangeCode(
   redirectUri: string,
   env: Env,
 ): Promise<TokenResponse> {
+  validateRedirectUri(redirectUri, env);
   const { url, clientId, clientSecret } = getTokenEndpoint(provider, env);
 
   const body = new URLSearchParams({
@@ -111,14 +133,14 @@ export async function exchangeCode(
       Accept: "application/json",
     },
     body: body.toString(),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    ...PROVIDER_FETCH_OPTS,
   });
 
   const data = (await res.json()) as TokenResponse & { error?: string; error_description?: string };
 
   // GitHub returns 200 even on errors
   if (data.error) {
-    console.error(`OAuth token exchange failed for ${provider}: ${data.error} - ${data.error_description ?? ""}`);
+    console.error(`OAuth token exchange failed for ${provider}: ${data.error}`);
     throw new Error("OAuth token exchange failed");
   }
 
@@ -204,12 +226,13 @@ async function fetchGitHubUser(
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "CloudTime/1.0",
   };
 
   const [userRes, emailsRes] = await Promise.all([
-    fetch("https://api.github.com/user", { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT) }),
-    fetch("https://api.github.com/user/emails", { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT) }),
+    fetch("https://api.github.com/user", { headers, ...PROVIDER_FETCH_OPTS }),
+    fetch("https://api.github.com/user/emails", { headers, ...PROVIDER_FETCH_OPTS }),
   ]);
 
   if (!userRes.ok) throw new Error(`GitHub /user failed: ${userRes.status}`);
@@ -275,9 +298,7 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
 
   // Fetch from Google
   lastJwksFetchAt = Date.now();
-  const res = await fetch("https://www.googleapis.com/oauth2/v3/certs", {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT),
-  });
+  const res = await fetch("https://www.googleapis.com/oauth2/v3/certs", PROVIDER_FETCH_OPTS);
   if (!res.ok) throw new Error(`Failed to fetch Google JWKS: ${res.status}`);
   const jwks = (await res.json()) as jose.JSONWebKeySet;
 
@@ -313,6 +334,7 @@ async function verifyGoogleJwt(
     ) {
       cachedJWKS = null;
       jwksCachedAt = 0;
+      lastJwksFetchAt = 0; // Allow immediate retry for legitimate key rotation
       await kv.delete("google:jwks");
       const freshJwks = await getGoogleJWKS(kv);
       const { payload } = await jose.jwtVerify(idToken, freshJwks, verifyOpts);
@@ -396,7 +418,7 @@ async function fetchDiscordUser(
       Authorization: `Bearer ${accessToken}`,
       "User-Agent": "CloudTime/1.0",
     },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    ...PROVIDER_FETCH_OPTS,
   });
 
   if (!res.ok) throw new Error(`Discord /users/@me failed: ${res.status}`);
@@ -411,7 +433,7 @@ async function fetchDiscordUser(
 
   return {
     providerUserId: user.id,
-    providerUsername: user.global_name ?? user.username,
+    providerUsername: user.global_name || user.username,
     providerEmail: user.verified ? user.email : null,
     emailVerified: user.verified && user.email !== null,
     accessToken,
