@@ -170,7 +170,12 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
     stmts.push(c.env.DB.prepare(UPSERT_PROJECT_SQL).bind(userId, project, times.min, times.max));
   }
 
-  const results = await c.env.DB.batch(stmts);
+  let results: D1Result[];
+  try {
+    results = await c.env.DB.batch(stmts);
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 
   const responses: [Heartbeat, number][] = inputs.map((input, i) => {
     const heartbeat: Heartbeat = {
