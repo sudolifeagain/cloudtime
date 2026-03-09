@@ -35,6 +35,9 @@ const DIMENSION_TO_KEY: Record<Dimension, string> = {
   machine: "machines",
 };
 
+const MAX_BRANCHES = 25;
+const MAX_DAYS = 366;
+
 const summaries = new Hono<AuthEnv>();
 
 summaries.use("/summaries", authMiddleware);
@@ -51,6 +54,12 @@ summaries.get("/summaries", async (c) => {
     return c.json({ error: "Valid range or start+end dates are required" }, 400);
   }
 
+  // Guard against unbounded date ranges
+  const daySpan = (new Date(resolved.end + "T00:00:00Z").getTime() - new Date(resolved.start + "T00:00:00Z").getTime()) / 86400000 + 1;
+  if (daySpan > MAX_DAYS) {
+    return c.json({ error: `Date range must not exceed ${MAX_DAYS} days` }, 400);
+  }
+
   const userId = c.get("userId");
 
   // Build query with optional filters
@@ -64,6 +73,9 @@ summaries.get("/summaries", async (c) => {
 
   if (branchesParam) {
     const branchList = branchesParam.split(",").map((b) => b.trim()).filter(Boolean);
+    if (branchList.length > MAX_BRANCHES) {
+      return c.json({ error: `Maximum ${MAX_BRANCHES} branches allowed` }, 400);
+    }
     if (branchList.length > 0) {
       sql += ` AND branch IN (${branchList.map(() => "?").join(", ")})`;
       params.push(...branchList);
