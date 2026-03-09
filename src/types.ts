@@ -19,6 +19,12 @@ export interface Env {
   INSTANCE_MODE?: string;
 }
 
+// Hono environment with authenticated user context
+export type AuthEnv = {
+  Bindings: Env;
+  Variables: { userId: string };
+};
+
 // NOTE: For API request/response types, use generated types from
 // src/types/generated.ts (produced by `npm run generate`).
 // This file is only for Cloudflare bindings and other manual types.

@@ -1,14 +1,15 @@
 import { Hono } from "hono";
-import type { Env } from "../types";
+import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
 import { authMiddleware } from "../middleware/auth";
 
 type HeartbeatInput = components["schemas"]["HeartbeatInput"];
 type Heartbeat = components["schemas"]["Heartbeat"];
 
-type AuthEnv = {
-  Bindings: Env;
-  Variables: { userId: string };
+// D1 row representation (is_write is integer, created_at may be non-ISO)
+type HeartbeatRow = Omit<Heartbeat, "is_write" | "created_at"> & {
+  is_write: number;
+  created_at: string;
 };
 
 const VALID_TYPES = new Set(["file", "app", "domain"]);
@@ -38,13 +39,13 @@ heartbeats.get("/heartbeats", async (c) => {
 
   const userId = c.get("userId");
 
-  const rows = await c.env.DB.prepare(
+  const { results } = await c.env.DB.prepare(
     "SELECT * FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? ORDER BY time ASC"
   )
     .bind(userId, dayStart, dayEnd)
-    .all();
+    .all<HeartbeatRow>();
 
-  const data: Heartbeat[] = (rows.results ?? []).map(rowToHeartbeat);
+  const data: Heartbeat[] = results.map(rowToHeartbeat);
 
   return c.json({ data });
 });
@@ -249,35 +250,15 @@ async function insertHeartbeat(
   };
 }
 
-function rowToHeartbeat(row: Record<string, unknown>): Heartbeat {
+function rowToHeartbeat(row: HeartbeatRow): Heartbeat {
   // Normalize created_at to ISO 8601 (handle legacy D1 datetime('now') format)
-  let createdAt = row.created_at as string;
-  if (createdAt && !createdAt.includes("T")) {
-    createdAt = createdAt.replace(" ", "T") + "Z";
-  }
+  const createdAt = row.created_at.includes("T")
+    ? row.created_at
+    : row.created_at.replace(" ", "T") + "Z";
 
   return {
-    id: row.id as string,
-    user_id: row.user_id as string,
-    entity: row.entity as string,
-    type: row.type as Heartbeat["type"],
-    time: row.time as number,
-    category: (row.category as Heartbeat["category"]) ?? undefined,
-    project: (row.project as string) ?? undefined,
-    project_root_count: (row.project_root_count as number) ?? undefined,
-    branch: (row.branch as string) ?? undefined,
-    language: (row.language as string) ?? undefined,
-    dependencies: (row.dependencies as string) ?? undefined,
-    lines: (row.lines as number) ?? undefined,
-    ai_line_changes: (row.ai_line_changes as number) ?? undefined,
-    human_line_changes: (row.human_line_changes as number) ?? undefined,
-    lineno: (row.lineno as number) ?? undefined,
-    cursorpos: (row.cursorpos as number) ?? undefined,
+    ...row,
     is_write: row.is_write === 1,
-    editor: (row.editor as string) ?? undefined,
-    operating_system: (row.operating_system as string) ?? undefined,
-    machine: (row.machine as string) ?? undefined,
-    user_agent_id: (row.user_agent_id as string) ?? undefined,
     created_at: createdAt,
   };
 }

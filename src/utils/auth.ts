@@ -9,8 +9,14 @@ export function getApiKey(req: HonoRequest): string | null {
   const authHeader = req.header("Authorization");
 
   if (authHeader?.startsWith("Basic ")) {
-    const decoded = atob(authHeader.slice(6));
-    return decoded.replace(/:$/, ""); // WakaTime sends "api_key:" as basic auth
+    try {
+      const decoded = atob(authHeader.slice(6));
+      // WakaTime sends "api_key:" as basic auth
+      const colonIdx = decoded.indexOf(":");
+      return colonIdx >= 0 ? decoded.slice(0, colonIdx) : decoded;
+    } catch {
+      return null;
+    }
   }
 
   if (authHeader?.startsWith("Bearer ")) {

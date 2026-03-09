@@ -1,11 +1,6 @@
 import { createMiddleware } from "hono/factory";
-import type { Env } from "../types";
+import type { AuthEnv } from "../types";
 import { getApiKey, getUserId } from "../utils/auth";
-
-type AuthEnv = {
-  Bindings: Env;
-  Variables: { userId: string };
-};
 
 export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
   const apiKey = getApiKey(c.req);
