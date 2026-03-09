@@ -31,5 +31,4 @@ INSTANCE_MODE = "single"
 # GOOGLE_CLIENT_SECRET
 # DISCORD_CLIENT_ID
 # DISCORD_CLIENT_SECRET
-# SESSION_SECRET          - HMAC key for session cookie signing
-# ENCRYPTION_KEY          - AES-256 key for encrypting OAuth tokens at rest
+# ENCRYPTION_KEY          - AES-256 key (64 hex chars) for encrypting OAuth tokens at rest

@@ -148,6 +148,5 @@ GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
 DISCORD_CLIENT_ID
 DISCORD_CLIENT_SECRET
-SESSION_SECRET          # 32+ bytes hex, used for HMAC of state params
-ENCRYPTION_KEY          # 32 bytes hex, AES-256 key for token encryption
+ENCRYPTION_KEY          # 64 hex chars (256 bits), AES-256 key for token encryption
 ```
