@@ -252,11 +252,18 @@ async function fetchGitHubUser(
   if (!emailsRes.ok) throw new Error(`GitHub /user/emails failed: ${emailsRes.status}`);
 
   const user = (await userRes.json()) as { id: number; login: string };
+  if (!user.id || !user.login) {
+    throw new Error("GitHub API returned unexpected user data");
+  }
+
   const emails = (await emailsRes.json()) as Array<{
     email: string;
     primary: boolean;
     verified: boolean;
   }>;
+  if (!Array.isArray(emails)) {
+    throw new Error("GitHub API returned unexpected emails data");
+  }
 
   const primaryEmail = emails.find((e) => e.primary && e.verified);
 
@@ -326,6 +333,9 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
       cachedJWKS = jose.createLocalJWKSet(jwks);
       jwksCachedAt = Date.now();
       return cachedJWKS;
+    } catch (err) {
+      lastJwksFetchAt = 0; // Reset cooldown on failure so next request can retry
+      throw err;
     } finally {
       jwksInflight = null;
     }
@@ -457,6 +467,9 @@ async function fetchDiscordUser(
     email: string | null;
     verified: boolean;
   };
+  if (!user.id || !user.username) {
+    throw new Error("Discord API returned unexpected user data");
+  }
 
   return {
     providerUserId: user.id,
