@@ -63,24 +63,29 @@ meta.get("/stats/:range", async (c) => {
 
   try {
     // Aggregate in SQL — only aggregated rows come back, not raw data
-    type TotalRow = { total_seconds: number };
+    // GROUP BY 1 ensures NULL and literal 'Unknown' are merged into one group
+    type TotalRow = { total_seconds: number; min_date: string | null };
     type DimRow = { name: string; total_seconds: number };
 
     const where = "WHERE date >= ? AND date <= ?";
     const binds = [resolved.start, resolved.end];
 
     const [totalResult, catResult, langResult, editorResult, osResult] = await c.env.DB.batch([
-      c.env.DB.prepare(`SELECT COALESCE(SUM(total_seconds), 0) AS total_seconds FROM summaries ${where}`).bind(...binds),
-      c.env.DB.prepare(`SELECT COALESCE(category, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY category ORDER BY total_seconds DESC`).bind(...binds),
-      c.env.DB.prepare(`SELECT COALESCE(language, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY language ORDER BY total_seconds DESC`).bind(...binds),
-      c.env.DB.prepare(`SELECT COALESCE(editor, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY editor ORDER BY total_seconds DESC`).bind(...binds),
-      c.env.DB.prepare(`SELECT COALESCE(operating_system, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY operating_system ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(SUM(total_seconds), 0) AS total_seconds, MIN(date) AS min_date FROM summaries ${where}`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(category, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(language, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(editor, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(operating_system, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
     ]);
 
-    const totalSeconds = (totalResult.results[0] as TotalRow)?.total_seconds ?? 0;
+    const totalRow = totalResult.results[0] as TotalRow | undefined;
+    const totalSeconds = totalRow?.total_seconds ?? 0;
 
-    // Days in range
-    const startMs = new Date(resolved.start + "T00:00:00Z").getTime();
+    // Days in range — for all_time, use actual first data date instead of 1970-01-01
+    const rangeStart = totalRow?.min_date && rangeParam === "all_time"
+      ? totalRow.min_date
+      : resolved.start;
+    const startMs = new Date(rangeStart + "T00:00:00Z").getTime();
     const endMs = new Date(resolved.end + "T00:00:00Z").getTime();
     const daysInRange = Math.max(1, Math.floor((endMs - startMs) / 86400000) + 1);
     const dailyAverage = totalSeconds / daysInRange;
