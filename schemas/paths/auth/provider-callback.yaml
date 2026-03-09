@@ -50,11 +50,4 @@ get:
                   pending_link:
                     $ref: ../../components/schemas/PendingLink.yaml
     '400':
-      description: Invalid OAuth callback (bad code/state)
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              error:
-                type: string
+      $ref: ../../components/responses/BadRequest.yaml
