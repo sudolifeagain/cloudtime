@@ -4,6 +4,7 @@
 import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { Env } from "../types";
+import { normalizeDateTime, toSqliteDateTime } from "./user";
 
 // ─── Constants ───────────────────────────────────────────
 
@@ -29,11 +30,8 @@ export async function createSession(
   request: Request,
 ): Promise<{ sessionId: string; expiresAt: string }> {
   const sessionId = crypto.randomUUID();
-  const now = new Date().toISOString().replace("T", " ").replace("Z", "");
-  const expiresAt = new Date(Date.now() + ABSOLUTE_EXPIRY * 1000)
-    .toISOString()
-    .replace("T", " ")
-    .replace("Z", "");
+  const now = toSqliteDateTime();
+  const expiresAt = toSqliteDateTime(new Date(Date.now() + ABSOLUTE_EXPIRY * 1000));
 
   const ip = request.headers.get("CF-Connecting-IP") ?? null;
   const cf = (request as Request & { cf?: { country?: string; city?: string } }).cf;
@@ -61,48 +59,48 @@ export async function validateSession(
   const cacheKey = `session:${tokenHash}`;
   const cached = await kv.get(cacheKey);
   if (cached) {
-    let data: SessionData;
+    let data: SessionData | null = null;
     try {
       data = JSON.parse(cached) as SessionData;
     } catch {
+      // Corrupted cache entry — delete and fall through to D1 lookup
       await kv.delete(cacheKey);
-      return null;
-    }
-    const now = new Date();
-    const expiresAt = new Date(data.expiresAt.replace(" ", "T") + "Z");
-    const lastActive = new Date(data.lastActiveAt.replace(" ", "T") + "Z");
-
-    // Check absolute expiry
-    if (now > expiresAt) {
-      await Promise.all([
-        kv.delete(cacheKey),
-        db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run(),
-      ]);
-      return null;
-    }
-    // Check idle timeout
-    if ((now.getTime() - lastActive.getTime()) / 1000 > IDLE_TIMEOUT) {
-      await Promise.all([
-        kv.delete(cacheKey),
-        db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run(),
-      ]);
-      return null;
     }
 
-    // Throttled activity update
-    if ((now.getTime() - lastActive.getTime()) / 1000 > ACTIVITY_THROTTLE) {
-      const nowStr = now.toISOString().replace("T", " ").replace("Z", "");
-      data.lastActiveAt = nowStr;
-      await Promise.all([
-        db
+    if (data) {
+      const now = new Date();
+      const expiresAt = new Date(normalizeDateTime(data.expiresAt));
+      const lastActive = new Date(normalizeDateTime(data.lastActiveAt));
+
+      // Check absolute expiry
+      if (now > expiresAt) {
+        await Promise.all([
+          kv.delete(cacheKey),
+          db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run(),
+        ]);
+        return null;
+      }
+      // Check idle timeout
+      if ((now.getTime() - lastActive.getTime()) / 1000 > IDLE_TIMEOUT) {
+        await Promise.all([
+          kv.delete(cacheKey),
+          db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run(),
+        ]);
+        return null;
+      }
+
+      // Throttled activity update (D1 only to reduce KV write volume)
+      if ((now.getTime() - lastActive.getTime()) / 1000 > ACTIVITY_THROTTLE) {
+        const nowStr = toSqliteDateTime(now);
+        data.lastActiveAt = nowStr;
+        await db
           .prepare("UPDATE sessions SET last_active_at = ? WHERE token_hash = ?")
           .bind(nowStr, tokenHash)
-          .run(),
-        kv.put(cacheKey, JSON.stringify(data), { expirationTtl: SESSION_CACHE_TTL }),
-      ]);
-    }
+          .run();
+      }
 
-    return data;
+      return data;
+    }
   }
 
   // Fallback to D1
@@ -116,8 +114,8 @@ export async function validateSession(
   if (!row) return null;
 
   const now = new Date();
-  const expiresAt = new Date(row.expires_at.replace(" ", "T") + "Z");
-  const lastActive = new Date(row.last_active_at.replace(" ", "T") + "Z");
+  const expiresAt = new Date(normalizeDateTime(row.expires_at));
+  const lastActive = new Date(normalizeDateTime(row.last_active_at));
 
   if (now > expiresAt) {
     await db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run();
@@ -138,7 +136,7 @@ export async function validateSession(
 
   // Throttled activity update
   if ((now.getTime() - lastActive.getTime()) / 1000 > ACTIVITY_THROTTLE) {
-    const nowStr = now.toISOString().replace("T", " ").replace("Z", "");
+    const nowStr = toSqliteDateTime(now);
     data.lastActiveAt = nowStr;
     await db
       .prepare("UPDATE sessions SET last_active_at = ? WHERE token_hash = ?")
@@ -256,6 +254,11 @@ export async function storeOAuthState(
   await kv.put(`oauth:state:${state}`, JSON.stringify(data), { expirationTtl: STATE_TTL });
 }
 
+/**
+ * Consume OAuth state (best-effort one-time use).
+ * KV get+delete is not atomic due to eventual consistency, so replay
+ * prevention is best-effort. PKCE + nonce provide additional protection.
+ */
 export async function consumeOAuthState(
   kv: KVNamespace,
   state: string,
