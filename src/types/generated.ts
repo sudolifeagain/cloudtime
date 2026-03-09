@@ -11,7 +11,31 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Initiate OAuth flow with a provider */
+        /**
+         * Initiate OAuth flow with a provider
+         * @description Redirects the user to the OAuth provider's authorization page.
+         *
+         *     **Security measures applied by the server:**
+         *     - Generates a cryptographically random `state` parameter (32 bytes, base64url).
+         *       Stored server-side (KV with 10-minute TTL) and set in an HttpOnly cookie as backup.
+         *       Validated on callback to prevent CSRF.
+         *     - Generates a PKCE `code_verifier` (32 bytes, base64url) and derives `code_challenge`
+         *       using S256 method. The `code_verifier` is stored server-side; only the `code_challenge`
+         *       is sent to the provider. Prevents authorization code interception attacks.
+         *     - For Google: also generates a cryptographic `nonce` (32 bytes, base64url) included in
+         *       the authorization request and validated against the `id_token` on callback to prevent
+         *       token replay attacks.
+         *
+         *     **Provider-specific authorization URLs:**
+         *     - GitHub: `https://github.com/login/oauth/authorize` (GitHub App user authorization)
+         *     - Google: `https://accounts.google.com/o/oauth2/v2/auth` (OpenID Connect)
+         *     - Discord: `https://discord.com/oauth2/authorize`
+         *
+         *     **Provider-specific scopes (minimum required):**
+         *     - GitHub App: "Email addresses: Read-only" permission (set at app registration, not per-request)
+         *     - Google: `openid email profile`
+         *     - Discord: `identify email`
+         */
         get: operations["oauthRedirect"];
         put?: never;
         post?: never;
@@ -28,7 +52,41 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** OAuth callback - creates or authenticates user */
+        /**
+         * OAuth callback - creates or authenticates user
+         * @description Handles the OAuth provider's redirect after user authorization.
+         *
+         *     **Security checks performed:**
+         *     1. Validate `state` parameter against server-side store (constant-time comparison).
+         *        Reject if missing, expired (>10 min), or mismatched. Invalidate after use (one-time).
+         *     2. Exchange authorization `code` for tokens at the provider's token endpoint using
+         *        the stored `code_verifier` (PKCE) and `client_secret`.
+         *     3. **Provider-specific identity resolution:**
+         *        - GitHub: Call `GET /user` for profile + `GET /user/emails` for verified primary email.
+         *          Use numeric `id` as immutable identifier (usernames can change).
+         *        - Google: Validate the `id_token` JWT (signature via JWKS, iss, aud, exp, nonce).
+         *          Use `sub` claim as immutable identifier. Check `email_verified === true`.
+         *        - Discord: Call `GET /users/@me` for profile. Use snowflake `id` as immutable identifier.
+         *          Check `verified === true` before trusting email.
+         *     4. **Email verification gate:** Only trust provider emails where the provider confirms
+         *        verification. Unverified emails are never used for account matching (prevents
+         *        account takeover via unverified email registration on the provider).
+         *     5. **Account matching:** Match by `(provider, provider_user_id)`. If no match but a
+         *        verified email matches an existing user, create a `PendingLink` for manual approval
+         *        (never auto-merge by email).
+         *     6. **Session fixation prevention:** Always create a new session after successful
+         *        authentication. Invalidate any pre-authentication session. Never reuse session IDs.
+         *
+         *     **Token endpoint Content-Type:** Discord requires `application/x-www-form-urlencoded`
+         *     (not JSON). GitHub and Google accept both but form-urlencoded is standard.
+         *
+         *     **Response headers for defense in depth:**
+         *     - `Referrer-Policy: no-referrer` — prevents authorization code leakage via Referer header.
+         *     - `Cache-Control: no-store` — prevents caching of authentication responses.
+         *
+         *     On first-time user creation, the response includes `api_key` (shown only once).
+         *     The API key is stored as a SHA-256 hash in the database; the plaintext is not recoverable.
+         */
         get: operations["oauthCallback"];
         put?: never;
         post?: never;
@@ -47,7 +105,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Link additional OAuth provider to current account */
+        /**
+         * Link additional OAuth provider to current account
+         * @description Initiates an OAuth flow to link a new provider to the authenticated user's account.
+         *     The user must already be logged in (session cookie required).
+         *
+         *     Same PKCE and state security measures as the initial OAuth flow (/auth/{provider}).
+         *     On callback, the provider is linked to the current session's user (identity is
+         *     already established), which is safer than email-based auto-linking.
+         */
         post: operations["oauthLinkStart"];
         delete?: never;
         options?: never;
@@ -62,7 +128,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** OAuth link callback - links provider to current account */
+        /**
+         * OAuth link callback - links provider to current account
+         * @description Handles the OAuth callback for account linking. The user must be authenticated
+         *     (session cookie sent via SameSite=Lax on the cross-site redirect).
+         *
+         *     **Security checks:**
+         *     - Validates state and PKCE code_verifier (same as login callback).
+         *     - Verifies the provider's email is marked as verified before storing.
+         *     - If the provider account is already linked to a different user, returns 409 Conflict.
+         *
+         *     Uses `Referrer-Policy: no-referrer` and `Cache-Control: no-store` headers.
+         */
         get: operations["oauthLinkCallback"];
         put?: never;
         post?: never;
@@ -81,7 +158,16 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Approve merging an OAuth account into existing user */
+        /**
+         * Approve merging an OAuth account into existing user
+         * @description Approves a pending account link created when an OAuth login's verified email
+         *     matched an existing account. The user must be authenticated as the owner of
+         *     the existing account.
+         *
+         *     Pending links expire after 1 hour (410 Gone if expired).
+         *     On approval, the OAuth provider is linked to the existing account and the
+         *     pending link record is deleted.
+         */
         post: operations["approvePendingLink"];
         delete?: never;
         options?: never;
@@ -130,11 +216,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get current session info */
+        /**
+         * Get current session info
+         * @description Returns the current user and linked OAuth providers for the authenticated session.
+         *
+         *     **Session lifecycle:**
+         *     - Sliding expiration: 24 hours of inactivity invalidates the session.
+         *       `last_active_at` is updated at most once per 5 minutes to reduce D1 writes.
+         *     - Absolute expiration: sessions expire 7 days after creation regardless of activity.
+         *     - Sessions are stored as SHA-256 hashes in D1; the raw token never leaves the client cookie.
+         */
         get: operations["getSession"];
         put?: never;
         post?: never;
-        /** Logout - invalidate current session */
+        /**
+         * Logout - invalidate current session
+         * @description Deletes the session from the database and clears the session cookie.
+         *     Both steps are required: cookie deletion alone leaves a valid session in the DB,
+         *     and DB deletion alone leaves a cookie traveling on the wire.
+         */
         delete: operations["logout"];
         options?: never;
         head?: never;
@@ -150,9 +250,76 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Regenerate API key */
+        /**
+         * Regenerate API key
+         * @description Generates a new API key, immediately invalidating the old one.
+         *     The new key is the only value returned; it cannot be retrieved again.
+         *
+         *     **Security measures:**
+         *     - New key: 32 bytes of cryptographic randomness, base64url-encoded, prefixed with `ck_`.
+         *       The `ck_` prefix enables secret scanning in Git repositories.
+         *     - Storage: only the SHA-256 hash of the key is stored in the database.
+         *     - KV cache: the old key's cache entry is explicitly deleted (not relying on TTL expiry).
+         *     - All other active sessions for this user are invalidated (forces re-authentication
+         *       on other devices to prevent use of a potentially compromised key).
+         *
+         *     **Response includes `Cache-Control: no-store`** to prevent the key from being cached.
+         */
         post: operations["regenerateApiKey"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active sessions
+         * @description Returns all active sessions for the current user, including the current session
+         *     (marked with `is_current: true`). Never exposes `token_hash` in the response.
+         *
+         *     Useful for "manage active sessions" UI to let users see and revoke
+         *     sessions on other devices.
+         */
+        get: operations["listSessions"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke all other sessions
+         * @description Invalidates all sessions for the current user except the one making the request.
+         *     Useful as a "sign out everywhere else" feature.
+         *
+         *     Also triggered automatically on API key regeneration and credential changes.
+         */
+        delete: operations["revokeAllOtherSessions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke a specific session
+         * @description Invalidates a specific session by ID. The session must belong to the authenticated user.
+         *     If the user revokes their current session, the session cookie is also cleared
+         *     (effectively a logout).
+         */
+        delete: operations["revokeSession"];
         options?: never;
         head?: never;
         patch?: never;
@@ -792,12 +959,37 @@ export interface components {
         };
         LinkedProvider: {
             provider: components["schemas"]["OAuthProvider"];
+            /**
+             * @description Immutable provider-specific user identifier.
+             *     GitHub: numeric id, Google: sub claim, Discord: snowflake id.
+             *     Never use email or username as identifier (both are mutable).
+             */
             provider_user_id: string;
             provider_username: string;
             /** Format: email */
             provider_email?: string;
+            /** @description Whether the provider confirmed the email address is verified */
+            email_verified: boolean;
             /** Format: date-time */
             created_at: string;
+        };
+        Session: {
+            id: string;
+            /** @description IP address at session creation */
+            ip?: string;
+            /** @description User-Agent header at session creation */
+            user_agent?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_active_at: string;
+            /**
+             * Format: date-time
+             * @description Absolute expiration (7 days from creation)
+             */
+            expires_at?: string;
+            /** @description True if this is the session making the request */
+            is_current: boolean;
         };
         Project: {
             id: string;
@@ -1301,8 +1493,17 @@ export interface operations {
             /** @description Redirect to OAuth provider */
             302: {
                 headers: {
+                    /**
+                     * @description OAuth authorization URL with query parameters: client_id, redirect_uri,
+                     *     response_type=code, state, code_challenge, code_challenge_method=S256,
+                     *     scope (provider-specific), and nonce (Google only).
+                     */
                     Location?: string;
-                    /** @description Contains an opaque value used to correlate the PKCE OAuth flow; short-lived HttpOnly cookie */
+                    /**
+                     * @description Short-lived HttpOnly cookie containing the `state` value for CSRF validation
+                     *     on callback. Attributes: HttpOnly, Secure, SameSite=Lax, Max-Age=600, Path=/.
+                     *     SameSite=Lax is required because the OAuth callback is a cross-site navigation.
+                     */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -1314,7 +1515,9 @@ export interface operations {
     oauthCallback: {
         parameters: {
             query: {
+                /** @description Authorization code from the OAuth provider (one-time use, max 10 min lifetime) */
                 code: string;
+                /** @description Anti-CSRF state parameter, must match the server-side stored value */
                 state: string;
             };
             header?: never;
@@ -1328,17 +1531,33 @@ export interface operations {
             /** @description Authentication successful */
             200: {
                 headers: {
-                    /** @description Session cookie (HttpOnly, Secure, SameSite=Strict) */
+                    /**
+                     * @description Session cookie. Attributes: HttpOnly, Secure, SameSite=Lax, Path=/, Max-Age=604800.
+                     *     Token is 32 bytes of cryptographic randomness (base64url-encoded).
+                     *     Only the SHA-256 hash is stored server-side.
+                     */
                     "Set-Cookie"?: string;
+                    /** @description Set to `no-referrer` to prevent code leakage */
+                    "Referrer-Policy"?: "no-referrer";
+                    /** @description Set to `no-store` to prevent caching */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
                         data: {
                             user: components["schemas"]["User"];
-                            /** @description API key for editor plugins (ck_...), only returned on first-time creation */
+                            /**
+                             * @description API key for editor plugins (ck_...). Only returned on first-time user creation.
+                             *     Stored as SHA-256 hash; this is the only time the plaintext is available.
+                             */
                             api_key?: string;
                             is_new_user?: boolean;
+                            /**
+                             * @description Present when the provider's verified email matches an existing account.
+                             *     The user must approve the link via /auth/link/approve/{pending_link_id}
+                             *     after authenticating with their existing account. Expires in 1 hour.
+                             */
                             pending_link?: components["schemas"]["PendingLink"];
                         };
                     };
@@ -1386,6 +1605,8 @@ export interface operations {
             /** @description Provider linked successfully */
             200: {
                 headers: {
+                    "Referrer-Policy"?: "no-referrer";
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1497,6 +1718,8 @@ export interface operations {
             /** @description Current session */
             200: {
                 headers: {
+                    /** @description Set to `no-store` to prevent caching of session data */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1523,7 +1746,7 @@ export interface operations {
             /** @description Session invalidated */
             204: {
                 headers: {
-                    /** @description Clear session cookie */
+                    /** @description Clear session cookie (Max-Age=0) */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
@@ -1544,17 +1767,87 @@ export interface operations {
             /** @description New API key generated */
             200: {
                 headers: {
+                    /** @description Set to `no-store` to prevent caching */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
                         data: {
+                            /**
+                             * @description New API key (ck_...). This is the only time the plaintext is available.
+                             *     Store it securely; it cannot be retrieved from the server.
+                             */
                             api_key: string;
                         };
                     };
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of active sessions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Session"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    revokeAllOtherSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All other sessions revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    revokeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     getCurrentUser: {
