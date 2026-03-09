@@ -26,6 +26,9 @@ post:
                 type: array
                 items:
                   type: array
+                  minItems: 2
+                  maxItems: 2
+                  items: false
                   prefixItems:
                     - $ref: ../../components/schemas/Heartbeat.yaml
                     - type: integer

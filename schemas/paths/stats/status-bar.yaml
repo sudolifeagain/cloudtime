@@ -4,8 +4,8 @@ get:
     - status_bar
   summary: Today's coding activity for IDE status bars
   description: >-
-    Cached version of summaries for today. Returns empty summary while cache
-    updates.
+    Cached version of summaries for today. Returns a summary with zero values
+    while cache is being populated.
   responses:
     '200':
       description: Today's status bar data

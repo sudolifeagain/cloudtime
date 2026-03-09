@@ -10,8 +10,8 @@ get:
       schema:
         type: string
         description: >-
-          last_7_days, last_30_days, last_6_months, last_year, all_time, or YYYY
-          / YYYY-MM
+          last_7_days, last_30_days, last_6_months, last_year, all_time, or
+          YYYY, YYYY-MM
     - name: timeout
       in: query
       schema:
