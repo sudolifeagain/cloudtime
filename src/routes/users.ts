@@ -144,13 +144,13 @@ function validateProfileInput(body: ProfileInput): string | null {
   }
   if (body.website !== undefined) {
     if (typeof body.website !== "string") return "website must be a string";
-    if (!body.website.startsWith("http://") && !body.website.startsWith("https://")) {
+    if (body.website !== "" && !body.website.startsWith("http://") && !body.website.startsWith("https://")) {
       return "website must start with http:// or https://";
     }
   }
   if (body.photo !== undefined) {
     if (typeof body.photo !== "string") return "photo must be a string";
-    if (!body.photo.startsWith("http://") && !body.photo.startsWith("https://")) {
+    if (body.photo !== "" && !body.photo.startsWith("http://") && !body.photo.startsWith("https://")) {
       return "photo must start with http:// or https://";
     }
   }
@@ -202,7 +202,7 @@ users.patch("/profile", async (c) => {
   }
 
   const updates: string[] = [];
-  const params: (string | number)[] = [];
+  const params: (string | number | null)[] = [];
 
   if (body.username !== undefined) {
     updates.push("username = ?");
@@ -242,11 +242,11 @@ users.patch("/profile", async (c) => {
   }
   if (body.website !== undefined) {
     updates.push("website = ?");
-    params.push(body.website);
+    params.push(body.website || null);
   }
   if (body.photo !== undefined) {
     updates.push("photo = ?");
-    params.push(body.photo);
+    params.push(body.photo || null);
   }
 
   if (updates.length === 0) {
@@ -257,23 +257,11 @@ users.patch("/profile", async (c) => {
   params.push(userId);
 
   try {
-    await c.env.DB.prepare(
-      `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
-    )
-      .bind(...params)
-      .run();
-  } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes("UNIQUE constraint failed: users.username")) {
-      return c.json({ error: "Username already taken" }, 409);
-    }
-    return c.json({ error: "Internal server error" }, 500);
-  }
-
-  // Re-query to return updated user
-  try {
     const [userRow, lastHB] = await Promise.all([
-      c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-        .bind(userId)
+      c.env.DB.prepare(
+        `UPDATE users SET ${updates.join(", ")} WHERE id = ? RETURNING ${USER_COLUMNS}`,
+      )
+        .bind(...params)
         .first<UserRow>(),
       c.env.DB.prepare(
         "SELECT project, time FROM heartbeats WHERE user_id = ? ORDER BY time DESC LIMIT 1",
@@ -287,7 +275,10 @@ users.patch("/profile", async (c) => {
     }
 
     return c.json({ data: rowToUser(userRow, lastHB) });
-  } catch {
+  } catch (e: unknown) {
+    if (e instanceof Error && e.message.includes("UNIQUE constraint failed: users.username")) {
+      return c.json({ error: "Username already taken" }, 409);
+    }
     return c.json({ error: "Internal server error" }, 500);
   }
 });
