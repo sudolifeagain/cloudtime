@@ -11,6 +11,9 @@ type AuthEnv = {
   Variables: { userId: string };
 };
 
+const VALID_TYPES = new Set(["file", "app", "domain"]);
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 const heartbeats = new Hono<AuthEnv>();
 
 heartbeats.use("/heartbeats", authMiddleware);
@@ -23,12 +26,17 @@ heartbeats.get("/heartbeats", async (c) => {
   if (!date) {
     return c.json({ error: "date query parameter is required" }, 400);
   }
+  if (!DATE_RE.test(date)) {
+    return c.json({ error: "date must be in YYYY-MM-DD format" }, 400);
+  }
+
+  const dayStart = new Date(`${date}T00:00:00Z`).getTime() / 1000;
+  if (!Number.isFinite(dayStart)) {
+    return c.json({ error: "Invalid date" }, 400);
+  }
+  const dayEnd = dayStart + 86400;
 
   const userId = c.get("userId");
-
-  // Convert date string to UNIX epoch range for the day
-  const dayStart = new Date(`${date}T00:00:00Z`).getTime() / 1000;
-  const dayEnd = dayStart + 86400;
 
   const rows = await c.env.DB.prepare(
     "SELECT * FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? ORDER BY time ASC"
@@ -44,9 +52,20 @@ heartbeats.get("/heartbeats", async (c) => {
 // POST /heartbeats (single)
 heartbeats.post("/heartbeats", async (c) => {
   const userId = c.get("userId");
-  const input = await c.req.json<HeartbeatInput>();
-  const machine = c.req.header("X-Machine-Name") ?? undefined;
 
+  let input: HeartbeatInput;
+  try {
+    input = await c.req.json<HeartbeatInput>();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
+
+  const err = validateHeartbeatInput(input);
+  if (err) {
+    return c.json({ error: err }, 400);
+  }
+
+  const machine = c.req.header("X-Machine-Name") ?? undefined;
   const heartbeat = await insertHeartbeat(c.env.DB, userId, input, machine);
 
   return c.json({ data: heartbeat }, 201);
@@ -55,7 +74,13 @@ heartbeats.post("/heartbeats", async (c) => {
 // POST /heartbeats.bulk
 heartbeats.post("/heartbeats.bulk", async (c) => {
   const userId = c.get("userId");
-  const inputs = await c.req.json<HeartbeatInput[]>();
+
+  let inputs: HeartbeatInput[];
+  try {
+    inputs = await c.req.json<HeartbeatInput[]>();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
 
   if (!Array.isArray(inputs) || inputs.length === 0) {
     return c.json({ error: "Request body must be a non-empty array" }, 400);
@@ -64,17 +89,24 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
     return c.json({ error: "Maximum 25 heartbeats per request" }, 400);
   }
 
+  for (let i = 0; i < inputs.length; i++) {
+    const err = validateHeartbeatInput(inputs[i]);
+    if (err) {
+      return c.json({ error: `heartbeats[${i}]: ${err}` }, 400);
+    }
+  }
+
   const machine = c.req.header("X-Machine-Name") ?? undefined;
   const now = new Date().toISOString();
 
   // Pre-generate IDs for all heartbeats
   const ids = inputs.map(() => crypto.randomUUID());
 
-  // Use D1 batch for bulk insert
+  // Use D1 batch for bulk insert — explicitly pass created_at as ISO 8601
   const stmts = inputs.map((input, i) =>
     c.env.DB.prepare(
-      `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       ids[i],
       userId,
@@ -96,23 +128,26 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
       input.editor ?? null,
       input.operating_system ?? null,
       machine ?? null,
-      null
+      null,
+      now
     )
   );
 
   const results = await c.env.DB.batch(stmts);
 
   const responses: [Heartbeat, number][] = inputs.map((input, i) => {
-    const heartbeat: Heartbeat = {
+    const success = results[i]?.success ?? false;
+    if (!success) {
+      return [{ id: ids[i], user_id: userId, entity: input.entity, type: input.type, time: input.time, created_at: now } as Heartbeat, 500];
+    }
+    return [{
       id: ids[i],
       user_id: userId,
       ...input,
       is_write: input.is_write ?? false,
       machine,
       created_at: now,
-    };
-    const success = results[i]?.success ?? false;
-    return [heartbeat, success ? 201 : 500];
+    }, 201];
   });
 
   return c.json({ responses }, 202);
@@ -121,24 +156,47 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
 // DELETE /heartbeats.bulk
 heartbeats.delete("/heartbeats.bulk", async (c) => {
   const userId = c.get("userId");
-  const body = await c.req.json<{ date: string; ids: string[] }>();
+
+  let body: { date: string; ids: string[] };
+  try {
+    body = await c.req.json<{ date: string; ids: string[] }>();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
 
   if (!body.date || !Array.isArray(body.ids) || body.ids.length === 0) {
     return c.json({ error: "date and ids are required" }, 400);
   }
+  if (!DATE_RE.test(body.date)) {
+    return c.json({ error: "date must be in YYYY-MM-DD format" }, 400);
+  }
 
-  // Delete only heartbeats belonging to this user with matching IDs
+  const dayStart = new Date(`${body.date}T00:00:00Z`).getTime() / 1000;
+  if (!Number.isFinite(dayStart)) {
+    return c.json({ error: "Invalid date" }, 400);
+  }
+  const dayEnd = dayStart + 86400;
+
+  // Scope deletion by user, IDs, and date range
   const placeholders = body.ids.map(() => "?").join(", ");
   await c.env.DB.prepare(
-    `DELETE FROM heartbeats WHERE user_id = ? AND id IN (${placeholders})`
+    `DELETE FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? AND id IN (${placeholders})`
   )
-    .bind(userId, ...body.ids)
+    .bind(userId, dayStart, dayEnd, ...body.ids)
     .run();
 
   return c.body(null, 204);
 });
 
 // --- Helpers ---
+
+function validateHeartbeatInput(input: HeartbeatInput): string | null {
+  if (!input || typeof input !== "object") return "must be an object";
+  if (typeof input.entity !== "string" || input.entity.length === 0) return "entity is required";
+  if (!VALID_TYPES.has(input.type)) return "type must be one of: file, app, domain";
+  if (typeof input.time !== "number" || !Number.isFinite(input.time)) return "time must be a valid number";
+  return null;
+}
 
 async function insertHeartbeat(
   db: D1Database,
@@ -149,10 +207,11 @@ async function insertHeartbeat(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
+  // Explicitly pass created_at as ISO 8601 instead of relying on D1's datetime('now')
   await db
     .prepare(
-      `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -175,7 +234,8 @@ async function insertHeartbeat(
       input.editor ?? null,
       input.operating_system ?? null,
       machine ?? null,
-      null
+      null,
+      now
     )
     .run();
 
@@ -190,6 +250,12 @@ async function insertHeartbeat(
 }
 
 function rowToHeartbeat(row: Record<string, unknown>): Heartbeat {
+  // Normalize created_at to ISO 8601 (handle legacy D1 datetime('now') format)
+  let createdAt = row.created_at as string;
+  if (createdAt && !createdAt.includes("T")) {
+    createdAt = createdAt.replace(" ", "T") + "Z";
+  }
+
   return {
     id: row.id as string,
     user_id: row.user_id as string,
@@ -212,7 +278,7 @@ function rowToHeartbeat(row: Record<string, unknown>): Heartbeat {
     operating_system: (row.operating_system as string) ?? undefined,
     machine: (row.machine as string) ?? undefined,
     user_agent_id: (row.user_agent_id as string) ?? undefined,
-    created_at: row.created_at as string,
+    created_at: createdAt,
   };
 }
 
