@@ -1,0 +1,9 @@
+type: object
+properties:
+  seconds:
+    type: number
+    format: double
+  text:
+    type: string
+  digital:
+    type: string

@@ -1,0 +1,48 @@
+type: object
+required:
+  - entity
+  - type
+  - time
+properties:
+  entity:
+    type: string
+    description: File path, app name, or domain
+  type:
+    type: string
+    enum:
+      - file
+      - app
+      - domain
+  time:
+    type: number
+    format: double
+    description: UNIX epoch timestamp
+  category:
+    $ref: ./Category.yaml
+  project:
+    type: string
+  project_root_count:
+    type: integer
+  branch:
+    type: string
+  language:
+    type: string
+  dependencies:
+    type: string
+    description: Comma-separated dependency names
+  lines:
+    type: integer
+  ai_line_changes:
+    type: integer
+  human_line_changes:
+    type: integer
+  lineno:
+    type: integer
+  cursorpos:
+    type: integer
+  is_write:
+    type: boolean
+  editor:
+    type: string
+  operating_system:
+    type: string
