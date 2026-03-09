@@ -48,6 +48,8 @@ patch:
             properties:
               data:
                 $ref: ../../components/schemas/User.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
     '409':
