@@ -32,7 +32,9 @@ const FETCH_TIMEOUT = 10_000;
 /** Shared fetch options for outbound provider requests (SSRF defense-in-depth). */
 const PROVIDER_FETCH_OPTS = {
   redirect: "error" as const,
-  signal: AbortSignal.timeout(FETCH_TIMEOUT),
+  get signal(): AbortSignal {
+    return AbortSignal.timeout(FETCH_TIMEOUT);
+  },
 };
 
 /**
@@ -41,8 +43,19 @@ const PROVIDER_FETCH_OPTS = {
  * constructs redirectUri from the request Host header (RFC 9700).
  */
 function validateRedirectUri(redirectUri: string, env: Env): void {
-  if (env.APP_URL && !redirectUri.startsWith(env.APP_URL)) {
-    throw new Error("redirect_uri does not match APP_URL");
+  if (!env.APP_URL) return;
+
+  let appOrigin: string;
+  let redirectOrigin: string;
+  try {
+    appOrigin = new URL(env.APP_URL).origin;
+    redirectOrigin = new URL(redirectUri).origin;
+  } catch {
+    throw new Error("Invalid redirect_uri");
+  }
+
+  if (redirectOrigin !== appOrigin) {
+    throw new Error("redirect_uri does not match APP_URL origin");
   }
 }
 
@@ -267,6 +280,7 @@ async function fetchGitHubUser(
 let cachedJWKS: jose.JWTVerifyGetKey | null = null;
 let jwksCachedAt = 0;
 let lastJwksFetchAt = 0;
+let jwksInflight: Promise<jose.JWTVerifyGetKey> | null = null;
 const JWKS_MEMORY_TTL = 60_000; // 1 min in-memory, KV has 10min TTL
 const JWKS_COOLDOWN = 10_000; // Min interval between Google JWKS fetches
 
@@ -291,22 +305,33 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
     }
   }
 
+  // Share in-flight fetch across concurrent callers
+  if (jwksInflight) return jwksInflight;
+
   // Cooldown: prevent rapid refetches (e.g. attacker sending tokens with unknown kid)
   if (Date.now() - lastJwksFetchAt < JWKS_COOLDOWN) {
     throw new Error("Google JWKS fetch rate limited — try again shortly");
   }
 
-  // Fetch from Google
+  // Fetch from Google, sharing the promise with concurrent callers
   lastJwksFetchAt = Date.now();
-  const res = await fetch("https://www.googleapis.com/oauth2/v3/certs", PROVIDER_FETCH_OPTS);
-  if (!res.ok) throw new Error(`Failed to fetch Google JWKS: ${res.status}`);
-  const jwks = (await res.json()) as jose.JSONWebKeySet;
+  jwksInflight = (async () => {
+    try {
+      const res = await fetch("https://www.googleapis.com/oauth2/v3/certs", PROVIDER_FETCH_OPTS);
+      if (!res.ok) throw new Error(`Failed to fetch Google JWKS: ${res.status}`);
+      const jwks = (await res.json()) as jose.JSONWebKeySet;
 
-  // Cache in KV (10 min TTL)
-  await kv.put(kvKey, JSON.stringify(jwks), { expirationTtl: 600 });
-  cachedJWKS = jose.createLocalJWKSet(jwks);
-  jwksCachedAt = Date.now();
-  return cachedJWKS;
+      // Cache in KV (10 min TTL)
+      await kv.put(kvKey, JSON.stringify(jwks), { expirationTtl: 600 });
+      cachedJWKS = jose.createLocalJWKSet(jwks);
+      jwksCachedAt = Date.now();
+      return cachedJWKS;
+    } finally {
+      jwksInflight = null;
+    }
+  })();
+
+  return jwksInflight;
 }
 
 async function verifyGoogleJwt(
@@ -392,13 +417,15 @@ async function validateGoogleIdToken(
     throw new Error("Google id_token missing sub claim");
   }
 
-  const emailVerified =
-    payload.email_verified === true && typeof payload.email === "string";
+  const email = typeof payload.email === "string" ? payload.email : null;
+  const emailVerified = payload.email_verified === true && email !== null;
+  const providerUsername =
+    (typeof payload.name === "string" && payload.name) || email || payload.sub;
 
   return {
     providerUserId: payload.sub,
-    providerUsername: (payload.name as string) || (payload.email as string) || payload.sub,
-    providerEmail: emailVerified ? (payload.email as string) : null,
+    providerUsername,
+    providerEmail: emailVerified ? email : null,
     emailVerified,
     accessToken,
     refreshToken,
