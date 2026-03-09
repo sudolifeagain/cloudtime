@@ -15,6 +15,30 @@ type HeartbeatRow = Omit<Heartbeat, "is_write" | "created_at"> & {
 const VALID_TYPES = new Set(["file", "app", "domain"]);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+const INSERT_HEARTBEAT_SQL = `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+function bindHeartbeatParams(
+  stmt: D1PreparedStatement,
+  id: string,
+  userId: string,
+  input: HeartbeatInput,
+  machine: string | undefined,
+  now: string
+): D1PreparedStatement {
+  return stmt.bind(
+    id, userId, input.entity, input.type, input.time,
+    input.category ?? null, input.project ?? null, input.project_root_count ?? null,
+    input.branch ?? null, input.language ?? null, input.dependencies ?? null,
+    input.lines ?? null, input.ai_line_changes ?? null, input.human_line_changes ?? null,
+    input.lineno ?? null, input.cursorpos ?? null, input.is_write ? 1 : 0,
+    input.editor ?? null, input.operating_system ?? null,
+    machine ?? null,
+    null, // TODO: user_agent_id — resolve from User-Agent header to user_agents table
+    now
+  );
+}
+
 const heartbeats = new Hono<AuthEnv>();
 
 heartbeats.use("/heartbeats", authMiddleware);
@@ -31,6 +55,7 @@ heartbeats.get("/heartbeats", async (c) => {
     return c.json({ error: "date must be in YYYY-MM-DD format" }, 400);
   }
 
+  // TODO: Apply user's timezone setting (users.timezone) instead of UTC
   const dayStart = new Date(`${date}T00:00:00Z`).getTime() / 1000;
   if (!Number.isFinite(dayStart)) {
     return c.json({ error: "Invalid date" }, 400);
@@ -103,52 +128,24 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
   // Pre-generate IDs for all heartbeats
   const ids = inputs.map(() => crypto.randomUUID());
 
-  // Use D1 batch for bulk insert — explicitly pass created_at as ISO 8601
+  // Use D1 batch for bulk insert
   const stmts = inputs.map((input, i) =>
-    c.env.DB.prepare(
-      `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      ids[i],
-      userId,
-      input.entity,
-      input.type,
-      input.time,
-      input.category ?? null,
-      input.project ?? null,
-      input.project_root_count ?? null,
-      input.branch ?? null,
-      input.language ?? null,
-      input.dependencies ?? null,
-      input.lines ?? null,
-      input.ai_line_changes ?? null,
-      input.human_line_changes ?? null,
-      input.lineno ?? null,
-      input.cursorpos ?? null,
-      input.is_write ? 1 : 0,
-      input.editor ?? null,
-      input.operating_system ?? null,
-      machine ?? null,
-      null,
-      now
-    )
+    bindHeartbeatParams(c.env.DB.prepare(INSERT_HEARTBEAT_SQL), ids[i], userId, input, machine, now)
   );
 
   const results = await c.env.DB.batch(stmts);
 
   const responses: [Heartbeat, number][] = inputs.map((input, i) => {
-    const success = results[i]?.success ?? false;
-    if (!success) {
-      return [{ id: ids[i], user_id: userId, entity: input.entity, type: input.type, time: input.time, created_at: now } as Heartbeat, 500];
-    }
-    return [{
+    const heartbeat: Heartbeat = {
       id: ids[i],
       user_id: userId,
       ...input,
       is_write: input.is_write ?? false,
       machine,
       created_at: now,
-    }, 201];
+    };
+    const success = results[i]?.success ?? false;
+    return [heartbeat, success ? 201 : 500];
   });
 
   return c.json({ responses }, 202);
@@ -167,6 +164,14 @@ heartbeats.delete("/heartbeats.bulk", async (c) => {
 
   if (!body.date || !Array.isArray(body.ids) || body.ids.length === 0) {
     return c.json({ error: "date and ids are required" }, 400);
+  }
+  if (body.ids.length > 100) {
+    return c.json({ error: "Maximum 100 IDs per request" }, 400);
+  }
+  for (const id of body.ids) {
+    if (typeof id !== "string" || id.length === 0) {
+      return c.json({ error: "ids must be an array of non-empty strings" }, 400);
+    }
   }
   if (!DATE_RE.test(body.date)) {
     return c.json({ error: "date must be in YYYY-MM-DD format" }, 400);
@@ -208,37 +213,7 @@ async function insertHeartbeat(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  // Explicitly pass created_at as ISO 8601 instead of relying on D1's datetime('now')
-  await db
-    .prepare(
-      `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .bind(
-      id,
-      userId,
-      input.entity,
-      input.type,
-      input.time,
-      input.category ?? null,
-      input.project ?? null,
-      input.project_root_count ?? null,
-      input.branch ?? null,
-      input.language ?? null,
-      input.dependencies ?? null,
-      input.lines ?? null,
-      input.ai_line_changes ?? null,
-      input.human_line_changes ?? null,
-      input.lineno ?? null,
-      input.cursorpos ?? null,
-      input.is_write ? 1 : 0,
-      input.editor ?? null,
-      input.operating_system ?? null,
-      machine ?? null,
-      null,
-      now
-    )
-    .run();
+  await bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, now).run();
 
   return {
     id,
