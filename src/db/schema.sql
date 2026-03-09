@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE,
   ip TEXT,
+  country TEXT,
+  city TEXT,
   user_agent TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT NOT NULL,
