@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Env } from "./types";
+import heartbeats from "./routes/heartbeats";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -8,6 +9,9 @@ app.use("/*", cors());
 
 // Health check
 app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
+
+// Heartbeat routes (mounted at /users/current, sub-app defines /heartbeats and /heartbeats.bulk)
+app.route("/api/v1/users/current", heartbeats);
 
 // Cron trigger handler for periodic aggregation
 export default {

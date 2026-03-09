@@ -1,12 +1,12 @@
-import type { Context } from "hono";
+import type { HonoRequest } from "hono";
 import type { Env } from "../types";
 
 /**
  * Extract API key from request (WakaTime-compatible auth)
  * Supports: Basic Auth (base64 encoded api_key), Bearer token, query param
  */
-export async function getApiKey(c: Context<{ Bindings: Env }>): Promise<string | null> {
-  const authHeader = c.req.header("Authorization");
+export function getApiKey(req: HonoRequest): string | null {
+  const authHeader = req.header("Authorization");
 
   if (authHeader?.startsWith("Basic ")) {
     const decoded = atob(authHeader.slice(6));
@@ -17,7 +17,7 @@ export async function getApiKey(c: Context<{ Bindings: Env }>): Promise<string |
     return authHeader.slice(7);
   }
 
-  return c.req.query("api_key") ?? null;
+  return req.query("api_key") ?? null;
 }
 
 /**
