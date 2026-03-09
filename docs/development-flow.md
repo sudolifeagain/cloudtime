@@ -6,7 +6,7 @@ CloudTime adopts **Spec Driven Development (SDD)** as its core methodology. The 
 
 ## Why SDD?
 
-- **WakaTime API compatibility** - We're implementing a known, documented API. The spec captures the exact contract we must fulfill.
+- **WakaTime-compatible API** - We're implementing a known, documented API. The spec captures the exact contract we must fulfill.
 - **Spec before code** - No implementation until the spec is reviewed and accepted. This catches design mistakes early.
 - **Type safety** - TypeScript types are generated from the spec, eliminating drift between contract and code.
 - **Automated validation** - Request/response validation is derived from the spec, not hand-coded.
@@ -49,7 +49,7 @@ CloudTime adopts **Spec Driven Development (SDD)** as its core methodology. The 
 │ 5. VALIDATE                                     │
 │    - npx tsc --noEmit (type check)               │
 │    - Test endpoint against spec contract         │
-│    - Verify WakaTime plugin compatibility        │
+│    - Verify WakaTime-compatible plugin behavior   │
 │    - Check error responses match spec            │
 ├─────────────────────────────────────────────────┤
 │ 6. PR & REVIEW                                  │
@@ -118,7 +118,7 @@ master (production — deploy target)
 3. **Breaking changes** - Removing fields, changing types, or altering required fields must be flagged.
 4. **Regenerate after changes** - Always run `npm run generate` after spec modifications.
 5. **Never hand-edit generated files** - `src/types/generated.ts` is machine-generated only.
-6. **WakaTime compatibility** - Spec must remain compatible with official WakaTime editor plugins.
+6. **WakaTime-compatible behavior** - Spec must remain compatible with existing WakaTime-compatible editor plugins.
 
 ## Anti-Patterns
 
@@ -180,7 +180,7 @@ Spec
     |
     +---> Contract Tests (does implementation match spec?)
     +---> Integration Tests (do endpoints work end-to-end?)
-    +---> Compatibility Tests (do WakaTime plugins work?)
+    +---> Compatibility Tests (do WakaTime-compatible plugins work?)
 ```
 
 ## Deployment Modes
