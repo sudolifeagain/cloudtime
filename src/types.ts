@@ -17,12 +17,21 @@ export interface Env {
 
   // Instance mode: "single" (default) or "multi" (future)
   INSTANCE_MODE?: string;
+
+  // Runtime environment (set via wrangler.toml [vars] or secret)
+  ENVIRONMENT?: string;
 }
 
 // Hono environment with authenticated user context
 export type AuthEnv = {
   Bindings: Env;
   Variables: { userId: string };
+};
+
+// Hono environment for session-authenticated routes
+export type SessionAuthEnv = {
+  Bindings: Env;
+  Variables: { userId: string; sessionId: string; sessionTokenHash: string };
 };
 
 // NOTE: For API request/response types, use generated types from

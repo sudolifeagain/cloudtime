@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Env } from "./types";
 import meta from "./routes/meta";
+import auth from "./routes/auth";
 import heartbeats from "./routes/heartbeats";
 import summaries from "./routes/summaries";
 import stats from "./routes/stats";
@@ -18,6 +19,9 @@ app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
 // Meta routes (public, no auth — /meta, /editors, /program_languages, /stats/:range)
 app.route("/api/v1", meta);
 
+// Auth routes (OAuth, sessions, providers — before other authenticated routes)
+app.route("/api/v1/auth", auth);
+
 // Heartbeat routes (mounted at /users/current, sub-app defines /heartbeats and /heartbeats.bulk)
 app.route("/api/v1/users/current", heartbeats);
 
@@ -30,10 +34,19 @@ app.route("/api/v1/users/current", stats);
 // User routes (mounted at /users/current, sub-app defines /, /profile, /projects)
 app.route("/api/v1/users/current", users);
 
-// Cron trigger handler for periodic aggregation
+// Cron trigger handler for periodic aggregation + session cleanup
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(aggregateHeartbeats(env.DB));
+    ctx.waitUntil(
+      Promise.all([
+        aggregateHeartbeats(env.DB),
+        // Cleanup expired sessions and pending links
+        env.DB.batch([
+          env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')"),
+          env.DB.prepare("DELETE FROM pending_links WHERE expires_at < datetime('now')"),
+        ]),
+      ]),
+    );
   },
 };
