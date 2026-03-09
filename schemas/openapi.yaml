@@ -76,6 +76,10 @@ paths:
     $ref: paths/auth/session.yaml
   /auth/api-key:
     $ref: paths/auth/api-key.yaml
+  /auth/sessions:
+    $ref: paths/auth/sessions.yaml
+  /auth/sessions/{session_id}:
+    $ref: paths/auth/sessions-id.yaml
 
   # --- users ---
   /users/current:
@@ -189,5 +193,8 @@ components:
       name: __session
       description: |
         HttpOnly session cookie for web UI.
-        Secure, SameSite=Strict, 24h TTL (sliding).
-        Random 32-byte token; stored as SHA-256 hash in DB.
+        Attributes: Secure, SameSite=Lax, Path=/, Max-Age=604800.
+        SameSite=Lax (not Strict) is required for OAuth callback redirects.
+        Random 32-byte token (base64url); stored as SHA-256 hash in DB.
+        Sliding expiration: 24h idle timeout. Absolute expiration: 7 days.
+        Expired sessions are purged by the cron job.

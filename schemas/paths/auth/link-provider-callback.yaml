@@ -3,6 +3,16 @@ get:
   tags:
     - auth
   summary: OAuth link callback - links provider to current account
+  description: |
+    Handles the OAuth callback for account linking. The user must be authenticated
+    (session cookie sent via SameSite=Lax on the cross-site redirect).
+
+    **Security checks:**
+    - Validates state and PKCE code_verifier (same as login callback).
+    - Verifies the provider's email is marked as verified before storing.
+    - If the provider account is already linked to a different user, returns 409 Conflict.
+
+    Uses `Referrer-Policy: no-referrer` and `Cache-Control: no-store` headers.
   parameters:
     - name: provider
       in: path
@@ -22,6 +32,17 @@ get:
   responses:
     '200':
       description: Provider linked successfully
+      headers:
+        Referrer-Policy:
+          schema:
+            type: string
+            enum:
+              - no-referrer
+        Cache-Control:
+          schema:
+            type: string
+            enum:
+              - no-store
       content:
         application/json:
           schema:

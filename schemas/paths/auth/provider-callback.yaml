@@ -3,6 +3,39 @@ get:
   tags:
     - auth
   summary: OAuth callback - creates or authenticates user
+  description: |
+    Handles the OAuth provider's redirect after user authorization.
+
+    **Security checks performed:**
+    1. Validate `state` parameter against server-side store (constant-time comparison).
+       Reject if missing, expired (>10 min), or mismatched. Invalidate after use (one-time).
+    2. Exchange authorization `code` for tokens at the provider's token endpoint using
+       the stored `code_verifier` (PKCE) and `client_secret`.
+    3. **Provider-specific identity resolution:**
+       - GitHub: Call `GET /user` for profile + `GET /user/emails` for verified primary email.
+         Use numeric `id` as immutable identifier (usernames can change).
+       - Google: Validate the `id_token` JWT (signature via JWKS, iss, aud, exp, nonce).
+         Use `sub` claim as immutable identifier. Check `email_verified === true`.
+       - Discord: Call `GET /users/@me` for profile. Use snowflake `id` as immutable identifier.
+         Check `verified === true` before trusting email.
+    4. **Email verification gate:** Only trust provider emails where the provider confirms
+       verification. Unverified emails are never used for account matching (prevents
+       account takeover via unverified email registration on the provider).
+    5. **Account matching:** Match by `(provider, provider_user_id)`. If no match but a
+       verified email matches an existing user, create a `PendingLink` for manual approval
+       (never auto-merge by email).
+    6. **Session fixation prevention:** Always create a new session after successful
+       authentication. Invalidate any pre-authentication session. Never reuse session IDs.
+
+    **Token endpoint Content-Type:** Discord requires `application/x-www-form-urlencoded`
+    (not JSON). GitHub and Google accept both but form-urlencoded is standard.
+
+    **Response headers for defense in depth:**
+    - `Referrer-Policy: no-referrer` — prevents authorization code leakage via Referer header.
+    - `Cache-Control: no-store` — prevents caching of authentication responses.
+
+    On first-time user creation, the response includes `api_key` (shown only once).
+    The API key is stored as a SHA-256 hash in the database; the plaintext is not recoverable.
   security: []
   parameters:
     - name: provider
@@ -15,19 +48,36 @@ get:
       required: true
       schema:
         type: string
+      description: Authorization code from the OAuth provider (one-time use, max 10 min lifetime)
     - name: state
       in: query
       required: true
       schema:
         type: string
+      description: Anti-CSRF state parameter, must match the server-side stored value
   responses:
     '200':
       description: Authentication successful
       headers:
         Set-Cookie:
-          description: Session cookie (HttpOnly, Secure, SameSite=Strict)
+          description: |
+            Session cookie. Attributes: HttpOnly, Secure, SameSite=Lax, Path=/, Max-Age=604800.
+            Token is 32 bytes of cryptographic randomness (base64url-encoded).
+            Only the SHA-256 hash is stored server-side.
           schema:
             type: string
+        Referrer-Policy:
+          description: Set to `no-referrer` to prevent code leakage
+          schema:
+            type: string
+            enum:
+              - no-referrer
+        Cache-Control:
+          description: Set to `no-store` to prevent caching
+          schema:
+            type: string
+            enum:
+              - no-store
       content:
         application/json:
           schema:
@@ -44,10 +94,16 @@ get:
                     $ref: ../../components/schemas/User.yaml
                   api_key:
                     type: string
-                    description: API key for editor plugins (ck_...), only returned on first-time creation
+                    description: |
+                      API key for editor plugins (ck_...). Only returned on first-time user creation.
+                      Stored as SHA-256 hash; this is the only time the plaintext is available.
                   is_new_user:
                     type: boolean
                   pending_link:
                     $ref: ../../components/schemas/PendingLink.yaml
+                    description: |
+                      Present when the provider's verified email matches an existing account.
+                      The user must approve the link via /auth/link/approve/{pending_link_id}
+                      after authenticating with their existing account. Expires in 1 hour.
     '400':
       $ref: ../../components/responses/BadRequest.yaml
