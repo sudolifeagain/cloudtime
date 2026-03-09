@@ -64,6 +64,7 @@ export interface SessionData {
 
 export async function createSession(
   db: D1Database,
+  kv: KVNamespace,
   userId: string,
   tokenHash: string,
   request: Request,
@@ -78,16 +79,17 @@ export async function createSession(
     .bind(userId)
     .first<{ count: number }>() ?? { count: 0 };
   if (count >= MAX_SESSIONS_PER_USER) {
-    // Evict oldest session(s) to make room
-    await db
+    // Evict oldest session(s) and clear their KV cache
+    const { results: evicted } = await db
       .prepare(
         `DELETE FROM sessions WHERE id IN (
           SELECT id FROM sessions WHERE user_id = ?
           ORDER BY last_active_at ASC LIMIT ?
-        )`,
+        ) RETURNING token_hash`,
       )
       .bind(userId, count - MAX_SESSIONS_PER_USER + 1)
-      .run();
+      .all<{ token_hash: string }>();
+    await Promise.all(evicted.map((r) => kv.delete(`session:${r.token_hash}`)));
   }
 
   const sessionId = crypto.randomUUID();
@@ -204,6 +206,8 @@ export async function invalidateSession(
 ): Promise<void> {
   // D1 first — if it fails the session stays valid (safe).
   // If KV delete were first and D1 failed, the session would be re-cached on next validate.
+  // NOTE: Due to KV eventual consistency, other edge locations may still serve
+  // the cached session for up to SESSION_CACHE_TTL (5min) after invalidation.
   await db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run();
   await kv.delete(`session:${tokenHash}`);
 }
