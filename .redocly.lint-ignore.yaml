@@ -23,3 +23,6 @@ schemas/paths/auth/provider.yaml:
 schemas/paths/auth/link-provider.yaml:
   operation-2xx-response:
     - '#/post/responses'
+schemas/paths/leaderboards/leaders.yaml:
+  operation-4xx-response:
+    - '#/get/responses'
