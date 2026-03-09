@@ -811,8 +811,10 @@ export interface components {
             human_readable_last_heartbeat_at?: string;
             /** Format: date-time */
             last_heartbeat_at?: string;
+            human_readable_first_heartbeat_at?: string;
             /** Format: date-time */
             first_heartbeat_at?: string;
+            urlencoded_name?: string;
             /** Format: uri */
             url?: string;
             /** Format: date-time */
