@@ -38,7 +38,7 @@ export async function getUserId(
   if (cached) return cached;
 
   // Fallback to D1
-  const row = await env.DB.prepare("SELECT id FROM users WHERE api_key = ?")
+  const row = await env.DB.prepare("SELECT id FROM users WHERE api_key_hash = ?")
     .bind(apiKey)
     .first<{ id: string }>();
 

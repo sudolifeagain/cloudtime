@@ -1622,7 +1622,9 @@ export interface operations {
             /** @description Provider linked successfully */
             200: {
                 headers: {
+                    /** @description Set to `no-referrer` to prevent code leakage */
                     "Referrer-Policy"?: "no-referrer";
+                    /** @description Set to `no-store` to prevent caching */
                     "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };

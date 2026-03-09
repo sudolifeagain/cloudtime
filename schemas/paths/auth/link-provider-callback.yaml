@@ -34,11 +34,13 @@ get:
       description: Provider linked successfully
       headers:
         Referrer-Policy:
+          description: Set to `no-referrer` to prevent code leakage
           schema:
             type: string
             enum:
               - no-referrer
         Cache-Control:
+          description: Set to `no-store` to prevent caching
           schema:
             type: string
             enum:
