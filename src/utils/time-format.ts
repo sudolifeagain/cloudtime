@@ -7,9 +7,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const dateFormatterCache = new Map<string, Intl.DateTimeFormat | null>();
 
 function getDateFormatter(tz: string): Intl.DateTimeFormat | null {
-  if (dateFormatterCache.has(tz)) {
-    return dateFormatterCache.get(tz)!;
-  }
+  const cached = dateFormatterCache.get(tz);
+  if (cached !== undefined) return cached;
   try {
     const fmt = new Intl.DateTimeFormat("en-CA", {
       timeZone: tz,
