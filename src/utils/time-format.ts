@@ -60,7 +60,7 @@ export function getDateForTimestamp(epochSeconds: number, tz?: string): string {
 /**
  * Get "today" as a Date anchored to midnight UTC, optionally shifted by IANA timezone.
  * When tz is provided, determines what date it is in that timezone, then returns
- * a UTC midnight Date for that date. Caller must validate tz before calling.
+ * a UTC midnight Date for that date. Falls back to UTC when tz is not provided or invalid.
  */
 export function getToday(tz?: string): Date {
   const today = getDateForTimestamp(Date.now() / 1000, tz);
