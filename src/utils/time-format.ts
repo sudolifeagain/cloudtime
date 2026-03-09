@@ -39,12 +39,12 @@ function parseDate(date: string): Date | null {
 }
 
 /** Format a Date as YYYY-MM-DD in UTC */
-function formatDate(d: Date): string {
+export function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
 /** Add days to a Date (returns new Date) */
-function addDays(d: Date, days: number): Date {
+export function addDays(d: Date, days: number): Date {
   return new Date(d.getTime() + days * 86400000);
 }
 
