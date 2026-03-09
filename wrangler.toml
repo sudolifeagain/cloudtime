@@ -18,6 +18,9 @@ id = "" # Set after: wrangler kv namespace create CLOUDTIME_KV
 crons = ["0 * * * *"] # Hourly aggregation
 
 # Instance mode: "single" (default, one user) or "multi" (team/org)
+[define]
+__APP_VERSION__ = '"0.1.0"'
+
 [vars]
 INSTANCE_MODE = "single"
 

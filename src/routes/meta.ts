@@ -9,7 +9,7 @@ import { formatHumanReadable } from "../utils/time-format";
 
 type GlobalStats = components["schemas"]["GlobalStats"];
 
-const VERSION = "0.1.0";
+declare const __APP_VERSION__: string;
 
 const meta = new Hono<{ Bindings: Env }>();
 
@@ -30,7 +30,7 @@ meta.get("/meta", (c) => {
     ?? c.req.header("X-Real-IP")
     ?? c.req.header("X-Forwarded-For")?.split(",")[0]?.trim()
     ?? "";
-  return c.json({ data: { ip, version: VERSION } });
+  return c.json({ data: { ip, version: __APP_VERSION__ } });
 });
 
 // ─── GET /editors ─────────────────────────────────────────
@@ -52,6 +52,13 @@ meta.get("/stats/:range", async (c) => {
   const resolved = resolveStatsRange(rangeParam);
   if (!resolved) {
     return c.json({ error: "Invalid range. Use: last_7_days, last_30_days, last_6_months, last_year, all_time, YYYY, or YYYY-MM" }, 400);
+  }
+
+  // Check KV cache (5 min TTL)
+  const cacheKey = `global-stats:${rangeParam}`;
+  const cached = await c.env.KV.get(cacheKey, "json") as { data: GlobalStats; status: number } | null;
+  if (cached) {
+    return c.json({ data: cached.data }, cached.status as 200 | 202);
   }
 
   try {
@@ -103,6 +110,11 @@ meta.get("/stats/:range", async (c) => {
         timezone: "UTC",
       },
     };
+
+    const status = isUpToDate ? 200 : 202;
+
+    // Cache for 5 minutes
+    await c.env.KV.put(cacheKey, JSON.stringify({ data, status }), { expirationTtl: 300 });
 
     if (!isUpToDate) {
       return c.json({ data, message: "Stats are being calculated" }, 202);
