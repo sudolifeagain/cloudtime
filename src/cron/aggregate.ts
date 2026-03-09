@@ -126,7 +126,23 @@ export async function aggregateHeartbeats(db: D1Database): Promise<void> {
 
   const lookbackTime = lastAggregatedAt > 0 ? lastAggregatedAt - maxTimeout : 0;
 
-  const { results: heartbeats } = await db
+  // 1. Fetch exactly 1 lookback heartbeat per user (latest before cursor)
+  // SQLite guarantees bare columns match the row containing MAX()
+  const { results: lookbackHeartbeats } = lastAggregatedAt > 0
+    ? await db
+        .prepare(
+          `SELECT user_id, max(time) as time, project, branch, language, editor,
+                  operating_system, category, machine
+           FROM heartbeats
+           WHERE time > ? AND time <= ?
+           GROUP BY user_id`,
+        )
+        .bind(lookbackTime, lastAggregatedAt)
+        .all<HeartbeatForAggregation>()
+    : { results: [] as HeartbeatForAggregation[] };
+
+  // 2. Fetch new heartbeats strictly after cursor
+  const { results: newHeartbeats } = await db
     .prepare(
       `SELECT user_id, time, project, branch, language, editor,
               operating_system, category, machine
@@ -135,29 +151,21 @@ export async function aggregateHeartbeats(db: D1Database): Promise<void> {
        ORDER BY time ASC
        LIMIT ?`,
     )
-    .bind(lookbackTime, HEARTBEAT_LIMIT)
+    .bind(lastAggregatedAt, HEARTBEAT_LIMIT)
     .all<HeartbeatForAggregation>();
 
-  if (heartbeats.length === 0) return;
+  if (newHeartbeats.length === 0) return;
 
-  // Find the max time among new heartbeats (those after lastAggregatedAt)
+  // maxTime guaranteed to advance because all newHeartbeats > lastAggregatedAt
   let maxTime = lastAggregatedAt;
-  for (const hb of heartbeats) {
+  for (const hb of newHeartbeats) {
     if (hb.time > maxTime) maxTime = hb.time;
   }
 
-  const durations = computeDurations(heartbeats, timeouts, lastAggregatedAt);
+  // Combine: lookback heartbeats precede new ones chronologically per-user
+  const heartbeats = [...lookbackHeartbeats, ...newHeartbeats];
 
-  // Always advance cursor so we don't re-scan the same heartbeats
-  if (durations.size === 0) {
-    await db
-      .prepare(
-        "INSERT INTO meta (key, value) VALUES ('last_aggregated_at', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-      )
-      .bind(String(maxTime))
-      .run();
-    return;
-  }
+  const durations = computeDurations(heartbeats, timeouts, lastAggregatedAt);
 
   // Build batch: all UPSERTs + meta update
   const statements: D1PreparedStatement[] = [];
