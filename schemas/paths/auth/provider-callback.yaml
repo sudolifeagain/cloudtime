@@ -1,0 +1,61 @@
+get:
+  operationId: oauthCallback
+  tags:
+    - auth
+  summary: OAuth callback - creates or authenticates user
+  security: []
+  parameters:
+    - name: provider
+      in: path
+      required: true
+      schema:
+        $ref: ../../components/schemas/OAuthProvider.yaml
+    - name: code
+      in: query
+      required: true
+      schema:
+        type: string
+    - name: state
+      in: query
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Authentication successful
+      headers:
+        Set-Cookie:
+          description: Session cookie (HttpOnly, Secure, SameSite=Strict)
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: object
+                required:
+                  - user
+                  - api_key
+                properties:
+                  user:
+                    $ref: ../../components/schemas/User.yaml
+                  api_key:
+                    type: string
+                    description: API key for editor plugins (ck_...)
+                  is_new_user:
+                    type: boolean
+                  pending_link:
+                    $ref: ../../components/schemas/PendingLink.yaml
+    '400':
+      description: Invalid OAuth callback (bad code/state)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string

@@ -57,6 +57,36 @@ tags:
   - name: meta
     description: Server metadata (public)
 paths:
+  # --- auth ---
+  /auth/{provider}:
+    $ref: paths/auth/provider.yaml
+  /auth/{provider}/callback:
+    $ref: paths/auth/provider-callback.yaml
+  /auth/link/{provider}:
+    $ref: paths/auth/link-provider.yaml
+  /auth/link/{provider}/callback:
+    $ref: paths/auth/link-provider-callback.yaml
+  /auth/link/approve/{pending_link_id}:
+    $ref: paths/auth/link-approve.yaml
+  /auth/providers:
+    $ref: paths/auth/providers.yaml
+  /auth/providers/{provider}:
+    $ref: paths/auth/providers-provider.yaml
+  /auth/session:
+    $ref: paths/auth/session.yaml
+  /auth/api-key:
+    $ref: paths/auth/api-key.yaml
+
+  # --- users ---
+  /users/current:
+    $ref: paths/users/current.yaml
+  /users/current/profile:
+    $ref: paths/users/profile.yaml
+  /users/current/projects:
+    $ref: paths/users/projects.yaml
+  /users/current/data_dumps:
+    $ref: paths/users/data-dumps.yaml
+
   # --- meta ---
   /health:
     $ref: paths/meta/health.yaml
