@@ -74,11 +74,17 @@ export interface paths {
          *        - Google: Validate the `id_token` JWT (signature via JWKS, iss, aud, azp, exp, at_hash, nonce).
          *          `azp` prevents cross-client token reuse; `at_hash` prevents token substitution.
          *          Use `sub` claim as immutable identifier. Check `email_verified === true`.
+         *          Note: there are unconfirmed reports of Google `sub` changing in ~0.04% of logins.
+         *          As a defensive measure, if a login arrives with a known verified email but unknown
+         *          `sub`, create a PendingLink — never auto-link.
          *        - Discord: Call `GET /users/@me` for profile. Use snowflake `id` as immutable identifier.
          *          Check `verified === true` before trusting email.
-         *     4. **Email verification gate:** Only trust provider emails where the provider confirms
-         *        verification. Unverified emails are never used for account matching (prevents
-         *        account takeover via unverified email registration on the provider).
+         *     4. **Email verification gate:** Check `email_verified === true` as a minimum filter,
+         *        but do NOT treat it as proof of legitimate ownership. Google Workspace
+         *        admin-provisioned accounts and domain-takeover accounts both have
+         *        `email_verified: true` without the individual user ever verifying.
+         *        This is why all email-based matching MUST go through PendingLink manual approval.
+         *        Unverified emails are never used for account matching.
          *     5. **Account matching:** Match by `(provider, provider_user_id)`. If no match but a
          *        verified email matches an existing user, create a `PendingLink` for manual approval
          *        (never auto-merge by email). Note: even `email_verified: true` is not proof of
@@ -91,6 +97,20 @@ export interface paths {
          *     **Token endpoint Content-Type:** All three providers require
          *     `application/x-www-form-urlencoded` (per RFC 6749 §4.1.3). Discord is notably strict —
          *     sending JSON returns a 400 error. Use form-urlencoded universally.
+         *
+         *     **Discord refresh token rotation:** Discord invalidates the previous refresh token
+         *     immediately upon issuing a new one. Implementation MUST persist the new token pair
+         *     atomically (D1 transaction). Concurrent refresh attempts require a single-writer lock
+         *     (KV-based mutex). If the write fails after token exchange, the user must re-authorize.
+         *
+         *     **Google id_token signature verification:** Use the `jose` npm package
+         *     (`createRemoteJWKSet`) which handles JWKS fetch, caching, and automatic refetch on
+         *     unknown `kid`. Cache JWKS in KV with 5-10 min TTL for cold-start resilience.
+         *     This is critical for Workers' 10ms CPU limit — never fetch JWKS on every request.
+         *
+         *     **GitHub error handling:** GitHub's `/login/oauth/access_token` returns `200 OK` even
+         *     on errors — the error is in the response body (`{"error": "bad_verification_code"}`).
+         *     Implementation must check the body for an `error` field, not just HTTP status.
          *
          *     **Response headers for defense in depth:**
          *     - `Referrer-Policy: no-referrer` — prevents authorization code leakage via Referer header.
@@ -975,6 +995,9 @@ export interface components {
              * @description Immutable provider-specific user identifier.
              *     GitHub: numeric id, Google: sub claim, Discord: snowflake id.
              *     Never use email or username as identifier (both are mutable).
+             *     Note: there are unconfirmed reports of Google sub changing in ~0.04%
+             *     of logins. If a login has a known verified email but unknown sub,
+             *     create a PendingLink rather than auto-linking.
              */
             provider_user_id: string;
             provider_username: string;
@@ -986,6 +1009,7 @@ export interface components {
             created_at: string;
         };
         Session: {
+            /** Format: uuid */
             id: string;
             /** @description IP address at session creation */
             ip?: string;
@@ -1451,7 +1475,14 @@ export interface components {
                 };
             };
         };
-        /** @description Rate limit exceeded */
+        /**
+         * @description Rate limit exceeded. Recommended limits:
+         *     - OAuth start/callback: 10 req/min per IP
+         *     - API key regeneration: 3 req/min per user
+         *     - Account linking: 5 req/min per user
+         *     - Session management: 30 req/min per user
+         *     Implementation: Use Cloudflare Workers native Rate Limiting binding.
+         */
         TooManyRequests: {
             headers: {
                 /** @description Seconds until the rate limit resets */
@@ -1572,6 +1603,8 @@ export interface operations {
                     "Referrer-Policy"?: "no-referrer";
                     /** @description Set to `no-store` to prevent caching */
                     "Cache-Control"?: "no-store";
+                    /** @description HTTP/1.0 backward compatibility */
+                    Pragma?: "no-cache";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1642,6 +1675,8 @@ export interface operations {
                     "Referrer-Policy"?: "no-referrer";
                     /** @description Set to `no-store` to prevent caching */
                     "Cache-Control"?: "no-store";
+                    /** @description HTTP/1.0 backward compatibility */
+                    Pragma?: "no-cache";
                     [name: string]: unknown;
                 };
                 content: {
