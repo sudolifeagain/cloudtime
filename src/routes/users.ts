@@ -28,7 +28,7 @@ const USER_COLUMNS = `id, username, display_name, email, photo, bio, city, timez
 
 const users = new Hono<AuthEnv>();
 
-users.use("/*", authMiddleware);
+users.use("*", authMiddleware);
 
 // ─── Helpers ──────────────────────────────────────────────
 
@@ -98,6 +98,9 @@ type ProfileInput = {
 };
 
 function validateProfileInput(body: ProfileInput): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return "Request body must be a JSON object";
+  }
   if (body.username !== undefined) {
     if (typeof body.username !== "string") return "username must be a string";
     const trimmed = body.username.trim();
@@ -159,22 +162,26 @@ function validateProfileInput(body: ProfileInput): string | null {
 users.get("/", async (c) => {
   const userId = c.get("userId");
 
-  const [userRow, lastHB] = await Promise.all([
-    c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-      .bind(userId)
-      .first<UserRow>(),
-    c.env.DB.prepare(
-      "SELECT project, time FROM heartbeats WHERE user_id = ? ORDER BY time DESC LIMIT 1",
-    )
-      .bind(userId)
-      .first<{ project: string | null; time: number }>(),
-  ]);
+  try {
+    const [userRow, lastHB] = await Promise.all([
+      c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
+        .bind(userId)
+        .first<UserRow>(),
+      c.env.DB.prepare(
+        "SELECT project, time FROM heartbeats WHERE user_id = ? ORDER BY time DESC LIMIT 1",
+      )
+        .bind(userId)
+        .first<{ project: string | null; time: number }>(),
+    ]);
 
-  if (!userRow) {
-    return c.json({ error: "User not found" }, 404);
+    if (!userRow) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    return c.json({ data: rowToUser(userRow, lastHB) });
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
   }
-
-  return c.json({ data: rowToUser(userRow, lastHB) });
 });
 
 // ─── PATCH /profile (updateProfile) ─────────────────────
@@ -256,29 +263,33 @@ users.patch("/profile", async (c) => {
       .bind(...params)
       .run();
   } catch (e: unknown) {
-    if (e instanceof Error && e.message.includes("UNIQUE constraint failed")) {
+    if (e instanceof Error && e.message.includes("UNIQUE constraint failed: users.username")) {
       return c.json({ error: "Username already taken" }, 409);
     }
     return c.json({ error: "Internal server error" }, 500);
   }
 
   // Re-query to return updated user
-  const [userRow, lastHB] = await Promise.all([
-    c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-      .bind(userId)
-      .first<UserRow>(),
-    c.env.DB.prepare(
-      "SELECT project, time FROM heartbeats WHERE user_id = ? ORDER BY time DESC LIMIT 1",
-    )
-      .bind(userId)
-      .first<{ project: string | null; time: number }>(),
-  ]);
+  try {
+    const [userRow, lastHB] = await Promise.all([
+      c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
+        .bind(userId)
+        .first<UserRow>(),
+      c.env.DB.prepare(
+        "SELECT project, time FROM heartbeats WHERE user_id = ? ORDER BY time DESC LIMIT 1",
+      )
+        .bind(userId)
+        .first<{ project: string | null; time: number }>(),
+    ]);
 
-  if (!userRow) {
-    return c.json({ error: "User not found" }, 404);
+    if (!userRow) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    return c.json({ data: rowToUser(userRow, lastHB) });
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
   }
-
-  return c.json({ data: rowToUser(userRow, lastHB) });
 });
 
 // ─── GET /projects (getProjects) ────────────────────────
@@ -301,26 +312,30 @@ users.get("/projects", async (c) => {
 
   sql += " GROUP BY project ORDER BY last_heartbeat_time DESC";
 
-  const { results } = await c.env.DB.prepare(sql)
-    .bind(...params)
-    .all<{
-      name: string;
-      first_heartbeat_time: number;
-      last_heartbeat_time: number;
-    }>();
+  try {
+    const { results } = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<{
+        name: string;
+        first_heartbeat_time: number;
+        last_heartbeat_time: number;
+      }>();
 
-  const data: Project[] = results.map((row) => ({
-    id: row.name,
-    name: row.name,
-    last_heartbeat_at: new Date(row.last_heartbeat_time * 1000).toISOString(),
-    first_heartbeat_at: new Date(
-      row.first_heartbeat_time * 1000,
-    ).toISOString(),
-    created_at: new Date(row.first_heartbeat_time * 1000).toISOString(),
-    human_readable_last_heartbeat_at: formatTimeAgo(row.last_heartbeat_time),
-  }));
+    const data: Project[] = results.map((row) => ({
+      id: row.name,
+      name: row.name,
+      last_heartbeat_at: new Date(row.last_heartbeat_time * 1000).toISOString(),
+      first_heartbeat_at: new Date(
+        row.first_heartbeat_time * 1000,
+      ).toISOString(),
+      created_at: new Date(row.first_heartbeat_time * 1000).toISOString(),
+      human_readable_last_heartbeat_at: formatTimeAgo(row.last_heartbeat_time),
+    }));
 
-  return c.json({ data });
+    return c.json({ data });
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 export default users;
