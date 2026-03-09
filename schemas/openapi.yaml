@@ -129,6 +129,34 @@ paths:
   /users/current/custom_rules/{rule_id}:
     $ref: paths/insights/custom-rule.yaml
 
+  # --- tracking ---
+  /users/current/machine_names:
+    $ref: paths/tracking/machine-names.yaml
+  /users/current/user_agents:
+    $ref: paths/tracking/user-agents.yaml
+
+  # --- external durations ---
+  /users/current/external_durations:
+    $ref: paths/external-durations/external-durations.yaml
+  /users/current/external_durations.bulk:
+    $ref: paths/external-durations/external-durations-bulk.yaml
+
+  # --- commits ---
+  /users/current/projects/{project}/commits:
+    $ref: paths/commits/commits.yaml
+  /users/current/projects/{project}/commits/{hash}:
+    $ref: paths/commits/commit.yaml
+
+  # --- orgs ---
+  /users/current/orgs:
+    $ref: paths/orgs/orgs.yaml
+  /users/current/orgs/{org_id}/dashboards:
+    $ref: paths/orgs/dashboards.yaml
+  /users/current/orgs/{org_id}/dashboards/{dashboard_id}/members:
+    $ref: paths/orgs/dashboard-members.yaml
+  /users/current/orgs/{org_id}/dashboards/{dashboard_id}/summaries:
+    $ref: paths/orgs/dashboard-summaries.yaml
+
   # --- meta ---
   /health:
     $ref: paths/meta/health.yaml
