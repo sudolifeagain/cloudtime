@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Env } from "./types";
+import meta from "./routes/meta";
 import heartbeats from "./routes/heartbeats";
 import summaries from "./routes/summaries";
 import stats from "./routes/stats";
@@ -13,6 +14,9 @@ app.use("/*", cors());
 
 // Health check
 app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
+
+// Meta routes (public, no auth — /meta, /editors, /program_languages, /stats/:range)
+app.route("/api/v1", meta);
 
 // Heartbeat routes (mounted at /users/current, sub-app defines /heartbeats and /heartbeats.bulk)
 app.route("/api/v1/users/current", heartbeats);
