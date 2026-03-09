@@ -318,6 +318,8 @@ CREATE TABLE IF NOT EXISTS org_dashboards (
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
+  -- NOTE: DEFAULT (datetime('now')) applies only on INSERT in SQLite.
+  -- Application code MUST set updated_at explicitly on UPDATE.
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
