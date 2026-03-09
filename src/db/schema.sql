@@ -326,6 +326,18 @@ CREATE TABLE IF NOT EXISTS data_dumps (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- ============================================================
+-- User Projects (pre-aggregated, updated on heartbeat ingestion)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_projects (
+  user_id TEXT NOT NULL,
+  project TEXT NOT NULL,
+  first_heartbeat_at REAL NOT NULL,
+  last_heartbeat_at REAL NOT NULL,
+  PRIMARY KEY (user_id, project),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Key-value store for internal state (e.g., last_aggregated_at)
 -- SQLite note: INSERT OR REPLACE deletes then inserts (triggers ON DELETE).
 -- Use INSERT ... ON CONFLICT (key) DO UPDATE SET value = excluded.value instead.

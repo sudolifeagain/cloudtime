@@ -289,11 +289,8 @@ users.get("/projects", async (c) => {
   const userId = c.get("userId");
   const q = c.req.query("q");
 
-  let sql = `SELECT project AS name,
-       MIN(time) AS first_heartbeat_time,
-       MAX(time) AS last_heartbeat_time
-    FROM heartbeats
-    WHERE user_id = ? AND project IS NOT NULL AND project != ''`;
+  let sql = `SELECT project, first_heartbeat_at, last_heartbeat_at
+    FROM user_projects WHERE user_id = ?`;
   const params: (string | number)[] = [userId];
 
   if (q) {
@@ -301,26 +298,26 @@ users.get("/projects", async (c) => {
     params.push(`%${escapeLike(q)}%`);
   }
 
-  sql += " GROUP BY project ORDER BY last_heartbeat_time DESC";
+  sql += " ORDER BY last_heartbeat_at DESC";
 
   try {
     const { results } = await c.env.DB.prepare(sql)
       .bind(...params)
       .all<{
-        name: string;
-        first_heartbeat_time: number;
-        last_heartbeat_time: number;
+        project: string;
+        first_heartbeat_at: number;
+        last_heartbeat_at: number;
       }>();
 
     const data: Project[] = results.map((row) => ({
-      id: row.name,
-      name: row.name,
-      last_heartbeat_at: new Date(row.last_heartbeat_time * 1000).toISOString(),
-      first_heartbeat_at: new Date(
-        row.first_heartbeat_time * 1000,
-      ).toISOString(),
-      created_at: new Date(row.first_heartbeat_time * 1000).toISOString(),
-      human_readable_last_heartbeat_at: formatTimeAgo(row.last_heartbeat_time),
+      id: row.project,
+      name: row.project,
+      urlencoded_name: encodeURIComponent(row.project),
+      last_heartbeat_at: new Date(row.last_heartbeat_at * 1000).toISOString(),
+      human_readable_last_heartbeat_at: formatTimeAgo(row.last_heartbeat_at),
+      first_heartbeat_at: new Date(row.first_heartbeat_at * 1000).toISOString(),
+      human_readable_first_heartbeat_at: formatTimeAgo(row.first_heartbeat_at),
+      created_at: new Date(row.first_heartbeat_at * 1000).toISOString(),
     }));
 
     return c.json({ data });
