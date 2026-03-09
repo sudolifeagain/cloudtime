@@ -1435,6 +1435,20 @@ export interface components {
                 };
             };
         };
+        /** @description Rate limit exceeded */
+        TooManyRequests: {
+            headers: {
+                /** @description Seconds until the rate limit resets */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @example Too many requests */
+                    error?: string;
+                };
+            };
+        };
         /** @description Authentication required or invalid credentials */
         Unauthorized: {
             headers: {
@@ -1510,6 +1524,7 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     oauthCallback: {
@@ -1564,6 +1579,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     oauthLinkStart: {
@@ -1586,6 +1602,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     oauthLinkCallback: {
@@ -1620,6 +1637,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     approvePendingLink: {
@@ -1659,6 +1677,7 @@ export interface operations {
                     };
                 };
             };
+            429: components["responses"]["TooManyRequests"];
         };
     };
     getLinkedProviders: {
@@ -1784,6 +1803,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     listSessions: {
