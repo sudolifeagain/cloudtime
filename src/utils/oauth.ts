@@ -39,6 +39,7 @@ export function buildAuthorizeUrl(
       const url = new URL("https://github.com/login/oauth/authorize");
       url.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
       url.searchParams.set("redirect_uri", redirectUri);
+      url.searchParams.set("response_type", "code");
       url.searchParams.set("scope", "read:user user:email");
       url.searchParams.set("state", state);
       url.searchParams.set("code_challenge", codeChallenge);
@@ -309,9 +310,11 @@ async function validateGoogleIdToken(
 ): Promise<ProviderUserInfo> {
   const payload = await verifyGoogleJwt(idToken, env, kv);
 
-  // Validate azp (authorized party) — prevents cross-client token reuse
-  if (!payload.azp || payload.azp !== env.GOOGLE_CLIENT_ID) {
-    throw new Error("Google id_token azp missing or mismatch");
+  // Validate azp (authorized party) when present — prevents cross-client token reuse.
+  // In OIDC, azp is typically only included when there are multiple audiences; jose
+  // has already validated the aud claim against GOOGLE_CLIENT_ID.
+  if (payload.azp && payload.azp !== env.GOOGLE_CLIENT_ID) {
+    throw new Error("Google id_token azp mismatch");
   }
 
   // Validate nonce — if we sent one, the token MUST contain it
@@ -343,11 +346,14 @@ async function validateGoogleIdToken(
     throw new Error("Google id_token missing sub claim");
   }
 
+  const emailVerified =
+    payload.email_verified === true && typeof payload.email === "string";
+
   return {
     providerUserId: payload.sub,
     providerUsername: (payload.name as string) ?? (payload.email as string) ?? payload.sub,
-    providerEmail: (payload.email as string) ?? null,
-    emailVerified: payload.email_verified === true,
+    providerEmail: emailVerified ? (payload.email as string) : null,
+    emailVerified,
     accessToken,
     refreshToken,
     tokenExpiresAt,
