@@ -1,0 +1,33 @@
+type: object
+properties:
+  total_seconds:
+    type: number
+    format: double
+  total_seconds_including_other_language:
+    type: number
+    format: double
+  daily_average:
+    type: number
+    format: double
+  human_readable_total:
+    type: string
+  human_readable_daily_average:
+    type: string
+  categories:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  languages:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  editors:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  operating_systems:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  range:
+    $ref: ./TimeRange.yaml

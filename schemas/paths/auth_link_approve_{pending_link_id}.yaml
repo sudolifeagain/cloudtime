@@ -1,0 +1,44 @@
+post:
+  operationId: approvePendingLink
+  tags:
+    - auth
+  summary: Approve merging an OAuth account into existing user
+  parameters:
+    - name: pending_link_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Accounts merged
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: object
+                required:
+                  - user
+                  - api_key
+                properties:
+                  user:
+                    $ref: ../components/schemas/User.yaml
+                  api_key:
+                    type: string
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml
+    '410':
+      description: Pending link expired
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string

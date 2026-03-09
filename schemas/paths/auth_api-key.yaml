@@ -1,0 +1,24 @@
+post:
+  operationId: regenerateApiKey
+  tags:
+    - auth
+  summary: Regenerate API key
+  responses:
+    '200':
+      description: New API key generated
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: object
+                required:
+                  - api_key
+                properties:
+                  api_key:
+                    type: string
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml

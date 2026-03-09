@@ -1,0 +1,34 @@
+type: object
+required:
+  - external_id
+  - entity
+  - type
+  - start_time
+  - end_time
+properties:
+  external_id:
+    type: string
+  entity:
+    type: string
+  type:
+    type: string
+    enum:
+      - file
+      - app
+      - domain
+  start_time:
+    type: number
+    format: double
+  end_time:
+    type: number
+    format: double
+  category:
+    $ref: ./Category.yaml
+  project:
+    type: string
+  branch:
+    type: string
+  language:
+    type: string
+  meta:
+    type: string

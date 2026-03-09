@@ -1,0 +1,16 @@
+type: object
+required:
+  - id
+  - name
+properties:
+  id:
+    type: string
+  name:
+    type: string
+  is_viewing_restricted:
+    type: boolean
+  is_manual_time_hidden:
+    type: boolean
+  created_at:
+    type: string
+    format: date-time

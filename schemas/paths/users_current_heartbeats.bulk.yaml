@@ -1,0 +1,61 @@
+post:
+  operationId: createHeartbeatsBulk
+  tags:
+    - heartbeats
+  summary: Create up to 25 heartbeats at once
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: array
+          items:
+            $ref: ../components/schemas/HeartbeatInput.yaml
+          maxItems: 25
+  responses:
+    '202':
+      description: Heartbeats accepted
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - responses
+            properties:
+              responses:
+                type: array
+                items:
+                  type: array
+                  prefixItems:
+                    - $ref: ../components/schemas/Heartbeat.yaml
+                    - type: integer
+                      description: HTTP status code
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+delete:
+  operationId: deleteHeartbeatsBulk
+  tags:
+    - heartbeats
+  summary: Delete heartbeats
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - date
+            - ids
+          properties:
+            date:
+              type: string
+              format: date
+            ids:
+              type: array
+              items:
+                type: string
+  responses:
+    '204':
+      description: Heartbeats deleted
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml

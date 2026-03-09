@@ -1,0 +1,25 @@
+get:
+  operationId: getEditors
+  tags:
+    - meta
+  summary: List all known editors
+  security: []
+  parameters:
+    - name: unreleased
+      in: query
+      schema:
+        type: boolean
+  responses:
+    '200':
+      description: List of editors
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../components/schemas/Editor.yaml

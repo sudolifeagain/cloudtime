@@ -7,13 +7,16 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "generate": "openapi-typescript schemas/openapi.yaml -o src/types/generated.ts",
+    "bundle": "redocly bundle schemas/openapi.yaml -o schemas/_bundled/openapi.yaml",
+    "generate": "redocly bundle schemas/openapi.yaml -o schemas/_bundled/openapi.yaml && openapi-typescript schemas/_bundled/openapi.yaml -o src/types/generated.ts",
+    "lint:api": "redocly lint schemas/openapi.yaml",
     "db:init": "wrangler d1 execute cloudtime-db --local --file=./src/db/schema.sql",
     "db:init:remote": "wrangler d1 execute cloudtime-db --remote --file=./src/db/schema.sql",
     "tail": "wrangler tail"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250309.0",
+    "@redocly/cli": "^2.20.4",
     "openapi-typescript": "^7.6.1",
     "typescript": "^5.7.0",
     "wrangler": "^4.0.0"

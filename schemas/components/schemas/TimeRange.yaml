@@ -1,0 +1,15 @@
+type: object
+properties:
+  start:
+    type: string
+    format: date-time
+  end:
+    type: string
+    format: date-time
+  date:
+    type: string
+    format: date
+  text:
+    type: string
+  timezone:
+    type: string

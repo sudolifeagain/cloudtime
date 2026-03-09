@@ -1,0 +1,27 @@
+get:
+  operationId: getGoal
+  tags:
+    - goals
+  summary: Get a single goal with chart data
+  parameters:
+    - name: goal_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Goal with chart data
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../components/schemas/Goal.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../components/responses/NotFound.yaml

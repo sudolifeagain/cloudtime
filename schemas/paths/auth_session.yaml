@@ -1,0 +1,43 @@
+get:
+  operationId: getSession
+  tags:
+    - auth
+  summary: Get current session info
+  responses:
+    '200':
+      description: Current session
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: object
+                required:
+                  - user
+                properties:
+                  user:
+                    $ref: ../components/schemas/User.yaml
+                  providers:
+                    type: array
+                    items:
+                      $ref: ../components/schemas/LinkedProvider.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+delete:
+  operationId: logout
+  tags:
+    - auth
+  summary: Logout - invalidate current session
+  responses:
+    '204':
+      description: Session invalidated
+      headers:
+        Set-Cookie:
+          description: Clear session cookie
+          schema:
+            type: string
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml

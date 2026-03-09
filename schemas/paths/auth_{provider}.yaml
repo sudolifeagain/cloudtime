@@ -1,0 +1,24 @@
+get:
+  operationId: oauthRedirect
+  tags:
+    - auth
+  summary: Initiate OAuth flow with a provider
+  security: []
+  parameters:
+    - name: provider
+      in: path
+      required: true
+      schema:
+        $ref: ../components/schemas/OAuthProvider.yaml
+  responses:
+    '302':
+      description: Redirect to OAuth provider
+      headers:
+        Location:
+          schema:
+            type: string
+            format: uri
+        Set-Cookie:
+          description: PKCE state and code_verifier stored in KV (TTL 10 min)
+          schema:
+            type: string

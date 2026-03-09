@@ -1,0 +1,21 @@
+get:
+  operationId: getLinkedProviders
+  tags:
+    - auth
+  summary: List OAuth providers linked to current account
+  responses:
+    '200':
+      description: List of linked providers
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../components/schemas/LinkedProvider.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml

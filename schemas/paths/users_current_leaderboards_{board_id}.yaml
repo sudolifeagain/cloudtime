@@ -1,0 +1,43 @@
+get:
+  operationId: getPrivateLeaderboard
+  tags:
+    - leaderboards
+  summary: Rankings in a specific private leaderboard
+  parameters:
+    - name: board_id
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: language
+      in: query
+      schema:
+        type: string
+    - name: country_code
+      in: query
+      schema:
+        type: string
+    - name: page
+      in: query
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: Leaderboard rankings
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../components/schemas/LeaderboardEntry.yaml
+              page:
+                type: integer
+              total_pages:
+                type: integer
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml

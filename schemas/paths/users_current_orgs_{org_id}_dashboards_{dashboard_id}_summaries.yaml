@@ -1,0 +1,46 @@
+get:
+  operationId: getOrgDashboardSummaries
+  tags:
+    - orgs
+  summary: Organization dashboard coding summaries
+  parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: dashboard_id
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: date
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date
+    - name: project
+      in: query
+      schema:
+        type: string
+    - name: branches
+      in: query
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Dashboard summaries
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../components/schemas/Summary.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml

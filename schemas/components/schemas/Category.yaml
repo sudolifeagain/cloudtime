@@ -1,0 +1,18 @@
+type: string
+enum:
+  - coding
+  - building
+  - indexing
+  - debugging
+  - browsing
+  - running tests
+  - writing tests
+  - manual testing
+  - writing docs
+  - communicating
+  - code reviewing
+  - notes
+  - researching
+  - learning
+  - designing
+  - ai coding

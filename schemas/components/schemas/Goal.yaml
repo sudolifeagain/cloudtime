@@ -1,0 +1,74 @@
+type: object
+required:
+  - id
+  - title
+  - created_at
+properties:
+  id:
+    type: string
+  title:
+    type: string
+  type:
+    type: string
+    enum:
+      - coding
+      - languages
+      - editors
+      - projects
+  delta:
+    type: string
+    enum:
+      - day
+      - week
+  target_seconds:
+    type: number
+    format: double
+  is_enabled:
+    type: boolean
+  is_snoozed:
+    type: boolean
+  is_inverse:
+    type: boolean
+  languages:
+    type: array
+    items:
+      type: string
+  editors:
+    type: array
+    items:
+      type: string
+  projects:
+    type: array
+    items:
+      type: string
+  chart_data:
+    type: array
+    items:
+      type: object
+      properties:
+        actual_seconds:
+          type: number
+          format: double
+        goal_seconds:
+          type: number
+          format: double
+        range:
+          $ref: ./TimeRange.yaml
+        range_status:
+          type: string
+          enum:
+            - success
+            - fail
+            - pending
+  status:
+    type: string
+    enum:
+      - success
+      - fail
+      - pending
+  created_at:
+    type: string
+    format: date-time
+  modified_at:
+    type: string
+    format: date-time

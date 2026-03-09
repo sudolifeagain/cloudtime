@@ -1,0 +1,16 @@
+delete:
+  operationId: deleteCustomRule
+  tags:
+    - custom_rules
+  summary: Delete a custom rule
+  parameters:
+    - name: rule_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '204':
+      description: Rule deleted
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
