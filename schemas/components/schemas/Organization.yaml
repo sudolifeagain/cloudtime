@@ -1,0 +1,25 @@
+type: object
+required:
+  - id
+  - name
+properties:
+  id:
+    type: string
+  name:
+    type: string
+  timeout:
+    type: integer
+  timezone:
+    type: string
+  writes_only:
+    type: boolean
+  default_project_privacy:
+    type: string
+    enum:
+      - visible
+      - hidden
+  is_duration_visible:
+    type: boolean
+  created_at:
+    type: string
+    format: date-time
