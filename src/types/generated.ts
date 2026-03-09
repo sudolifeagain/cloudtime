@@ -17,11 +17,18 @@ export interface paths {
          *
          *     **Security measures applied by the server:**
          *     - Generates a cryptographically random `state` parameter (32 bytes, base64url).
-         *       Stored server-side (KV with 10-minute TTL) and set in an HttpOnly cookie as backup.
-         *       Validated on callback to prevent CSRF.
+         *       Stored server-side (KV with 10-minute TTL) and set in an HttpOnly cookie.
+         *       Validated on callback using double-submit: both the KV entry and the cookie value
+         *       must match the `state` query parameter. This prevents CSRF even if one store is
+         *       compromised. Invalidated after use (one-time).
          *     - Generates a PKCE `code_verifier` (32 bytes, base64url) and derives `code_challenge`
-         *       using S256 method. The `code_verifier` is stored server-side; only the `code_challenge`
-         *       is sent to the provider. Prevents authorization code interception attacks.
+         *       using S256 method (`plain` is not used). The `code_verifier` is stored server-side;
+         *       only the `code_challenge` is sent to the provider. Prevents authorization code
+         *       interception attacks. Note: as a confidential client (server-side secret), both PKCE
+         *       and `client_secret` are used together (defense in depth). PKCE applies only to
+         *       authorization code exchange, not refresh token grants.
+         *       Discord supports S256 only (`plain` is rejected); `role_connections.write` scope
+         *       does not support PKCE. GitHub requires `client_secret` even with PKCE.
          *     - For Google: also generates a cryptographic `nonce` (32 bytes, base64url) included in
          *       the authorization request and validated against the `id_token` on callback to prevent
          *       token replay attacks.
@@ -64,7 +71,8 @@ export interface paths {
          *     3. **Provider-specific identity resolution:**
          *        - GitHub: Call `GET /user` for profile + `GET /user/emails` for verified primary email.
          *          Use numeric `id` as immutable identifier (usernames can change).
-         *        - Google: Validate the `id_token` JWT (signature via JWKS, iss, aud, exp, nonce).
+         *        - Google: Validate the `id_token` JWT (signature via JWKS, iss, aud, azp, exp, at_hash, nonce).
+         *          `azp` prevents cross-client token reuse; `at_hash` prevents token substitution.
          *          Use `sub` claim as immutable identifier. Check `email_verified === true`.
          *        - Discord: Call `GET /users/@me` for profile. Use snowflake `id` as immutable identifier.
          *          Check `verified === true` before trusting email.
@@ -73,12 +81,16 @@ export interface paths {
          *        account takeover via unverified email registration on the provider).
          *     5. **Account matching:** Match by `(provider, provider_user_id)`. If no match but a
          *        verified email matches an existing user, create a `PendingLink` for manual approval
-         *        (never auto-merge by email).
+         *        (never auto-merge by email). Note: even `email_verified: true` is not proof of
+         *        continuous domain ownership (e.g., Google Workspace domain resale allows new owners
+         *        to create verified accounts for old email addresses). This is why email matching
+         *        always requires manual PendingLink approval.
          *     6. **Session fixation prevention:** Always create a new session after successful
          *        authentication. Invalidate any pre-authentication session. Never reuse session IDs.
          *
-         *     **Token endpoint Content-Type:** Discord requires `application/x-www-form-urlencoded`
-         *     (not JSON). GitHub and Google accept both but form-urlencoded is standard.
+         *     **Token endpoint Content-Type:** All three providers require
+         *     `application/x-www-form-urlencoded` (per RFC 6749 §4.1.3). Discord is notably strict —
+         *     sending JSON returns a 400 error. Use form-urlencoded universally.
          *
          *     **Response headers for defense in depth:**
          *     - `Referrer-Policy: no-referrer` — prevents authorization code leakage via Referer header.
@@ -977,6 +989,10 @@ export interface components {
             id: string;
             /** @description IP address at session creation */
             ip?: string;
+            /** @description Country code from Cloudflare cf.country (e.g., "JP", "US") */
+            country?: string;
+            /** @description City name from Cloudflare cf.city (e.g., "Tokyo", "San Francisco") */
+            city?: string;
             /** @description User-Agent header at session creation */
             user_agent?: string;
             /** Format: date-time */
@@ -1820,6 +1836,8 @@ export interface operations {
             /** @description List of active sessions */
             200: {
                 headers: {
+                    /** @description Set to `no-store` to prevent caching of session metadata */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
