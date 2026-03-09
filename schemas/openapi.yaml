@@ -346,6 +346,8 @@ paths:
               description: Clear session cookie
               schema:
                 type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /auth/api-key:
     post:
@@ -1838,6 +1840,10 @@ components:
           type: integer
         is_write:
           type: boolean
+        editor:
+          type: string
+        operating_system:
+          type: string
 
     Heartbeat:
       allOf:
