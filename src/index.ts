@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import type { Env } from "./types";
 import heartbeats from "./routes/heartbeats";
 import summaries from "./routes/summaries";
+import { aggregateHeartbeats } from "./cron/aggregate";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -21,7 +22,6 @@ app.route("/api/v1/users/current", summaries);
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    // TODO: Aggregate heartbeats into daily/weekly summaries
-    console.log("Cron triggered:", event.cron);
+    ctx.waitUntil(aggregateHeartbeats(env.DB));
   },
 };

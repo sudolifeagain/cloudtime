@@ -169,7 +169,7 @@ function buildSummary(date: string, rows: SummaryRow[]): Summary {
 function aggregateDimension(rows: SummaryRow[], dimension: Dimension, grandTotal: number): SummaryItem[] {
   const totals = new Map<string, number>();
   for (const row of rows) {
-    const name = row[dimension] ?? "Unknown";
+    const name = row[dimension] || "Unknown";
     totals.set(name, (totals.get(name) ?? 0) + row.total_seconds);
   }
 
