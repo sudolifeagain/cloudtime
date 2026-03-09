@@ -14,6 +14,10 @@
 - Never reference or read WakaTime's source code — all implementation must be original
 - Write all API docs from our own OpenAPI schema
 
+## Git Branching
+- PRs always target `develop` (never `master`)
+- `master` is production — only updated via `develop` merge
+
 ## Code
 - Framework: Hono on Cloudflare Workers
 - DB: Cloudflare D1 (SQLite), Cache: KV
