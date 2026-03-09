@@ -72,10 +72,10 @@ meta.get("/stats/:range", async (c) => {
 
     const [totalResult, catResult, langResult, editorResult, osResult] = await c.env.DB.batch([
       c.env.DB.prepare(`SELECT COALESCE(SUM(total_seconds), 0) AS total_seconds, MIN(date) AS min_date FROM summaries ${where}`).bind(...binds),
-      c.env.DB.prepare(`SELECT COALESCE(category, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
-      c.env.DB.prepare(`SELECT COALESCE(language, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
-      c.env.DB.prepare(`SELECT COALESCE(editor, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
-      c.env.DB.prepare(`SELECT COALESCE(operating_system, 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(NULLIF(category, ''), 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(NULLIF(language, ''), 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(NULLIF(editor, ''), 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
+      c.env.DB.prepare(`SELECT COALESCE(NULLIF(operating_system, ''), 'Unknown') AS name, SUM(total_seconds) AS total_seconds FROM summaries ${where} GROUP BY 1 ORDER BY total_seconds DESC`).bind(...binds),
     ]);
 
     const totalRow = totalResult.results[0] as TotalRow | undefined;
