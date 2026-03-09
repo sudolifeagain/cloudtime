@@ -45,6 +45,12 @@ get:
             type: string
             enum:
               - no-store
+        Pragma:
+          description: HTTP/1.0 backward compatibility
+          schema:
+            type: string
+            enum:
+              - no-cache
       content:
         application/json:
           schema:

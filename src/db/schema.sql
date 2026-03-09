@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS pending_links (
   provider_user_id TEXT NOT NULL,
   provider_username TEXT,
   provider_email TEXT,
+  email_verified INTEGER NOT NULL DEFAULT 0,
   access_token_encrypted TEXT,
   refresh_token_encrypted TEXT,
   token_expires_at TEXT,

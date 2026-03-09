@@ -200,3 +200,6 @@ components:
         Random 32-byte token (base64url); stored as SHA-256 hash in DB.
         Sliding expiration: 24h idle timeout. Absolute expiration: 7 days.
         Expired sessions are purged by the cron job.
+        Local development: `__Host-` requires Secure, which fails on Safari localhost
+        and some non-HTTPS local setups. When `ENVIRONMENT=development`, fall back to
+        a non-prefixed cookie name without the Secure attribute.

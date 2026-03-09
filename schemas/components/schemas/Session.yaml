@@ -7,6 +7,7 @@ required:
 properties:
   id:
     type: string
+    format: uuid
   ip:
     type: string
     description: IP address at session creation

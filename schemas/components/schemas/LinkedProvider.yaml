@@ -14,6 +14,9 @@ properties:
       Immutable provider-specific user identifier.
       GitHub: numeric id, Google: sub claim, Discord: snowflake id.
       Never use email or username as identifier (both are mutable).
+      Note: there are unconfirmed reports of Google sub changing in ~0.04%
+      of logins. If a login has a known verified email but unknown sub,
+      create a PendingLink rather than auto-linking.
   provider_username:
     type: string
   provider_email:
