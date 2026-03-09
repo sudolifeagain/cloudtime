@@ -69,6 +69,9 @@ export async function generateApiKey(): Promise<{ plaintext: string; hash: strin
 // ─── AES-256-GCM encryption for OAuth tokens at rest ─────
 
 async function importAesKey(keyHex: string): Promise<CryptoKey> {
+  if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) {
+    throw new Error("ENCRYPTION_KEY must be exactly 64 hex characters (256 bits)");
+  }
   const keyBytes = new Uint8Array(keyHex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
   return crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, [
     "encrypt",

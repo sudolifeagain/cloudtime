@@ -207,7 +207,7 @@ export async function invalidateAllUserSessions(
 // ─── Cookie Helpers ──────────────────────────────────────
 
 function isDev(env: Env): boolean {
-  return env.ENVIRONMENT === "development" || env.ENVIRONMENT === undefined;
+  return env.ENVIRONMENT === "development";
 }
 
 export function getSessionCookieName(env: Env): string {
@@ -264,7 +264,11 @@ export async function consumeOAuthState(
   const raw = await kv.get(key);
   if (!raw) return null;
   await kv.delete(key);
-  return JSON.parse(raw) as OAuthStateData;
+  try {
+    return JSON.parse(raw) as OAuthStateData;
+  } catch {
+    return null;
+  }
 }
 
 // ─── State Cookie (double-submit) ────────────────────────

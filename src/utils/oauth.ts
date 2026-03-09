@@ -242,10 +242,15 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
   const kvKey = "google:jwks";
   const cached = await kv.get(kvKey);
   if (cached) {
-    const jwks = JSON.parse(cached) as jose.JSONWebKeySet;
-    cachedJWKS = jose.createLocalJWKSet(jwks);
-    jwksCachedAt = Date.now();
-    return cachedJWKS;
+    try {
+      const jwks = JSON.parse(cached) as jose.JSONWebKeySet;
+      cachedJWKS = jose.createLocalJWKSet(jwks);
+      jwksCachedAt = Date.now();
+      return cachedJWKS;
+    } catch {
+      await kv.delete(kvKey);
+      // Fall through to fetch fresh JWKS
+    }
   }
 
   // Fetch from Google

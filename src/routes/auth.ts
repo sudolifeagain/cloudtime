@@ -47,17 +47,21 @@ auth.use("/*", csrf());
 // ─── Session Middleware ──────────────────────────────────
 
 const sessionMw = createMiddleware<SessionAuthEnv>(async (c, next) => {
-  const token = getSessionTokenFromCookie(c, c.env);
-  if (!token) return c.json({ error: "Unauthorized" }, 401);
+  try {
+    const token = getSessionTokenFromCookie(c, c.env);
+    if (!token) return c.json({ error: "Unauthorized" }, 401);
 
-  const tokenHash = await sha256Hex(token);
-  const session = await validateSession(c.env.DB, c.env.KV, tokenHash);
-  if (!session) return c.json({ error: "Unauthorized" }, 401);
+    const tokenHash = await sha256Hex(token);
+    const session = await validateSession(c.env.DB, c.env.KV, tokenHash);
+    if (!session) return c.json({ error: "Unauthorized" }, 401);
 
-  c.set("userId", session.userId);
-  c.set("sessionId", session.sessionId);
-  c.set("sessionTokenHash", tokenHash);
-  await next();
+    c.set("userId", session.userId);
+    c.set("sessionId", session.sessionId);
+    c.set("sessionTokenHash", tokenHash);
+    await next();
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -65,7 +69,7 @@ const sessionMw = createMiddleware<SessionAuthEnv>(async (c, next) => {
 function getRedirectUri(c: { req: { url: string }; env: Env }, provider: string, isLink = false): string {
   let origin = c.env.APP_URL?.replace(/\/+$/, "");
   if (!origin) {
-    if (c.env.ENVIRONMENT === "development" || c.env.ENVIRONMENT === undefined) {
+    if (c.env.ENVIRONMENT === "development") {
       origin = new URL(c.req.url).origin;
     } else {
       throw new Error("APP_URL environment variable is required in production");
@@ -88,44 +92,48 @@ function securityHeaders(): Record<string, string> {
 
 // GET /session
 auth.get("/session", sessionMw, async (c) => {
-  const userId = c.get("userId");
-  const [userRow, providers] = await Promise.all([
-    c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-      .bind(userId)
-      .first<UserRow>(),
-    c.env.DB.prepare(
-      "SELECT provider, provider_user_id, provider_username, provider_email, email_verified, created_at FROM oauth_accounts WHERE user_id = ?",
-    )
-      .bind(userId)
-      .all<{
-        provider: string;
-        provider_user_id: string;
-        provider_username: string;
-        provider_email: string | null;
-        email_verified: number;
-        created_at: string;
-      }>(),
-  ]);
+  try {
+    const userId = c.get("userId");
+    const [userRow, providers] = await Promise.all([
+      c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
+        .bind(userId)
+        .first<UserRow>(),
+      c.env.DB.prepare(
+        "SELECT provider, provider_user_id, provider_username, provider_email, email_verified, created_at FROM oauth_accounts WHERE user_id = ?",
+      )
+        .bind(userId)
+        .all<{
+          provider: string;
+          provider_user_id: string;
+          provider_username: string;
+          provider_email: string | null;
+          email_verified: number;
+          created_at: string;
+        }>(),
+    ]);
 
-  if (!userRow) return c.json({ error: "Unauthorized" }, 401);
+    if (!userRow) return c.json({ error: "Unauthorized" }, 401);
 
-  return c.json(
-    {
-      data: {
-        user: rowToUser(userRow),
-        providers: providers.results.map((p) => ({
-          provider: p.provider as OAuthProvider,
-          provider_user_id: p.provider_user_id,
-          provider_username: p.provider_username,
-          provider_email: p.provider_email ?? undefined,
-          email_verified: p.email_verified === 1,
-          created_at: normalizeDateTime(p.created_at),
-        })),
+    return c.json(
+      {
+        data: {
+          user: rowToUser(userRow),
+          providers: providers.results.map((p) => ({
+            provider: p.provider as OAuthProvider,
+            provider_user_id: p.provider_user_id,
+            provider_username: p.provider_username,
+            provider_email: p.provider_email ?? undefined,
+            email_verified: p.email_verified === 1,
+            created_at: normalizeDateTime(p.created_at),
+          })),
+        },
       },
-    },
-    200,
-    { "Cache-Control": "no-store" },
-  );
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 // DELETE /session (logout)
@@ -138,43 +146,47 @@ auth.delete("/session", sessionMw, async (c) => {
 
 // GET /sessions (list all active sessions)
 auth.get("/sessions", sessionMw, async (c) => {
-  const userId = c.get("userId");
-  const currentSessionId = c.get("sessionId");
+  try {
+    const userId = c.get("userId");
+    const currentSessionId = c.get("sessionId");
 
-  const { results } = await c.env.DB.prepare(
-    `SELECT id, ip, country, city, user_agent, created_at, expires_at, last_active_at
-     FROM sessions WHERE user_id = ? AND expires_at > datetime('now')
-     ORDER BY last_active_at DESC`,
-  )
-    .bind(userId)
-    .all<{
-      id: string;
-      ip: string | null;
-      country: string | null;
-      city: string | null;
-      user_agent: string | null;
-      created_at: string;
-      expires_at: string;
-      last_active_at: string;
-    }>();
+    const { results } = await c.env.DB.prepare(
+      `SELECT id, ip, country, city, user_agent, created_at, expires_at, last_active_at
+       FROM sessions WHERE user_id = ? AND expires_at > datetime('now')
+       ORDER BY last_active_at DESC`,
+    )
+      .bind(userId)
+      .all<{
+        id: string;
+        ip: string | null;
+        country: string | null;
+        city: string | null;
+        user_agent: string | null;
+        created_at: string;
+        expires_at: string;
+        last_active_at: string;
+      }>();
 
-  return c.json(
-    {
-      data: results.map((s) => ({
-        id: s.id,
-        ip: s.ip ?? undefined,
-        country: s.country ?? undefined,
-        city: s.city ?? undefined,
-        user_agent: s.user_agent ?? undefined,
-        created_at: normalizeDateTime(s.created_at),
-        last_active_at: normalizeDateTime(s.last_active_at),
-        expires_at: normalizeDateTime(s.expires_at),
-        is_current: s.id === currentSessionId,
-      })),
-    },
-    200,
-    { "Cache-Control": "no-store" },
-  );
+    return c.json(
+      {
+        data: results.map((s) => ({
+          id: s.id,
+          ip: s.ip ?? undefined,
+          country: s.country ?? undefined,
+          city: s.city ?? undefined,
+          user_agent: s.user_agent ?? undefined,
+          created_at: normalizeDateTime(s.created_at),
+          last_active_at: normalizeDateTime(s.last_active_at),
+          expires_at: normalizeDateTime(s.expires_at),
+          is_current: s.id === currentSessionId,
+        })),
+      },
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 // DELETE /sessions (revoke all other sessions)
@@ -241,65 +253,73 @@ auth.get("/providers", sessionMw, async (c) => {
 
 // DELETE /providers/:provider (unlink)
 auth.delete("/providers/:provider", sessionMw, async (c) => {
-  const userId = c.get("userId");
-  const provider = c.req.param("provider");
+  try {
+    const userId = c.get("userId");
+    const provider = c.req.param("provider");
 
-  if (!isValidProvider(provider)) {
-    return c.json({ error: "Invalid provider" }, 400);
+    if (!isValidProvider(provider)) {
+      return c.json({ error: "Invalid provider" }, 400);
+    }
+
+    // Ensure user keeps at least one other auth method
+    const [{ results: linked }, userRow] = await Promise.all([
+      c.env.DB.prepare("SELECT provider FROM oauth_accounts WHERE user_id = ?")
+        .bind(userId)
+        .all<{ provider: string }>(),
+      c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
+        .bind(userId)
+        .first<{ api_key_hash: string | null }>(),
+    ]);
+
+    const hasApiKey = !!userRow?.api_key_hash;
+    const otherProviders = linked.filter((p) => p.provider !== provider).length;
+    if (otherProviders === 0 && !hasApiKey) {
+      return c.json({ error: "Cannot unlink the only authentication method" }, 400);
+    }
+
+    await c.env.DB.prepare("DELETE FROM oauth_accounts WHERE user_id = ? AND provider = ?")
+      .bind(userId, provider)
+      .run();
+
+    return c.body(null, 204);
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
   }
-
-  // Ensure user keeps at least one other auth method
-  const [{ results: linked }, userRow] = await Promise.all([
-    c.env.DB.prepare("SELECT provider FROM oauth_accounts WHERE user_id = ?")
-      .bind(userId)
-      .all<{ provider: string }>(),
-    c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
-      .bind(userId)
-      .first<{ api_key_hash: string | null }>(),
-  ]);
-
-  const hasApiKey = !!userRow?.api_key_hash;
-  const otherProviders = linked.filter((p) => p.provider !== provider).length;
-  if (otherProviders === 0 && !hasApiKey) {
-    return c.json({ error: "Cannot unlink the only authentication method" }, 400);
-  }
-
-  await c.env.DB.prepare("DELETE FROM oauth_accounts WHERE user_id = ? AND provider = ?")
-    .bind(userId, provider)
-    .run();
-
-  return c.body(null, 204);
 });
 
 // POST /api-key (regenerate)
 auth.post("/api-key", sessionMw, async (c) => {
-  const userId = c.get("userId");
-  const currentTokenHash = c.get("sessionTokenHash");
+  try {
+    const userId = c.get("userId");
+    const currentTokenHash = c.get("sessionTokenHash");
 
-  // Get current api_key_hash to clear KV cache
-  const user = await c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
-    .bind(userId)
-    .first<{ api_key_hash: string }>();
+    // Get current api_key_hash to clear KV cache
+    const user = await c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
+      .bind(userId)
+      .first<{ api_key_hash: string }>();
 
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
 
-  const { plaintext, hash } = await generateApiKey();
+    const { plaintext, hash } = await generateApiKey();
 
-  // Batch: update key + delete old KV cache
-  await c.env.DB.prepare("UPDATE users SET api_key_hash = ?, modified_at = datetime('now') WHERE id = ?")
-    .bind(hash, userId)
-    .run();
+    // Batch: update key + delete old KV cache
+    await c.env.DB.prepare("UPDATE users SET api_key_hash = ?, modified_at = datetime('now') WHERE id = ?")
+      .bind(hash, userId)
+      .run();
 
-  await Promise.all([
-    c.env.KV.delete(`apikey:${user.api_key_hash}`),
-    invalidateOtherSessions(c.env.DB, c.env.KV, userId, currentTokenHash),
-  ]);
+    await Promise.all([
+      c.env.KV.delete(`apikey:${user.api_key_hash}`),
+      invalidateOtherSessions(c.env.DB, c.env.KV, userId, currentTokenHash),
+    ]);
 
-  return c.json(
-    { data: { api_key: plaintext } },
-    200,
-    { "Cache-Control": "no-store" },
-  );
+    return c.json(
+      { data: { api_key: plaintext } },
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 // POST /link/approve/:pending_link_id
@@ -393,7 +413,8 @@ auth.get("/link/:provider/callback", async (c) => {
   // Handle OAuth error (e.g., user denied access)
   const oauthError = c.req.query("error");
   if (oauthError) {
-    return c.json({ error: `OAuth error: ${oauthError}` }, 400);
+    console.error(`OAuth error from ${provider}: ${oauthError}`);
+    return c.json({ error: "OAuth authorization failed" }, 400);
   }
 
   // Validate state (double-submit)
@@ -525,7 +546,8 @@ auth.get("/:provider/callback", async (c) => {
   // Handle OAuth error (e.g., user denied access)
   const oauthError = c.req.query("error");
   if (oauthError) {
-    return c.json({ error: `OAuth error: ${oauthError}` }, 400);
+    console.error(`OAuth error from ${provider}: ${oauthError}`);
+    return c.json({ error: "OAuth authorization failed" }, 400);
   }
 
   // 1. Validate state (double-submit)
@@ -773,10 +795,12 @@ auth.get("/:provider/callback", async (c) => {
       .bind(userId)
       .first<UserRow>();
 
+    if (!userRow) return c.json({ error: "Internal server error" }, 500);
+
     return c.json(
       {
         data: {
-          user: rowToUser(userRow!),
+          user: rowToUser(userRow),
           api_key: apiKeyPlaintext,
           is_new_user: true,
         },
