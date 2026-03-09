@@ -1,0 +1,24 @@
+get:
+  operationId: getAllTimeSinceToday
+  tags:
+    - all_time
+  summary: Total coding time since account creation
+  parameters:
+    - name: project
+      in: query
+      schema:
+        type: string
+  responses:
+    '200':
+      description: All time data
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/AllTime.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

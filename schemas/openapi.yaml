@@ -87,6 +87,26 @@ paths:
   /users/current/data_dumps:
     $ref: paths/users/data-dumps.yaml
 
+  # --- heartbeats ---
+  /users/current/heartbeats:
+    $ref: paths/heartbeats/heartbeats.yaml
+  /users/current/heartbeats.bulk:
+    $ref: paths/heartbeats/heartbeats-bulk.yaml
+
+  # --- summaries ---
+  /users/current/summaries:
+    $ref: paths/summaries/summaries.yaml
+
+  # --- stats & durations ---
+  /users/current/stats/{range}:
+    $ref: paths/stats/stats.yaml
+  /users/current/status_bar/today:
+    $ref: paths/stats/status-bar.yaml
+  /users/current/all_time_since_today:
+    $ref: paths/stats/all-time.yaml
+  /users/current/durations:
+    $ref: paths/stats/durations.yaml
+
   # --- meta ---
   /health:
     $ref: paths/meta/health.yaml

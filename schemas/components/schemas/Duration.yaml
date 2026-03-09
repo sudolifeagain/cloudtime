@@ -1,0 +1,28 @@
+type: object
+required:
+  - project
+  - time
+  - duration
+properties:
+  project:
+    type: string
+  time:
+    type: number
+    format: double
+    description: Start time as UNIX epoch
+  duration:
+    type: number
+    format: double
+    description: Duration in seconds
+  color:
+    type: string
+  entity:
+    type: string
+  language:
+    type: string
+  branch:
+    type: string
+  category:
+    $ref: ./Category.yaml
+  machine:
+    type: string
