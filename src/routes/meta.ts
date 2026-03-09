@@ -5,6 +5,7 @@ import { EDITORS } from "../data/editors";
 import { LANGUAGES } from "../data/languages";
 import { resolveStatsRange } from "../utils/stats-range";
 import { formatDigital, formatHumanReadable } from "../utils/time-format";
+import { checkUpToDate } from "../utils/aggregation-status";
 
 type GlobalStats = components["schemas"]["GlobalStats"];
 type SummaryItem = components["schemas"]["SummaryItem"];
@@ -12,16 +13,6 @@ type SummaryItem = components["schemas"]["SummaryItem"];
 declare const __APP_VERSION__: string;
 
 const meta = new Hono<{ Bindings: Env }>();
-
-// ─── Helpers ──────────────────────────────────────────────
-
-async function checkUpToDate(db: D1Database): Promise<boolean> {
-  const row = await db
-    .prepare("SELECT value FROM meta WHERE key = 'last_aggregated_at'")
-    .first<{ value: string }>();
-  const lastAggregatedAt = row ? Number(row.value) : 0;
-  return (Date.now() / 1000 - lastAggregatedAt) < 7200;
-}
 
 // ─── GET /meta ────────────────────────────────────────────
 

@@ -5,6 +5,7 @@ import { authMiddleware } from "../middleware/auth";
 import { formatDigital, formatHumanReadable } from "../utils/time-format";
 import { resolveStatsRange } from "../utils/stats-range";
 import { buildSummary, aggregateDimension, DIMENSIONS, DIMENSION_TO_KEY, type SummaryRow } from "../utils/summary-builder";
+import { checkUpToDate } from "../utils/aggregation-status";
 
 type Stats = components["schemas"]["Stats"];
 type AllTime = components["schemas"]["AllTime"];
@@ -16,16 +17,6 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const stats = new Hono<AuthEnv>();
 
 stats.use("/*", authMiddleware);
-
-// ─── Helpers ──────────────────────────────────────────────
-
-async function checkUpToDate(db: D1Database): Promise<boolean> {
-  const row = await db
-    .prepare("SELECT value FROM meta WHERE key = 'last_aggregated_at'")
-    .first<{ value: string }>();
-  const lastAggregatedAt = row ? Number(row.value) : 0;
-  return (Date.now() / 1000 - lastAggregatedAt) < 7200;
-}
 
 // ─── GET /stats/:range ───────────────────────────────────
 
