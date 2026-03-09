@@ -22,9 +22,13 @@ properties:
   last_heartbeat_at:
     type: string
     format: date-time
+  human_readable_first_heartbeat_at:
+    type: string
   first_heartbeat_at:
     type: string
     format: date-time
+  urlencoded_name:
+    type: string
   url:
     type: string
     format: uri
