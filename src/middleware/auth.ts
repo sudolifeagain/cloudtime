@@ -5,17 +5,16 @@ import { sha256Hex } from "../utils/crypto";
 import { getSessionTokenFromCookie, validateSession } from "../utils/session";
 
 export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
-  // 1. Try API key auth
+  // 1. Try API key auth — if a key is present but invalid, reject immediately
   const apiKey = getApiKey(c.req);
   if (apiKey) {
     const userId = await getUserId(apiKey, c.env);
-    if (userId) {
-      c.set("userId", userId);
-      return next();
-    }
+    if (!userId) return c.json({ error: "Unauthorized" }, 401);
+    c.set("userId", userId);
+    return next();
   }
 
-  // 2. Fallback to session cookie
+  // 2. No API key — try session cookie
   const sessionToken = getSessionTokenFromCookie(c, c.env);
   if (sessionToken) {
     const tokenHash = await sha256Hex(sessionToken);

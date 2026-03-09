@@ -378,8 +378,8 @@ auth.get("/link/:provider/callback", async (c) => {
   // Validate state (double-submit)
   const stateParam = c.req.query("state");
   const code = c.req.query("code");
-  const stateCookie = getStateCookie(c);
-  clearStateCookie(c);
+  const stateCookie = getStateCookie(c, c.env);
+  clearStateCookie(c, c.env);
 
   if (!stateParam || !code || !stateCookie) {
     return c.json({ error: "Missing state or code" }, 400);
@@ -499,8 +499,8 @@ auth.get("/:provider/callback", async (c) => {
   // 1. Validate state (double-submit)
   const stateParam = c.req.query("state");
   const code = c.req.query("code");
-  const stateCookie = getStateCookie(c);
-  clearStateCookie(c);
+  const stateCookie = getStateCookie(c, c.env);
+  clearStateCookie(c, c.env);
 
   if (!stateParam || !code || !stateCookie) {
     return c.json({ error: "Missing state or code" }, 400);

@@ -208,7 +208,6 @@ export function setSessionCookie(c: Context, token: string, env: Env): void {
     sameSite: "Lax",
     path: "/",
     maxAge: ABSOLUTE_EXPIRY,
-    ...(isDev ? {} : { prefix: "host" }),
   });
 }
 
@@ -251,9 +250,14 @@ export async function consumeOAuthState(
 
 // ─── State Cookie (double-submit) ────────────────────────
 
+function getStateCookieName(env: Env): string {
+  return env.ENVIRONMENT === "development" ? "oauth_state" : "__Host-oauth_state";
+}
+
 export function setStateCookie(c: Context, state: string, env: Env): void {
   const isDev = env.ENVIRONMENT === "development";
-  setCookie(c, "oauth_state", state, {
+  const name = getStateCookieName(env);
+  setCookie(c, name, state, {
     httpOnly: true,
     secure: !isDev,
     sameSite: "Lax",
@@ -262,10 +266,10 @@ export function setStateCookie(c: Context, state: string, env: Env): void {
   });
 }
 
-export function getStateCookie(c: Context): string | null {
-  return getCookie(c, "oauth_state") ?? null;
+export function getStateCookie(c: Context, env: Env): string | null {
+  return getCookie(c, getStateCookieName(env)) ?? null;
 }
 
-export function clearStateCookie(c: Context): void {
-  deleteCookie(c, "oauth_state", { path: "/" });
+export function clearStateCookie(c: Context, env: Env): void {
+  deleteCookie(c, getStateCookieName(env), { path: "/" });
 }
