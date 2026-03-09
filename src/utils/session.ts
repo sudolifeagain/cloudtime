@@ -15,6 +15,8 @@ const STATE_TTL = 600; // 10min
 const SESSION_CACHE_TTL = 300; // 5min
 
 const TOKEN_HASH_RE = /^[0-9a-f]{64}$/;
+const OAUTH_STATE_RE = /^[A-Za-z0-9_-]{16,128}$/;
+const MAX_SESSIONS_PER_USER = 10;
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -22,7 +24,16 @@ function isValidTokenHash(hash: string): boolean {
   return TOKEN_HASH_RE.test(hash);
 }
 
-/** Throttled activity update — writes D1 only if last activity exceeds threshold. */
+function isValidOAuthState(state: string): boolean {
+  return OAUTH_STATE_RE.test(state);
+}
+
+/**
+ * Throttled activity update — writes D1 only if last activity exceeds threshold.
+ * NOTE: Mutates `data.lastActiveAt` in place when an update occurs.
+ * KV cache is not updated here to reduce write volume; the stale `lastActiveAt`
+ * in KV may drift up to ACTIVITY_THROTTLE (5min) from the D1 value.
+ */
 function maybeUpdateActivity(
   db: D1Database,
   tokenHash: string,
@@ -57,6 +68,28 @@ export async function createSession(
   tokenHash: string,
   request: Request,
 ): Promise<{ sessionId: string; expiresAt: string }> {
+  if (!isValidTokenHash(tokenHash)) {
+    throw new Error("Invalid token hash format");
+  }
+
+  // Enforce per-user session limit to prevent storage exhaustion
+  const { count } = await db
+    .prepare("SELECT COUNT(*) as count FROM sessions WHERE user_id = ?")
+    .bind(userId)
+    .first<{ count: number }>() ?? { count: 0 };
+  if (count >= MAX_SESSIONS_PER_USER) {
+    // Evict oldest session(s) to make room
+    await db
+      .prepare(
+        `DELETE FROM sessions WHERE id IN (
+          SELECT id FROM sessions WHERE user_id = ?
+          ORDER BY last_active_at ASC LIMIT ?
+        )`,
+      )
+      .bind(userId, count - MAX_SESSIONS_PER_USER + 1)
+      .run();
+  }
+
   const sessionId = crypto.randomUUID();
   const now = toSqliteDateTime();
   const expiresAt = toSqliteDateTime(new Date(Date.now() + ABSOLUTE_EXPIRY * 1000));
@@ -253,6 +286,9 @@ export async function storeOAuthState(
   state: string,
   data: OAuthStateData,
 ): Promise<void> {
+  if (!isValidOAuthState(state)) {
+    throw new Error("Invalid OAuth state format");
+  }
   await kv.put(`oauth:state:${state}`, JSON.stringify(data), { expirationTtl: STATE_TTL });
 }
 
@@ -260,11 +296,16 @@ export async function storeOAuthState(
  * Consume OAuth state (best-effort one-time use).
  * KV get+delete is not atomic due to eventual consistency, so replay
  * prevention is best-effort. PKCE + nonce provide additional protection.
+ *
+ * Delete-before-parse strategy: prioritises replay prevention over graceful
+ * handling of corrupted data — a corrupt entry is consumed (deleted) and
+ * returns null, forcing the user to restart the OAuth flow.
  */
 export async function consumeOAuthState(
   kv: KVNamespace,
   state: string,
 ): Promise<OAuthStateData | null> {
+  if (!isValidOAuthState(state)) return null;
   const key = `oauth:state:${state}`;
   const raw = await kv.get(key);
   if (!raw) return null;
