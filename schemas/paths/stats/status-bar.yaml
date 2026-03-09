@@ -6,6 +6,15 @@ get:
   description: >-
     Cached version of summaries for today. Returns a summary with zero values
     while cache is being populated.
+  parameters:
+    - name: timezone
+      in: query
+      description: >-
+        IANA timezone (e.g. Asia/Tokyo). Determines what "today" means.
+        Defaults to UTC when omitted.
+      schema:
+        type: string
+        example: Asia/Tokyo
   responses:
     '200':
       description: Today's status bar data

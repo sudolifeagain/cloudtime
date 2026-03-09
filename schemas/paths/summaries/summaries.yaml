@@ -43,8 +43,12 @@ get:
         type: boolean
     - name: timezone
       in: query
+      description: >-
+        IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range
+        resolution. Defaults to UTC when omitted.
       schema:
         type: string
+        example: Asia/Tokyo
   responses:
     '200':
       description: Daily summaries

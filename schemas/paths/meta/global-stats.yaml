@@ -13,6 +13,14 @@ get:
         description: >-
           last_7_days, last_30_days, last_6_months, last_year, all_time, or YYYY
           / YYYY-MM
+    - name: timezone
+      in: query
+      description: >-
+        IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range
+        resolution. Defaults to UTC when omitted.
+      schema:
+        type: string
+        example: Asia/Tokyo
   responses:
     '200':
       description: Aggregate statistics
