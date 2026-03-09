@@ -45,14 +45,21 @@ async function getUserSettings(
   userIds: string[],
 ): Promise<Map<string, UserSettings>> {
   const map = new Map<string, UserSettings>();
+  if (userIds.length === 0) return map;
+
+  const stmts: D1PreparedStatement[] = [];
   for (let i = 0; i < userIds.length; i += BIND_CHUNK_SIZE) {
     const chunk = userIds.slice(i, i + BIND_CHUNK_SIZE);
     const placeholders = chunk.map(() => "?").join(", ");
-    const { results } = await db
-      .prepare(`SELECT id, timeout, timezone FROM users WHERE id IN (${placeholders})`)
-      .bind(...chunk)
-      .all<{ id: string; timeout: number; timezone: string }>();
-    for (const row of results) {
+    stmts.push(
+      db.prepare(`SELECT id, timeout, timezone FROM users WHERE id IN (${placeholders})`)
+        .bind(...chunk),
+    );
+  }
+
+  const batchResults = await db.batch<{ id: string; timeout: number; timezone: string }>(stmts);
+  for (const response of batchResults) {
+    for (const row of response.results) {
       map.set(row.id, {
         timeout: row.timeout * 60, // stored as minutes, convert to seconds
         timezone: row.timezone,
