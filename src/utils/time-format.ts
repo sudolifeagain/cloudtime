@@ -34,18 +34,22 @@ export function isValidTimezone(tz: string): boolean {
 
 /**
  * Convert a Unix epoch (seconds) to a YYYY-MM-DD date string in the given timezone.
- * Falls back to UTC if tz is not provided.
+ * Falls back to UTC if tz is not provided or invalid.
  */
 export function getDateForTimestamp(epochSeconds: number, tz?: string): string {
   const date = new Date(epochSeconds * 1000);
   if (!tz || tz === "UTC") {
     return date.toISOString().slice(0, 10);
   }
-  const parts = getDateFormatter(tz).formatToParts(date);
-  const y = parts.find((p) => p.type === "year")!.value;
-  const m = parts.find((p) => p.type === "month")!.value;
-  const d = parts.find((p) => p.type === "day")!.value;
-  return `${y}-${m}-${d}`;
+  try {
+    const parts = getDateFormatter(tz).formatToParts(date);
+    const y = parts.find((p) => p.type === "year")!.value;
+    const m = parts.find((p) => p.type === "month")!.value;
+    const d = parts.find((p) => p.type === "day")!.value;
+    return `${y}-${m}-${d}`;
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
 }
 
 /**
