@@ -114,26 +114,7 @@ function computeDurations(
   return result;
 }
 
-async function backfillUserProjects(db: D1Database): Promise<void> {
-  const row = await db
-    .prepare("SELECT COUNT(*) as count FROM user_projects")
-    .first<{ count: number }>();
-  if (row && row.count > 0) return; // already populated
-
-  await db
-    .prepare(
-      `INSERT INTO user_projects (user_id, project, first_heartbeat_at, last_heartbeat_at)
-       SELECT user_id, project, MIN(time), MAX(time)
-       FROM heartbeats
-       WHERE project IS NOT NULL AND project != ''
-       GROUP BY user_id, project`
-    )
-    .run();
-}
-
 export async function aggregateHeartbeats(db: D1Database): Promise<void> {
-  await backfillUserProjects(db);
-
   const lastAggregatedAt = await getLastAggregatedAt(db);
   const timeouts = await getUserTimeouts(db);
 
