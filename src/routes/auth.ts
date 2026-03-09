@@ -58,8 +58,8 @@ const sessionMw = createMiddleware<SessionAuthEnv>(async (c, next) => {
 
 // ─── Helpers ─────────────────────────────────────────────
 
-function getRedirectUri(c: { req: { url: string } }, provider: string, isLink = false): string {
-  const origin = new URL(c.req.url).origin;
+function getRedirectUri(c: { req: { url: string }; env: Env }, provider: string, isLink = false): string {
+  const origin = c.env.APP_URL?.replace(/\/+$/, "") ?? new URL(c.req.url).origin;
   return isLink
     ? `${origin}/api/v1/auth/link/${provider}/callback`
     : `${origin}/api/v1/auth/${provider}/callback`;
@@ -379,6 +379,12 @@ auth.get("/link/:provider/callback", async (c) => {
   const provider = c.req.param("provider");
   if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400);
 
+  // Handle OAuth error (e.g., user denied access)
+  const oauthError = c.req.query("error");
+  if (oauthError) {
+    return c.json({ error: `OAuth error: ${oauthError}` }, 400);
+  }
+
   // Validate state (double-submit)
   const stateParam = c.req.query("state");
   const code = c.req.query("code");
@@ -389,7 +395,7 @@ auth.get("/link/:provider/callback", async (c) => {
     return c.json({ error: "Missing state or code" }, 400);
   }
 
-  if (!(await timingSafeEqual(stateParam, stateCookie))) {
+  if (!timingSafeEqual(stateParam, stateCookie)) {
     return c.json({ error: "State mismatch" }, 400);
   }
 
@@ -504,6 +510,12 @@ auth.get("/:provider/callback", async (c) => {
   const provider = c.req.param("provider");
   if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400);
 
+  // Handle OAuth error (e.g., user denied access)
+  const oauthError = c.req.query("error");
+  if (oauthError) {
+    return c.json({ error: `OAuth error: ${oauthError}` }, 400);
+  }
+
   // 1. Validate state (double-submit)
   const stateParam = c.req.query("state");
   const code = c.req.query("code");
@@ -514,7 +526,7 @@ auth.get("/:provider/callback", async (c) => {
     return c.json({ error: "Missing state or code" }, 400);
   }
 
-  if (!(await timingSafeEqual(stateParam, stateCookie))) {
+  if (!timingSafeEqual(stateParam, stateCookie)) {
     return c.json({ error: "State mismatch" }, 400);
   }
 
@@ -622,21 +634,15 @@ auth.get("/:provider/callback", async (c) => {
           )
           .run();
 
-        // Return pending link info (no session — user needs to log in with existing account)
+        // Return minimal pending link info (no full user profile — unauthenticated response)
         return c.json(
           {
             data: {
-              user: rowToUser(
-                (await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-                  .bind(emailMatch.id)
-                  .first<UserRow>())!,
-              ),
               pending_link: {
                 id: pendingId,
                 provider: provider as OAuthProvider,
                 provider_username: userInfo.providerUsername,
                 provider_email: userInfo.providerEmail!,
-                existing_username: emailMatch.username,
                 expires_at: normalizeDateTime(pendingExpiry),
               },
             },
@@ -677,19 +683,16 @@ auth.get("/:provider/callback", async (c) => {
       username = `${username.slice(0, 55)}_${userId.slice(0, 8)}`;
     }
 
-    await c.env.DB.prepare(
-      `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
-       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
-    )
-      .bind(userId, username, userInfo.providerEmail, apiKeyHash)
-      .run();
-
-    // Create OAuth account link
-    await c.env.DB.prepare(
-      `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
+    // Atomic: create user + OAuth account in single batch
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
+         VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+      ).bind(userId, username, userInfo.providerEmail, apiKeyHash),
+      c.env.DB.prepare(
+        `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
         crypto.randomUUID(),
         userId,
         provider,
@@ -700,8 +703,8 @@ auth.get("/:provider/callback", async (c) => {
         accessTokenEnc,
         refreshTokenEnc,
         userInfo.tokenExpiresAt,
-      )
-      .run();
+      ),
+    ]);
 
     // Create session
     const sessionToken = generateSessionToken();

@@ -259,6 +259,36 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
   return cachedJWKS;
 }
 
+async function verifyGoogleJwt(
+  idToken: string,
+  env: Env,
+  kv: KVNamespace,
+): Promise<jose.JWTPayload> {
+  const verifyOpts: jose.JWTVerifyOptions = {
+    issuer: ["https://accounts.google.com", "accounts.google.com"],
+    audience: env.GOOGLE_CLIENT_ID,
+    maxTokenAge: "5 minutes",
+    clockTolerance: "30 seconds",
+  };
+
+  try {
+    const jwks = await getGoogleJWKS(kv);
+    const { payload } = await jose.jwtVerify(idToken, jwks, verifyOpts);
+    return payload;
+  } catch (err) {
+    // If signature verification fails, Google may have rotated keys — clear cache and retry
+    if (err instanceof jose.errors.JWSSignatureVerificationFailed) {
+      cachedJWKS = null;
+      jwksCachedAt = 0;
+      await kv.delete("google:jwks");
+      const freshJwks = await getGoogleJWKS(kv);
+      const { payload } = await jose.jwtVerify(idToken, freshJwks, verifyOpts);
+      return payload;
+    }
+    throw err;
+  }
+}
+
 async function validateGoogleIdToken(
   idToken: string,
   accessToken: string,
@@ -268,21 +298,21 @@ async function validateGoogleIdToken(
   kv: KVNamespace,
   nonce?: string,
 ): Promise<ProviderUserInfo> {
-  const jwks = await getGoogleJWKS(kv);
-
-  const { payload } = await jose.jwtVerify(idToken, jwks, {
-    issuer: ["https://accounts.google.com", "accounts.google.com"],
-    audience: env.GOOGLE_CLIENT_ID,
-  });
+  const payload = await verifyGoogleJwt(idToken, env, kv);
 
   // Validate azp (authorized party) — prevents cross-client token reuse
   if (payload.azp && payload.azp !== env.GOOGLE_CLIENT_ID) {
     throw new Error("Google id_token azp mismatch");
   }
 
-  // Validate nonce
-  if (nonce && payload.nonce !== nonce) {
-    throw new Error("Google id_token nonce mismatch");
+  // Validate nonce — if we sent one, the token MUST contain it
+  if (nonce) {
+    if (!payload.nonce) {
+      throw new Error("Google id_token missing expected nonce");
+    }
+    if (payload.nonce !== nonce) {
+      throw new Error("Google id_token nonce mismatch");
+    }
   }
 
   // Validate at_hash (access token hash) if present

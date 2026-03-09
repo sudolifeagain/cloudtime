@@ -227,7 +227,12 @@ export function setSessionCookie(c: Context, token: string, env: Env): void {
 
 export function clearSessionCookie(c: Context, env: Env): void {
   const name = getSessionCookieName(env);
-  deleteCookie(c, name, { path: "/" });
+  deleteCookie(c, name, {
+    path: "/",
+    secure: !isDev(env),
+    httpOnly: true,
+    sameSite: "Lax",
+  });
 }
 
 export function getSessionTokenFromCookie(c: Context, env: Env): string | null {
@@ -284,5 +289,10 @@ export function getStateCookie(c: Context, env: Env): string | null {
 }
 
 export function clearStateCookie(c: Context, env: Env): void {
-  deleteCookie(c, getStateCookieName(env), { path: "/" });
+  deleteCookie(c, getStateCookieName(env), {
+    path: "/",
+    secure: !isDev(env),
+    httpOnly: true,
+    sameSite: "Lax",
+  });
 }

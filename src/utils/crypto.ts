@@ -105,18 +105,10 @@ export async function decryptToken(encrypted: string, keyHex: string): Promise<s
 
 // ─── Constant-time comparison ────────────────────────────
 
-export async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+export function timingSafeEqual(a: string, b: string): boolean {
   const encoder = new TextEncoder();
   const aBytes = encoder.encode(a);
   const bBytes = encoder.encode(b);
   if (aBytes.byteLength !== bBytes.byteLength) return false;
-  const key = await crypto.subtle.importKey(
-    "raw",
-    randomBytes(32),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"],
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, aBytes);
-  return crypto.subtle.verify("HMAC", key, sig, bBytes);
+  return crypto.subtle.timingSafeEqual(aBytes, bBytes);
 }
