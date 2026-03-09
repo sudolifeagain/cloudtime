@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { csrf } from "hono/csrf";
 import type { Env } from "../../types";
 import sessions from "./sessions";
+import link from "./link";
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -21,5 +22,8 @@ auth.use(
 
 // Session-authenticated routes (static paths first)
 auth.route("/", sessions);
+
+// Account linking routes (session required for initiation, cookie-based for callback)
+auth.route("/", link);
 
 export default auth;
