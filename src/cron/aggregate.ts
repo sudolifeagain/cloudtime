@@ -38,22 +38,26 @@ async function getLastAggregatedAt(db: D1Database): Promise<number> {
 
 type UserSettings = { timeout: number; timezone: string };
 
+const BIND_CHUNK_SIZE = 100;
+
 async function getUserSettings(
   db: D1Database,
   userIds: string[],
 ): Promise<Map<string, UserSettings>> {
-  if (userIds.length === 0) return new Map();
-  const placeholders = userIds.map(() => "?").join(", ");
-  const { results } = await db
-    .prepare(`SELECT id, timeout, timezone FROM users WHERE id IN (${placeholders})`)
-    .bind(...userIds)
-    .all<{ id: string; timeout: number; timezone: string }>();
   const map = new Map<string, UserSettings>();
-  for (const row of results) {
-    map.set(row.id, {
-      timeout: row.timeout * 60, // stored as minutes, convert to seconds
-      timezone: row.timezone,
-    });
+  for (let i = 0; i < userIds.length; i += BIND_CHUNK_SIZE) {
+    const chunk = userIds.slice(i, i + BIND_CHUNK_SIZE);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const { results } = await db
+      .prepare(`SELECT id, timeout, timezone FROM users WHERE id IN (${placeholders})`)
+      .bind(...chunk)
+      .all<{ id: string; timeout: number; timezone: string }>();
+    for (const row of results) {
+      map.set(row.id, {
+        timeout: row.timeout * 60, // stored as minutes, convert to seconds
+        timezone: row.timezone,
+      });
+    }
   }
   return map;
 }
