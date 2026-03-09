@@ -4,6 +4,7 @@ import type { Env } from "./types";
 import heartbeats from "./routes/heartbeats";
 import summaries from "./routes/summaries";
 import stats from "./routes/stats";
+import users from "./routes/users";
 import { aggregateHeartbeats } from "./cron/aggregate";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -21,6 +22,9 @@ app.route("/api/v1/users/current", summaries);
 
 // Stats routes (mounted at /users/current, sub-app defines /stats, /status_bar, /all_time_since_today, /durations)
 app.route("/api/v1/users/current", stats);
+
+// User routes (mounted at /users/current, sub-app defines /, /profile, /projects)
+app.route("/api/v1/users/current", users);
 
 // Cron trigger handler for periodic aggregation
 export default {
