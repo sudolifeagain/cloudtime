@@ -1,0 +1,19 @@
+allOf:
+  - $ref: ./HeartbeatInput.yaml
+  - type: object
+    required:
+      - id
+      - user_id
+      - created_at
+    properties:
+      id:
+        type: string
+      user_id:
+        type: string
+      machine:
+        type: string
+      user_agent_id:
+        type: string
+      created_at:
+        type: string
+        format: date-time

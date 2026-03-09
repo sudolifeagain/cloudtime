@@ -1,0 +1,45 @@
+type: object
+required:
+  - grand_total
+  - range
+properties:
+  grand_total:
+    $ref: ./GrandTotal.yaml
+  categories:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  projects:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  languages:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  editors:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  operating_systems:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  dependencies:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  machines:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  branches:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  entities:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml
+  range:
+    $ref: ./TimeRange.yaml
