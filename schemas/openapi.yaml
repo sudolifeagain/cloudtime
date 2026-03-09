@@ -167,7 +167,7 @@ paths:
   /stats/{range}:
     $ref: paths/meta/global-stats.yaml
   /users/current/data_dumps:
-    $ref: paths/meta/data-dumps.yaml
+    $ref: paths/users/data-dumps.yaml
 components:
   securitySchemes:
     apiKey:
