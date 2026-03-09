@@ -3,6 +3,7 @@
  */
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
+import { csrf } from "hono/csrf";
 import type { Env, SessionAuthEnv } from "../types";
 import {
   sha256Hex,
@@ -40,6 +41,9 @@ import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../uti
 
 const auth = new Hono<{ Bindings: Env }>();
 
+// CSRF protection — validates Origin header for non-safe methods (POST, DELETE)
+auth.use("/*", csrf());
+
 // ─── Session Middleware ──────────────────────────────────
 
 const sessionMw = createMiddleware<SessionAuthEnv>(async (c, next) => {
@@ -59,7 +63,14 @@ const sessionMw = createMiddleware<SessionAuthEnv>(async (c, next) => {
 // ─── Helpers ─────────────────────────────────────────────
 
 function getRedirectUri(c: { req: { url: string }; env: Env }, provider: string, isLink = false): string {
-  const origin = c.env.APP_URL?.replace(/\/+$/, "") ?? new URL(c.req.url).origin;
+  let origin = c.env.APP_URL?.replace(/\/+$/, "");
+  if (!origin) {
+    if (c.env.ENVIRONMENT === "development" || c.env.ENVIRONMENT === undefined) {
+      origin = new URL(c.req.url).origin;
+    } else {
+      throw new Error("APP_URL environment variable is required in production");
+    }
+  }
   return isLink
     ? `${origin}/api/v1/auth/link/${provider}/callback`
     : `${origin}/api/v1/auth/${provider}/callback`;
@@ -395,7 +406,7 @@ auth.get("/link/:provider/callback", async (c) => {
     return c.json({ error: "Missing state or code" }, 400);
   }
 
-  if (!timingSafeEqual(stateParam, stateCookie)) {
+  if (!(await timingSafeEqual(stateParam, stateCookie))) {
     return c.json({ error: "State mismatch" }, 400);
   }
 
@@ -429,10 +440,11 @@ auth.get("/link/:provider/callback", async (c) => {
       return c.json({ error: "This provider account is already linked to another user" }, 409);
     }
 
-    // Encrypt tokens
-    const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY);
+    // Encrypt tokens with AAD context (binds ciphertext to this user+provider)
+    const encCtx = `${stateData.linkUserId}:${provider}`;
+    const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
     const refreshTokenEnc = userInfo.refreshToken
-      ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY)
+      ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
       : null;
 
     if (existingLink) {
@@ -526,7 +538,7 @@ auth.get("/:provider/callback", async (c) => {
     return c.json({ error: "Missing state or code" }, 400);
   }
 
-  if (!timingSafeEqual(stateParam, stateCookie)) {
+  if (!(await timingSafeEqual(stateParam, stateCookie))) {
     return c.json({ error: "State mismatch" }, 400);
   }
 
@@ -548,14 +560,7 @@ auth.get("/:provider/callback", async (c) => {
       return c.json({ error: "Email not verified with provider. Please verify your email first." }, 400);
     }
 
-    // 5. Account matching
-    // Encrypt tokens for storage
-    const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY);
-    const refreshTokenEnc = userInfo.refreshToken
-      ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY)
-      : null;
-
-    // Check for existing OAuth link
+    // 5. Account matching — check for existing OAuth link
     const existingOAuth = await c.env.DB.prepare(
       "SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?",
     )
@@ -564,6 +569,12 @@ auth.get("/:provider/callback", async (c) => {
 
     if (existingOAuth) {
       // ─── Existing user login ─────────────────────
+      const encCtx = `${existingOAuth.user_id}:${provider}`;
+      const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
+      const refreshTokenEnc = userInfo.refreshToken
+        ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
+        : null;
+
       // Update provider tokens
       await c.env.DB.prepare(
         `UPDATE oauth_accounts SET provider_username = ?, provider_email = ?, email_verified = ?,
@@ -608,6 +619,23 @@ auth.get("/:provider/callback", async (c) => {
         .first<{ id: string; username: string }>();
 
       if (emailMatch) {
+        // Limit active pending links per user
+        const activeLinkCount = await c.env.DB.prepare(
+          "SELECT COUNT(*) as count FROM pending_links WHERE existing_user_id = ? AND expires_at > datetime('now')",
+        )
+          .bind(emailMatch.id)
+          .first<{ count: number }>();
+        if (activeLinkCount && activeLinkCount.count >= 3) {
+          return c.json({ error: "Too many pending link requests" }, 429);
+        }
+
+        // Encrypt tokens with AAD context
+        const encCtx = `${emailMatch.id}:${provider}`;
+        const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
+        const refreshTokenEnc = userInfo.refreshToken
+          ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
+          : null;
+
         // Create pending link for manual approval
         const pendingId = crypto.randomUUID();
         const pendingExpiry = new Date(Date.now() + 3600_000) // 1 hour
@@ -655,21 +683,6 @@ auth.get("/:provider/callback", async (c) => {
 
     // No existing account — new user creation
     const isSingleUser = c.env.INSTANCE_MODE !== "multi";
-
-    if (isSingleUser) {
-      // Check if any users exist
-      const userCount = await c.env.DB.prepare("SELECT COUNT(*) as count FROM users")
-        .first<{ count: number }>();
-
-      if (userCount && userCount.count > 0) {
-        return c.json(
-          { error: "Registration closed. This instance only allows one user." },
-          403,
-        );
-      }
-    }
-
-    // Create user
     const userId = crypto.randomUUID();
     const { plaintext: apiKeyPlaintext, hash: apiKeyHash } = await generateApiKey();
 
@@ -683,28 +696,72 @@ auth.get("/:provider/callback", async (c) => {
       username = `${username.slice(0, 55)}_${userId.slice(0, 8)}`;
     }
 
-    // Atomic: create user + OAuth account in single batch
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
-         VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
-      ).bind(userId, username, userInfo.providerEmail, apiKeyHash),
-      c.env.DB.prepare(
-        `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        crypto.randomUUID(),
-        userId,
-        provider,
-        userInfo.providerUserId,
-        userInfo.providerUsername,
-        userInfo.providerEmail,
-        userInfo.emailVerified ? 1 : 0,
-        accessTokenEnc,
-        refreshTokenEnc,
-        userInfo.tokenExpiresAt,
-      ),
-    ]);
+    // Encrypt tokens with AAD context
+    const encCtx = `${userId}:${provider}`;
+    const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
+    const refreshTokenEnc = userInfo.refreshToken
+      ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
+      : null;
+
+    const oauthAccountId = crypto.randomUUID();
+
+    if (isSingleUser) {
+      // Atomic: create user only if no users exist (prevents TOCTOU race)
+      const batchResult = await c.env.DB.batch([
+        c.env.DB.prepare(
+          `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
+           SELECT ?, ?, ?, ?, datetime('now'), datetime('now')
+           WHERE (SELECT COUNT(*) FROM users) = 0`,
+        ).bind(userId, username, userInfo.providerEmail, apiKeyHash),
+        c.env.DB.prepare(
+          `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)`,
+        ).bind(
+          oauthAccountId,
+          userId,
+          provider,
+          userInfo.providerUserId,
+          userInfo.providerUsername,
+          userInfo.providerEmail,
+          userInfo.emailVerified ? 1 : 0,
+          accessTokenEnc,
+          refreshTokenEnc,
+          userInfo.tokenExpiresAt,
+          userId,
+        ),
+      ]);
+
+      if (batchResult[0].meta.changes === 0) {
+        return c.json(
+          { error: "Registration closed. This instance only allows one user." },
+          403,
+        );
+      }
+    } else {
+      // Multi-user mode: unconditional insert
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
+           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        ).bind(userId, username, userInfo.providerEmail, apiKeyHash),
+        c.env.DB.prepare(
+          `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          oauthAccountId,
+          userId,
+          provider,
+          userInfo.providerUserId,
+          userInfo.providerUsername,
+          userInfo.providerEmail,
+          userInfo.emailVerified ? 1 : 0,
+          accessTokenEnc,
+          refreshTokenEnc,
+          userInfo.tokenExpiresAt,
+        ),
+      ]);
+    }
 
     // Create session
     const sessionToken = generateSessionToken();

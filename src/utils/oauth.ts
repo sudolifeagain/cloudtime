@@ -113,7 +113,8 @@ export async function exchangeCode(
 
   // GitHub returns 200 even on errors
   if (data.error) {
-    throw new Error(`OAuth token exchange failed: ${data.error} - ${data.error_description ?? ""}`);
+    console.error(`OAuth token exchange failed for ${provider}: ${data.error} - ${data.error_description ?? ""}`);
+    throw new Error("OAuth token exchange failed");
   }
 
   if (!res.ok) {

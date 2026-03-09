@@ -76,11 +76,13 @@ async function importAesKey(keyHex: string): Promise<CryptoKey> {
   ]);
 }
 
-export async function encryptToken(plaintext: string, keyHex: string): Promise<string> {
+export async function encryptToken(plaintext: string, keyHex: string, context?: string): Promise<string> {
   const key = await importAesKey(keyHex);
   const iv = randomBytes(12);
   const encoded = new TextEncoder().encode(plaintext);
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
+  const params: { name: string; iv: Uint8Array; additionalData?: ArrayBuffer | ArrayBufferView } = { name: "AES-GCM", iv };
+  if (context) params.additionalData = new TextEncoder().encode(context);
+  const ciphertext = await crypto.subtle.encrypt(params, key, encoded);
   return `${base64url(iv)}.${base64urlFromBuffer(ciphertext)}`;
 }
 
@@ -93,22 +95,25 @@ function base64urlDecode(input: string): Uint8Array {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
-export async function decryptToken(encrypted: string, keyHex: string): Promise<string> {
+export async function decryptToken(encrypted: string, keyHex: string, context?: string): Promise<string> {
   const key = await importAesKey(keyHex);
   const parts = encrypted.split(".");
   if (parts.length !== 2) throw new Error("Invalid encrypted token format");
   const iv = base64urlDecode(parts[0]);
   const ciphertext = base64urlDecode(parts[1]);
-  const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+  const params: { name: string; iv: Uint8Array; additionalData?: ArrayBuffer | ArrayBufferView } = { name: "AES-GCM", iv };
+  if (context) params.additionalData = new TextEncoder().encode(context);
+  const plainBuf = await crypto.subtle.decrypt(params, key, ciphertext);
   return new TextDecoder().decode(plainBuf);
 }
 
 // ─── Constant-time comparison ────────────────────────────
 
-export function timingSafeEqual(a: string, b: string): boolean {
+export async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   const encoder = new TextEncoder();
-  const aBytes = encoder.encode(a);
-  const bBytes = encoder.encode(b);
-  if (aBytes.byteLength !== bBytes.byteLength) return false;
-  return crypto.subtle.timingSafeEqual(aBytes, bBytes);
+  const [aHash, bHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(a)),
+    crypto.subtle.digest("SHA-256", encoder.encode(b)),
+  ]);
+  return crypto.subtle.timingSafeEqual(aHash, bHash);
 }
