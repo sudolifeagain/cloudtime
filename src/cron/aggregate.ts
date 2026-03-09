@@ -1,3 +1,5 @@
+import { getDateForTimestamp } from "../utils/time-format";
+
 type HeartbeatForAggregation = {
   user_id: string;
   time: number;
@@ -24,6 +26,7 @@ type SummaryTuple = {
 };
 
 const DEFAULT_TIMEOUT = 15 * 60; // 15 minutes in seconds
+const MAX_USER_TIMEOUT = 60 * 60; // 60 minutes — max allowed by validation
 const HEARTBEAT_LIMIT = 5000;
 
 async function getLastAggregatedAt(db: D1Database): Promise<number> {
@@ -33,22 +36,42 @@ async function getLastAggregatedAt(db: D1Database): Promise<number> {
   return row ? Number(row.value) : 0;
 }
 
-async function getUserTimeouts(
+type UserSettings = { timeout: number; timezone: string };
+
+const BIND_CHUNK_SIZE = 100;
+
+async function getUserSettings(
   db: D1Database,
-): Promise<Map<string, number>> {
-  const { results } = await db
-    .prepare("SELECT id, timeout FROM users")
-    .all<{ id: string; timeout: number }>();
-  const map = new Map<string, number>();
-  for (const row of results) {
-    map.set(row.id, row.timeout * 60); // stored as minutes, convert to seconds
+  userIds: string[],
+): Promise<Map<string, UserSettings>> {
+  const map = new Map<string, UserSettings>();
+  if (userIds.length === 0) return map;
+
+  const stmts: D1PreparedStatement[] = [];
+  for (let i = 0; i < userIds.length; i += BIND_CHUNK_SIZE) {
+    const chunk = userIds.slice(i, i + BIND_CHUNK_SIZE);
+    const placeholders = chunk.map(() => "?").join(", ");
+    stmts.push(
+      db.prepare(`SELECT id, timeout, timezone FROM users WHERE id IN (${placeholders})`)
+        .bind(...chunk),
+    );
+  }
+
+  const batchResults = await db.batch<{ id: string; timeout: number; timezone: string }>(stmts);
+  for (const response of batchResults) {
+    for (const row of response.results) {
+      map.set(row.id, {
+        timeout: row.timeout * 60, // stored as minutes, convert to seconds
+        timezone: row.timezone,
+      });
+    }
   }
   return map;
 }
 
 function computeDurations(
   heartbeats: HeartbeatForAggregation[],
-  timeouts: Map<string, number>,
+  userSettings: Map<string, UserSettings>,
   lastAggregatedAt: number,
 ): Map<string, SummaryTuple> {
   const result = new Map<string, SummaryTuple>();
@@ -65,7 +88,9 @@ function computeDurations(
   }
 
   for (const [userId, userHeartbeats] of byUser) {
-    const timeout = timeouts.get(userId) ?? DEFAULT_TIMEOUT;
+    const settings = userSettings.get(userId);
+    const timeout = settings?.timeout ?? DEFAULT_TIMEOUT;
+    const tz = settings?.timezone ?? "UTC";
 
     // Already sorted by time ASC from the query, but ensure order
     for (let i = 1; i < userHeartbeats.length; i++) {
@@ -80,7 +105,7 @@ function computeDurations(
 
       // Attribute the interval [prev.time, curr.time) to prev's context
       // Use empty string sentinel for NULL dimensions
-      const date = new Date(prev.time * 1000).toISOString().slice(0, 10);
+      const date = getDateForTimestamp(prev.time, tz);
       const project = prev.project ?? "";
       const language = prev.language ?? "";
       const editor = prev.editor ?? "";
@@ -116,15 +141,9 @@ function computeDurations(
 
 export async function aggregateHeartbeats(db: D1Database): Promise<void> {
   const lastAggregatedAt = await getLastAggregatedAt(db);
-  const timeouts = await getUserTimeouts(db);
 
-  // Find the maximum timeout for lookback window
-  let maxTimeout = DEFAULT_TIMEOUT;
-  for (const t of timeouts.values()) {
-    if (t > maxTimeout) maxTimeout = t;
-  }
-
-  const lookbackTime = lastAggregatedAt > 0 ? lastAggregatedAt - maxTimeout : 0;
+  // Use the max allowed timeout (60min) for lookback to cover all users
+  const lookbackTime = lastAggregatedAt > 0 ? lastAggregatedAt - MAX_USER_TIMEOUT : 0;
 
   // 1. Fetch exactly 1 lookback heartbeat per user (latest before cursor)
   // SQLite guarantees bare columns match the row containing MAX()
@@ -165,7 +184,11 @@ export async function aggregateHeartbeats(db: D1Database): Promise<void> {
   // Combine: lookback heartbeats precede new ones chronologically per-user
   const heartbeats = [...lookbackHeartbeats, ...newHeartbeats];
 
-  const durations = computeDurations(heartbeats, timeouts, lastAggregatedAt);
+  // Fetch settings only for users present in this batch
+  const uniqueUserIds = [...new Set(heartbeats.map((hb) => hb.user_id))];
+  const userSettings = await getUserSettings(db, uniqueUserIds);
+
+  const durations = computeDurations(heartbeats, userSettings, lastAggregatedAt);
 
   // Build batch: all UPSERTs + meta update
   const statements: D1PreparedStatement[] = [];
