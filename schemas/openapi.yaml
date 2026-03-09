@@ -15,6 +15,7 @@ servers:
 security:
   - apiKey: []
   - bearerAuth: []
+  - apiKeyQuery: []
   - sessionCookie: []
 
 tags:
@@ -84,7 +85,7 @@ paths:
                 type: string
                 format: uri
             Set-Cookie:
-              description: PKCE code_verifier stored in encrypted cookie
+              description: PKCE state and code_verifier stored in KV (TTL 10 min)
               schema:
                 type: string
 
@@ -1713,14 +1714,20 @@ components:
       scheme: bearer
       description: Bearer token authentication
 
+    apiKeyQuery:
+      type: apiKey
+      in: query
+      name: api_key
+      description: API key as query parameter (?api_key=your_key)
+
     sessionCookie:
       type: apiKey
       in: cookie
       name: __session
       description: |
-        Encrypted session cookie for web UI.
-        HttpOnly, Secure, SameSite=Strict, 24h TTL.
-        Token stored as SHA-256 hash in DB, never in plaintext.
+        HttpOnly session cookie for web UI.
+        Secure, SameSite=Strict, 24h TTL (sliding).
+        Random 32-byte token; stored as SHA-256 hash in DB.
 
   # ============================================================
   # Reusable Responses
@@ -1785,6 +1792,11 @@ components:
         plan:
           type: string
           enum: [free, basic, premium]
+        timeout:
+          type: integer
+          description: Keystroke timeout in minutes
+          minimum: 1
+          maximum: 60
         is_hireable:
           type: boolean
         github_username:
