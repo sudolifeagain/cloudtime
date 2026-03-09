@@ -69,5 +69,7 @@ get:
                 $ref: ../../components/schemas/CumulativeTotal.yaml
               daily_average:
                 $ref: ../../components/schemas/DailyAverage.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
