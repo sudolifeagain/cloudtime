@@ -4,20 +4,25 @@ type SummaryRange = components["schemas"]["SummaryRange"];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const dateFormatterCache = new Map<string, Intl.DateTimeFormat | null>();
 
-function getDateFormatter(tz: string): Intl.DateTimeFormat {
-  let fmt = dateFormatterCache.get(tz);
-  if (!fmt) {
-    fmt = new Intl.DateTimeFormat("en-CA", {
+function getDateFormatter(tz: string): Intl.DateTimeFormat | null {
+  if (dateFormatterCache.has(tz)) {
+    return dateFormatterCache.get(tz)!;
+  }
+  try {
+    const fmt = new Intl.DateTimeFormat("en-CA", {
       timeZone: tz,
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
     });
     dateFormatterCache.set(tz, fmt);
+    return fmt;
+  } catch {
+    dateFormatterCache.set(tz, null);
+    return null;
   }
-  return fmt;
 }
 
 /**
@@ -41,15 +46,15 @@ export function getDateForTimestamp(epochSeconds: number, tz?: string): string {
   if (!tz || tz === "UTC") {
     return date.toISOString().slice(0, 10);
   }
-  try {
-    const parts = getDateFormatter(tz).formatToParts(date);
-    const y = parts.find((p) => p.type === "year")!.value;
-    const m = parts.find((p) => p.type === "month")!.value;
-    const d = parts.find((p) => p.type === "day")!.value;
-    return `${y}-${m}-${d}`;
-  } catch {
+  const fmt = getDateFormatter(tz);
+  if (!fmt) {
     return date.toISOString().slice(0, 10);
   }
+  const parts = fmt.formatToParts(date);
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const d = parts.find((p) => p.type === "day")!.value;
+  return `${y}-${m}-${d}`;
 }
 
 /**
