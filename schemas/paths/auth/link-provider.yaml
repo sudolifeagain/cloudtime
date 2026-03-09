@@ -26,3 +26,5 @@ post:
             format: uri
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml

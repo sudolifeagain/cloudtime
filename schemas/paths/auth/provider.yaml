@@ -54,3 +54,5 @@ get:
             type: string
     '400':
       $ref: ../../components/responses/BadRequest.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml

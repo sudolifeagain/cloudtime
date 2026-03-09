@@ -45,3 +45,5 @@ post:
                       Store it securely; it cannot be retrieved from the server.
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml

@@ -47,3 +47,5 @@ post:
             properties:
               error:
                 type: string
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml
