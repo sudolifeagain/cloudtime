@@ -1,0 +1,28 @@
+type: object
+required:
+  - name
+  - total_seconds
+  - percent
+  - digital
+  - text
+properties:
+  name:
+    type: string
+  total_seconds:
+    type: number
+    format: double
+  percent:
+    type: number
+    format: double
+  digital:
+    type: string
+    description: Digital clock format (H:MM)
+  text:
+    type: string
+    description: Human readable (e.g., '2 hrs 30 mins')
+  hours:
+    type: integer
+  minutes:
+    type: integer
+  seconds:
+    type: integer

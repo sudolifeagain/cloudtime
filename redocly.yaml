@@ -1,0 +1,11 @@
+apis:
+  cloudtime@v1:
+    root: ./schemas/openapi.yaml
+    x-openapi-ts:
+      output: ./src/types/generated.ts
+
+rules:
+  no-ambiguous-paths: off
+  info-license-strict: off
+  operation-2xx-response: off
+  operation-4xx-response: off

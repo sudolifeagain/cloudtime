@@ -4,3 +4,4 @@ dist/
 .dev.vars
 .playwright-mcp/
 _local-*
+schemas/_bundled/

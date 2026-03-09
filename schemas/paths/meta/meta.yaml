@@ -1,0 +1,23 @@
+get:
+  operationId: getMeta
+  tags:
+    - meta
+  summary: Server metadata
+  security: []
+  responses:
+    '200':
+      description: Server information
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: object
+                properties:
+                  ip:
+                    type: string
+                  version:
+                    type: string
