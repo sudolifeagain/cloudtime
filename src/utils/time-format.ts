@@ -4,6 +4,22 @@ type SummaryRange = components["schemas"]["SummaryRange"];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function getDateFormatter(tz: string): Intl.DateTimeFormat {
+  let fmt = dateFormatterCache.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    dateFormatterCache.set(tz, fmt);
+  }
+  return fmt;
+}
+
 /**
  * Validate an IANA timezone string. Returns true if valid.
  */
@@ -17,26 +33,30 @@ export function isValidTimezone(tz: string): boolean {
 }
 
 /**
+ * Convert a Unix epoch (seconds) to a YYYY-MM-DD date string in the given timezone.
+ * Falls back to UTC if tz is not provided.
+ */
+export function getDateForTimestamp(epochSeconds: number, tz?: string): string {
+  const date = new Date(epochSeconds * 1000);
+  if (!tz || tz === "UTC") {
+    return date.toISOString().slice(0, 10);
+  }
+  const parts = getDateFormatter(tz).formatToParts(date);
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const d = parts.find((p) => p.type === "day")!.value;
+  return `${y}-${m}-${d}`;
+}
+
+/**
  * Get "today" as a Date anchored to midnight UTC, optionally shifted by IANA timezone.
  * When tz is provided, determines what date it is in that timezone, then returns
  * a UTC midnight Date for that date. Caller must validate tz before calling.
  */
 export function getToday(tz?: string): Date {
-  const now = new Date();
-  if (tz) {
-    // Format current time in the target timezone to extract the local date
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(now);
-    const year = Number(parts.find((p) => p.type === "year")!.value);
-    const month = Number(parts.find((p) => p.type === "month")!.value);
-    const day = Number(parts.find((p) => p.type === "day")!.value);
-    return new Date(Date.UTC(year, month - 1, day));
-  }
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const today = getDateForTimestamp(Date.now() / 1000, tz);
+  const [y, m, d] = today.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
 }
 
 /** Format seconds as digital clock: "2:30" */

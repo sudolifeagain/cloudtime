@@ -1,3 +1,5 @@
+import { getDateForTimestamp } from "../utils/time-format";
+
 type HeartbeatForAggregation = {
   user_id: string;
   time: number;
@@ -33,22 +35,27 @@ async function getLastAggregatedAt(db: D1Database): Promise<number> {
   return row ? Number(row.value) : 0;
 }
 
-async function getUserTimeouts(
+type UserSettings = { timeout: number; timezone: string };
+
+async function getUserSettings(
   db: D1Database,
-): Promise<Map<string, number>> {
+): Promise<Map<string, UserSettings>> {
   const { results } = await db
-    .prepare("SELECT id, timeout FROM users")
-    .all<{ id: string; timeout: number }>();
-  const map = new Map<string, number>();
+    .prepare("SELECT id, timeout, timezone FROM users")
+    .all<{ id: string; timeout: number; timezone: string }>();
+  const map = new Map<string, UserSettings>();
   for (const row of results) {
-    map.set(row.id, row.timeout * 60); // stored as minutes, convert to seconds
+    map.set(row.id, {
+      timeout: row.timeout * 60, // stored as minutes, convert to seconds
+      timezone: row.timezone,
+    });
   }
   return map;
 }
 
 function computeDurations(
   heartbeats: HeartbeatForAggregation[],
-  timeouts: Map<string, number>,
+  userSettings: Map<string, UserSettings>,
   lastAggregatedAt: number,
 ): Map<string, SummaryTuple> {
   const result = new Map<string, SummaryTuple>();
@@ -65,7 +72,9 @@ function computeDurations(
   }
 
   for (const [userId, userHeartbeats] of byUser) {
-    const timeout = timeouts.get(userId) ?? DEFAULT_TIMEOUT;
+    const settings = userSettings.get(userId);
+    const timeout = settings?.timeout ?? DEFAULT_TIMEOUT;
+    const tz = settings?.timezone ?? "UTC";
 
     // Already sorted by time ASC from the query, but ensure order
     for (let i = 1; i < userHeartbeats.length; i++) {
@@ -80,7 +89,7 @@ function computeDurations(
 
       // Attribute the interval [prev.time, curr.time) to prev's context
       // Use empty string sentinel for NULL dimensions
-      const date = new Date(prev.time * 1000).toISOString().slice(0, 10);
+      const date = getDateForTimestamp(prev.time, tz);
       const project = prev.project ?? "";
       const language = prev.language ?? "";
       const editor = prev.editor ?? "";
@@ -116,12 +125,12 @@ function computeDurations(
 
 export async function aggregateHeartbeats(db: D1Database): Promise<void> {
   const lastAggregatedAt = await getLastAggregatedAt(db);
-  const timeouts = await getUserTimeouts(db);
+  const userSettings = await getUserSettings(db);
 
   // Find the maximum timeout for lookback window
   let maxTimeout = DEFAULT_TIMEOUT;
-  for (const t of timeouts.values()) {
-    if (t > maxTimeout) maxTimeout = t;
+  for (const s of userSettings.values()) {
+    if (s.timeout > maxTimeout) maxTimeout = s.timeout;
   }
 
   const lookbackTime = lastAggregatedAt > 0 ? lastAggregatedAt - maxTimeout : 0;
@@ -165,7 +174,7 @@ export async function aggregateHeartbeats(db: D1Database): Promise<void> {
   // Combine: lookback heartbeats precede new ones chronologically per-user
   const heartbeats = [...lookbackHeartbeats, ...newHeartbeats];
 
-  const durations = computeDurations(heartbeats, timeouts, lastAggregatedAt);
+  const durations = computeDurations(heartbeats, userSettings, lastAggregatedAt);
 
   // Build batch: all UPSERTs + meta update
   const statements: D1PreparedStatement[] = [];
