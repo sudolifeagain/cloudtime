@@ -1,0 +1,18 @@
+type: object
+required:
+  - id
+  - name
+  - created_at
+properties:
+  id:
+    type: string
+  name:
+    type: string
+  members_count:
+    type: integer
+  created_at:
+    type: string
+    format: date-time
+  modified_at:
+    type: string
+    format: date-time

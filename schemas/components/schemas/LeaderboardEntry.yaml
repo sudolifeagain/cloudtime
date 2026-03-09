@@ -1,0 +1,45 @@
+type: object
+properties:
+  rank:
+    type: integer
+  user:
+    type: object
+    properties:
+      id:
+        type: string
+      display_name:
+        type: string
+      username:
+        type: string
+      photo:
+        type: string
+        format: uri
+      is_hireable:
+        type: boolean
+      city:
+        type: string
+      country_code:
+        type: string
+  running_total:
+    type: object
+    properties:
+      total_seconds:
+        type: number
+        format: double
+      human_readable_total:
+        type: string
+      daily_average:
+        type: number
+        format: double
+      human_readable_daily_average:
+        type: string
+      languages:
+        type: array
+        items:
+          type: object
+          properties:
+            name:
+              type: string
+            total_seconds:
+              type: number
+              format: double

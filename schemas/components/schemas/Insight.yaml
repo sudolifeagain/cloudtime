@@ -1,0 +1,42 @@
+type: object
+properties:
+  type:
+    type: string
+  range:
+    $ref: ./TimeRange.yaml
+  days:
+    type: array
+    items:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        total_seconds:
+          type: number
+          format: double
+        text:
+          type: string
+  best_day:
+    type: object
+    properties:
+      date:
+        type: string
+        format: date
+      total_seconds:
+        type: number
+        format: double
+      text:
+        type: string
+  daily_average:
+    type: object
+    properties:
+      seconds:
+        type: number
+        format: double
+      text:
+        type: string
+  items:
+    type: array
+    items:
+      $ref: ./SummaryItem.yaml

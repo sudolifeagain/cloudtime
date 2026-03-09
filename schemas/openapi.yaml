@@ -107,6 +107,28 @@ paths:
   /users/current/durations:
     $ref: paths/stats/durations.yaml
 
+  # --- goals ---
+  /users/current/goals:
+    $ref: paths/goals/goals.yaml
+  /users/current/goals/{goal_id}:
+    $ref: paths/goals/goal.yaml
+
+  # --- leaderboards ---
+  /leaders:
+    $ref: paths/leaderboards/leaders.yaml
+  /users/current/leaderboards:
+    $ref: paths/leaderboards/leaderboards.yaml
+  /users/current/leaderboards/{board_id}:
+    $ref: paths/leaderboards/leaderboard.yaml
+
+  # --- insights & custom rules ---
+  /users/current/insights/{insight_type}/{range}:
+    $ref: paths/insights/insights.yaml
+  /users/current/custom_rules:
+    $ref: paths/insights/custom-rules.yaml
+  /users/current/custom_rules/{rule_id}:
+    $ref: paths/insights/custom-rule.yaml
+
   # --- meta ---
   /health:
     $ref: paths/meta/health.yaml
