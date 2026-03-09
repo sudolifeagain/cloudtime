@@ -1,0 +1,50 @@
+get:
+  operationId: getPublicLeaders
+  tags:
+    - leaderboards
+  summary: Public leaderboard ranked by coding activity
+  security: []
+  parameters:
+    - name: language
+      in: query
+      schema:
+        type: string
+    - name: is_hireable
+      in: query
+      schema:
+        type: boolean
+    - name: country_code
+      in: query
+      schema:
+        type: string
+    - name: page
+      in: query
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: Leaderboard rankings
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              current_user:
+                $ref: ../../components/schemas/LeaderboardEntry.yaml
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/LeaderboardEntry.yaml
+              page:
+                type: integer
+              total_pages:
+                type: integer
+              range:
+                $ref: ../../components/schemas/TimeRange.yaml
+              language:
+                type: string
+              modified_at:
+                type: string
+                format: date-time
