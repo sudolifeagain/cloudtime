@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
 import { authMiddleware } from "../middleware/auth";
-import { resolveDateRange, formatDigital, formatHumanReadable } from "../utils/time-format";
+import { resolveDateRange, formatDigital, formatHumanReadable, isValidTimezone } from "../utils/time-format";
 import { buildSummary, type SummaryRow } from "../utils/summary-builder";
 
 type Summary = components["schemas"]["Summary"];
@@ -23,6 +23,9 @@ summaries.get("/summaries", async (c) => {
   const project = c.req.query("project");
   const branchesParam = c.req.query("branches");
   const tz = c.req.query("timezone");
+  if (tz && !isValidTimezone(tz)) {
+    return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
+  }
 
   const resolved = resolveDateRange(range, start, end, tz);
   if (!resolved) {
@@ -77,7 +80,7 @@ summaries.get("/summaries", async (c) => {
     let cumulativeSeconds = 0;
     const data: Summary[] = dates.map((date) => {
       const rows = rowsByDate.get(date) ?? [];
-      const summary = buildSummary(date, rows);
+      const summary = buildSummary(date, rows, tz);
       cumulativeSeconds += summary.grand_total.total_seconds;
       return summary;
     });

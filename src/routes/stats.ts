@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
 import { authMiddleware } from "../middleware/auth";
-import { formatDigital, formatHumanReadable, getToday, formatDate } from "../utils/time-format";
+import { formatDigital, formatHumanReadable, getToday, formatDate, isValidTimezone } from "../utils/time-format";
 import { resolveStatsRange } from "../utils/stats-range";
 import { buildSummary, aggregateDimension, DIMENSIONS, DIMENSION_TO_KEY, type SummaryRow } from "../utils/summary-builder";
 import { checkUpToDate } from "../utils/aggregation-status";
@@ -23,6 +23,9 @@ stats.use("/*", authMiddleware);
 stats.get("/stats/:range", async (c) => {
   const rangeParam = c.req.param("range");
   const tz = c.req.query("timezone");
+  if (tz && !isValidTimezone(tz)) {
+    return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
+  }
   const resolved = resolveStatsRange(rangeParam, tz);
   if (!resolved) {
     return c.json({ error: "Invalid range. Use: last_7_days, last_30_days, last_6_months, last_year, all_time, YYYY, or YYYY-MM" }, 400);
@@ -102,6 +105,9 @@ stats.get("/stats/:range", async (c) => {
 stats.get("/status_bar/today", async (c) => {
   const userId = c.get("userId");
   const tz = c.req.query("timezone");
+  if (tz && !isValidTimezone(tz)) {
+    return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
+  }
   const today = formatDate(getToday(tz));
   const cacheKey = `statusbar:${userId}:${today}`;
 
@@ -116,7 +122,7 @@ stats.get("/status_bar/today", async (c) => {
     .bind(userId, today)
     .all<SummaryRow>();
 
-  const summary = buildSummary(today, results);
+  const summary = buildSummary(today, results, tz);
   const response = { data: summary, cached_at: new Date().toISOString() };
 
   await c.env.KV.put(cacheKey, JSON.stringify(response), { expirationTtl: 60 });
@@ -129,6 +135,10 @@ stats.get("/status_bar/today", async (c) => {
 stats.get("/all_time_since_today", async (c) => {
   const userId = c.get("userId");
   const project = c.req.query("project");
+  const tz = c.req.query("timezone");
+  if (tz && !isValidTimezone(tz)) {
+    return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
+  }
 
   let sql = "SELECT COALESCE(SUM(total_seconds), 0) as total_seconds, MIN(date) as first_date FROM summaries WHERE user_id = ?";
   const params: (string | number)[] = [userId];
@@ -143,7 +153,6 @@ stats.get("/all_time_since_today", async (c) => {
     .first<{ total_seconds: number; first_date: string | null }>();
 
   const totalSeconds = row?.total_seconds ?? 0;
-  const tz = c.req.query("timezone");
   const today = formatDate(getToday(tz));
   const firstDate = row?.first_date ?? today;
   const isUpToDate = await checkUpToDate(c.env.DB);

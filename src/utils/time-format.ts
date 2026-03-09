@@ -5,9 +5,21 @@ type SummaryRange = components["schemas"]["SummaryRange"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * Validate an IANA timezone string. Returns true if valid.
+ */
+export function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get "today" as a Date anchored to midnight UTC, optionally shifted by IANA timezone.
  * When tz is provided, determines what date it is in that timezone, then returns
- * a UTC midnight Date for that date.
+ * a UTC midnight Date for that date. Caller must validate tz before calling.
  */
 export function getToday(tz?: string): Date {
   const now = new Date();
