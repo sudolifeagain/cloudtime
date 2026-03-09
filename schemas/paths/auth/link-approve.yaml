@@ -23,12 +23,9 @@ post:
                 type: object
                 required:
                   - user
-                  - api_key
                 properties:
                   user:
                     $ref: ../../components/schemas/User.yaml
-                  api_key:
-                    type: string
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
     '404':

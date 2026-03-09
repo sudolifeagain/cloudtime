@@ -39,13 +39,12 @@ get:
                 type: object
                 required:
                   - user
-                  - api_key
                 properties:
                   user:
                     $ref: ../../components/schemas/User.yaml
                   api_key:
                     type: string
-                    description: API key for editor plugins (ck_...)
+                    description: API key for editor plugins (ck_...), only returned on first-time creation
                   is_new_user:
                     type: boolean
                   pending_link:

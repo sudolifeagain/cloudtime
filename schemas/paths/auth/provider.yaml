@@ -19,6 +19,15 @@ get:
             type: string
             format: uri
         Set-Cookie:
-          description: PKCE state and code_verifier stored in KV (TTL 10 min)
+          description: Contains an opaque value used to correlate the PKCE OAuth flow; short-lived HttpOnly cookie
           schema:
             type: string
+    '400':
+      description: Invalid or unsupported provider
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
