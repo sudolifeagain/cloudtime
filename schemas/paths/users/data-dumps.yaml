@@ -1,0 +1,57 @@
+get:
+  operationId: getDataDumps
+  tags:
+    - data_dumps
+  summary: List data exports
+  responses:
+    '200':
+      description: List of data dumps
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/DataDump.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+post:
+  operationId: createDataDump
+  tags:
+    - data_dumps
+  summary: Start a data export
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - type
+          properties:
+            type:
+              type: string
+              enum:
+                - daily
+                - heartbeats
+            email_when_finished:
+              type: boolean
+              default: true
+  responses:
+    '201':
+      description: Export started
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/DataDump.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
