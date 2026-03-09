@@ -31,6 +31,12 @@ function parseDateRange(date: string): { dayStart: number; dayEnd: number } | nu
 const INSERT_HEARTBEAT_SQL = `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
+const UPSERT_PROJECT_SQL = `INSERT INTO user_projects (user_id, project, first_heartbeat_at, last_heartbeat_at)
+VALUES (?, ?, ?, ?)
+ON CONFLICT (user_id, project) DO UPDATE SET
+  first_heartbeat_at = MIN(first_heartbeat_at, excluded.first_heartbeat_at),
+  last_heartbeat_at = MAX(last_heartbeat_at, excluded.last_heartbeat_at)`;
+
 function bindHeartbeatParams(
   stmt: D1PreparedStatement,
   id: string,
@@ -142,12 +148,34 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
   // Pre-generate IDs for all heartbeats
   const ids = inputs.map(() => crypto.randomUUID());
 
-  // Use D1 batch for bulk insert
-  const stmts = inputs.map((input, i) =>
+  // Use D1 batch for bulk insert + project upserts
+  const stmts: D1PreparedStatement[] = inputs.map((input, i) =>
     bindHeartbeatParams(c.env.DB.prepare(INSERT_HEARTBEAT_SQL), ids[i], userId, input, machine, now)
   );
 
-  const results = await c.env.DB.batch(stmts);
+  // Collect unique projects with min/max times for upsert
+  const projectTimes = new Map<string, { min: number; max: number }>();
+  for (const input of inputs) {
+    if (input.project) {
+      const existing = projectTimes.get(input.project);
+      if (existing) {
+        existing.min = Math.min(existing.min, input.time);
+        existing.max = Math.max(existing.max, input.time);
+      } else {
+        projectTimes.set(input.project, { min: input.time, max: input.time });
+      }
+    }
+  }
+  for (const [project, times] of projectTimes) {
+    stmts.push(c.env.DB.prepare(UPSERT_PROJECT_SQL).bind(userId, project, times.min, times.max));
+  }
+
+  let results: D1Result[];
+  try {
+    results = await c.env.DB.batch(stmts);
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 
   const responses: [Heartbeat, number][] = inputs.map((input, i) => {
     const heartbeat: Heartbeat = {
@@ -239,7 +267,11 @@ async function insertHeartbeat(
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  await bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, now).run();
+  const stmts = [bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, now)];
+  if (input.project) {
+    stmts.push(db.prepare(UPSERT_PROJECT_SQL).bind(userId, input.project, input.time, input.time));
+  }
+  await db.batch(stmts);
 
   return {
     id,
