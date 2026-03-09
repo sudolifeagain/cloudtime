@@ -312,6 +312,10 @@ paths:
       operationId: getSession
       tags: [auth]
       summary: Get current session info
+      security:
+        - apiKey: []
+        - bearerAuth: []
+        - sessionCookie: []
       responses:
         "200":
           description: Current session
@@ -338,6 +342,10 @@ paths:
       operationId: logout
       tags: [auth]
       summary: Logout - invalidate current session
+      security:
+        - apiKey: []
+        - bearerAuth: []
+        - sessionCookie: []
       responses:
         "204":
           description: Session invalidated
@@ -632,17 +640,19 @@ paths:
       parameters:
         - name: start
           in: query
+          description: "Required if range is not provided. Use with end."
           schema:
             type: string
             format: date
         - name: end
           in: query
+          description: "Required if range is not provided. Use with start."
           schema:
             type: string
             format: date
         - name: range
           in: query
-          description: Predefined range (alternative to start/end)
+          description: "Predefined range (alternative to start/end). One of start+end or range is required."
           schema:
             $ref: "#/components/schemas/SummaryRange"
         - name: project
