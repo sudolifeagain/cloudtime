@@ -15,6 +15,19 @@ type HeartbeatRow = Omit<Heartbeat, "is_write" | "created_at"> & {
 const VALID_TYPES = new Set(["file", "app", "domain"]);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+function parseDateRange(date: string): { dayStart: number; dayEnd: number } | null {
+  if (!DATE_RE.test(date)) return null;
+  const [y, m, d] = date.split("-").map(Number);
+  const ms = Date.UTC(y, m - 1, d);
+  const parsed = new Date(ms);
+  // Reject dates that normalize to a different day (e.g. Feb 31 → Mar 3)
+  if (parsed.getUTCFullYear() !== y || parsed.getUTCMonth() !== m - 1 || parsed.getUTCDate() !== d) {
+    return null;
+  }
+  const dayStart = ms / 1000;
+  return { dayStart, dayEnd: dayStart + 86400 };
+}
+
 const INSERT_HEARTBEAT_SQL = `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
@@ -51,28 +64,25 @@ heartbeats.get("/heartbeats", async (c) => {
   if (!date) {
     return c.json({ error: "date query parameter is required" }, 400);
   }
-  if (!DATE_RE.test(date)) {
-    return c.json({ error: "date must be in YYYY-MM-DD format" }, 400);
-  }
-
   // TODO: Apply user's timezone setting (users.timezone) instead of UTC
-  const dayStart = new Date(`${date}T00:00:00Z`).getTime() / 1000;
-  if (!Number.isFinite(dayStart)) {
+  const range = parseDateRange(date);
+  if (!range) {
     return c.json({ error: "Invalid date" }, 400);
   }
-  const dayEnd = dayStart + 86400;
 
   const userId = c.get("userId");
 
-  const { results } = await c.env.DB.prepare(
-    "SELECT * FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? ORDER BY time ASC"
-  )
-    .bind(userId, dayStart, dayEnd)
-    .all<HeartbeatRow>();
+  try {
+    const { results } = await c.env.DB.prepare(
+      "SELECT * FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? ORDER BY time ASC"
+    )
+      .bind(userId, range.dayStart, range.dayEnd)
+      .all<HeartbeatRow>();
 
-  const data: Heartbeat[] = results.map(rowToHeartbeat);
-
-  return c.json({ data });
+    return c.json({ data: results.map(rowToHeartbeat) });
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 // POST /heartbeats (single)
@@ -92,9 +102,13 @@ heartbeats.post("/heartbeats", async (c) => {
   }
 
   const machine = c.req.header("X-Machine-Name") ?? undefined;
-  const heartbeat = await insertHeartbeat(c.env.DB, userId, input, machine);
 
-  return c.json({ data: heartbeat }, 201);
+  try {
+    const heartbeat = await insertHeartbeat(c.env.DB, userId, input, machine);
+    return c.json({ data: heartbeat }, 201);
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 });
 
 // POST /heartbeats.bulk
@@ -173,23 +187,21 @@ heartbeats.delete("/heartbeats.bulk", async (c) => {
       return c.json({ error: "ids must be an array of non-empty strings" }, 400);
     }
   }
-  if (!DATE_RE.test(body.date)) {
-    return c.json({ error: "date must be in YYYY-MM-DD format" }, 400);
-  }
-
-  const dayStart = new Date(`${body.date}T00:00:00Z`).getTime() / 1000;
-  if (!Number.isFinite(dayStart)) {
+  const range = parseDateRange(body.date);
+  if (!range) {
     return c.json({ error: "Invalid date" }, 400);
   }
-  const dayEnd = dayStart + 86400;
 
-  // Scope deletion by user, IDs, and date range
-  const placeholders = body.ids.map(() => "?").join(", ");
-  await c.env.DB.prepare(
-    `DELETE FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? AND id IN (${placeholders})`
-  )
-    .bind(userId, dayStart, dayEnd, ...body.ids)
-    .run();
+  try {
+    const placeholders = body.ids.map(() => "?").join(", ");
+    await c.env.DB.prepare(
+      `DELETE FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? AND id IN (${placeholders})`
+    )
+      .bind(userId, range.dayStart, range.dayEnd, ...body.ids)
+      .run();
+  } catch {
+    return c.json({ error: "Internal server error" }, 500);
+  }
 
   return c.body(null, 204);
 });
@@ -201,6 +213,20 @@ function validateHeartbeatInput(input: HeartbeatInput): string | null {
   if (typeof input.entity !== "string" || input.entity.length === 0) return "entity is required";
   if (!VALID_TYPES.has(input.type)) return "type must be one of: file, app, domain";
   if (typeof input.time !== "number" || !Number.isFinite(input.time)) return "time must be a valid number";
+
+  // Validate optional numeric fields when present
+  const numericFields = ["project_root_count", "lines", "ai_line_changes", "human_line_changes", "lineno", "cursorpos"] as const;
+  for (const field of numericFields) {
+    const val = input[field];
+    if (val !== undefined && (typeof val !== "number" || !Number.isFinite(val))) {
+      return `${field} must be a number`;
+    }
+  }
+
+  if (input.is_write !== undefined && typeof input.is_write !== "boolean") {
+    return "is_write must be a boolean";
+  }
+
   return null;
 }
 
