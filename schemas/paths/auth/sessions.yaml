@@ -12,6 +12,13 @@ get:
   responses:
     '200':
       description: List of active sessions
+      headers:
+        Cache-Control:
+          description: Set to `no-store` to prevent caching of session metadata
+          schema:
+            type: string
+            enum:
+              - no-store
       content:
         application/json:
           schema:

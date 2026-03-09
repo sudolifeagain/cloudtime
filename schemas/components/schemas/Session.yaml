@@ -10,6 +10,12 @@ properties:
   ip:
     type: string
     description: IP address at session creation
+  country:
+    type: string
+    description: Country code from Cloudflare cf.country (e.g., "JP", "US")
+  city:
+    type: string
+    description: City name from Cloudflare cf.city (e.g., "Tokyo", "San Francisco")
   user_agent:
     type: string
     description: User-Agent header at session creation

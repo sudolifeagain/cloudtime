@@ -190,10 +190,12 @@ components:
     sessionCookie:
       type: apiKey
       in: cookie
-      name: __session
+      name: __Host-session
       description: |
         HttpOnly session cookie for web UI.
-        Attributes: Secure, SameSite=Lax, Path=/, Max-Age=604800.
+        Uses `__Host-` prefix which enforces Secure, Path=/, and no Domain attribute
+        at the browser level — preventing subdomain cookie injection attacks.
+        Attributes: HttpOnly, Secure, SameSite=Lax, Path=/, Max-Age=604800.
         SameSite=Lax (not Strict) is required for OAuth callback redirects.
         Random 32-byte token (base64url); stored as SHA-256 hash in DB.
         Sliding expiration: 24h idle timeout. Absolute expiration: 7 days.

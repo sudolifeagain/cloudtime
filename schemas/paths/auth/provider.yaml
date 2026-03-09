@@ -8,11 +8,18 @@ get:
 
     **Security measures applied by the server:**
     - Generates a cryptographically random `state` parameter (32 bytes, base64url).
-      Stored server-side (KV with 10-minute TTL) and set in an HttpOnly cookie as backup.
-      Validated on callback to prevent CSRF.
+      Stored server-side (KV with 10-minute TTL) and set in an HttpOnly cookie.
+      Validated on callback using double-submit: both the KV entry and the cookie value
+      must match the `state` query parameter. This prevents CSRF even if one store is
+      compromised. Invalidated after use (one-time).
     - Generates a PKCE `code_verifier` (32 bytes, base64url) and derives `code_challenge`
-      using S256 method. The `code_verifier` is stored server-side; only the `code_challenge`
-      is sent to the provider. Prevents authorization code interception attacks.
+      using S256 method (`plain` is not used). The `code_verifier` is stored server-side;
+      only the `code_challenge` is sent to the provider. Prevents authorization code
+      interception attacks. Note: as a confidential client (server-side secret), both PKCE
+      and `client_secret` are used together (defense in depth). PKCE applies only to
+      authorization code exchange, not refresh token grants.
+      Discord supports S256 only (`plain` is rejected); `role_connections.write` scope
+      does not support PKCE. GitHub requires `client_secret` even with PKCE.
     - For Google: also generates a cryptographic `nonce` (32 bytes, base64url) included in
       the authorization request and validated against the `id_token` on callback to prevent
       token replay attacks.
