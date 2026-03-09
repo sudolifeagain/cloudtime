@@ -40,13 +40,14 @@ meta.get("/program_languages", (c) => {
 
 meta.get("/stats/:range", async (c) => {
   const rangeParam = c.req.param("range");
-  const resolved = resolveStatsRange(rangeParam);
+  const tz = c.req.query("timezone");
+  const resolved = resolveStatsRange(rangeParam, tz);
   if (!resolved) {
     return c.json({ error: "Invalid range. Use: last_7_days, last_30_days, last_6_months, last_year, all_time, YYYY, or YYYY-MM" }, 400);
   }
 
   // Check KV cache (5 min TTL)
-  const cacheKey = `global-stats:${rangeParam}`;
+  const cacheKey = `global-stats:${rangeParam}:${tz ?? "UTC"}`;
   const cached = await c.env.KV.get(cacheKey, "json") as { data: GlobalStats; status: number } | null;
   if (cached) {
     if (cached.status === 202) {
@@ -117,7 +118,7 @@ meta.get("/stats/:range", async (c) => {
         start: `${resolved.start}T00:00:00Z`,
         end: `${resolved.end}T23:59:59Z`,
         text: resolved.text,
-        timezone: "UTC",
+        timezone: tz ?? "UTC",
       },
     };
 

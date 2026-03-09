@@ -22,8 +22,9 @@ summaries.get("/summaries", async (c) => {
   const end = c.req.query("end");
   const project = c.req.query("project");
   const branchesParam = c.req.query("branches");
+  const tz = c.req.query("timezone");
 
-  const resolved = resolveDateRange(range, start, end);
+  const resolved = resolveDateRange(range, start, end, tz);
   if (!resolved) {
     return c.json({ error: "Valid range or start+end dates are required" }, 400);
   }
