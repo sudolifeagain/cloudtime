@@ -7,5 +7,5 @@ apis:
 rules:
   no-ambiguous-paths: off
   info-license-strict: off
-  operation-2xx-response: off
-  operation-4xx-response: off
+  operation-2xx-response: error
+  operation-4xx-response: error
