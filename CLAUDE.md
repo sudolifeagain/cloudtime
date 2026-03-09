@@ -2,11 +2,12 @@
 
 - All code, comments, commit messages, docs, and PR descriptions must be in English
 
-## SDD (Schema Driven Development)
+## SDD (Spec Driven Development)
 - `schemas/openapi.yaml` is the Single Source of Truth
-- Always update the schema BEFORE writing implementation code
-- Run `npm run generate` after schema changes
+- Always update the spec BEFORE writing implementation code
+- Commit order: spec change → `npm run generate` → implementation (separate commits)
 - Never hand-edit `src/types/generated.ts`
+- If a review reveals a spec-level issue, fix it in a separate spec-first PR — never patch the spec inside an implementation PR
 
 ## Legal / Trademark Constraints
 - "WakaTime" is only allowed as "WakaTime-compatible" in docs — never in code, file names, or branding

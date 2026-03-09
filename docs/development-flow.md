@@ -1,112 +1,186 @@
-# CloudTime Development Flow - Schema Driven Development (SDD)
+# CloudTime Development Flow - Spec Driven Development (SDD)
 
 ## Overview
 
-CloudTime adopts **Schema Driven Development (SDD)** as its core methodology. The OpenAPI schema serves as the **Single Source of Truth (SSoT)** for the entire project. All API implementations, validations, types, and documentation derive from this schema.
+CloudTime adopts **Spec Driven Development (SDD)** as its core methodology. The OpenAPI specification serves as the **Single Source of Truth (SSoT)** for the entire project. All API implementations, validations, types, and documentation derive from this spec.
 
 ## Why SDD?
 
-- **WakaTime API compatibility** - We're implementing a known, documented API. The schema captures the exact contract we must fulfill.
-- **Parallel development** - Schema defines the contract upfront; implementation and testing can proceed independently.
-- **Type safety** - TypeScript types are generated from the schema, eliminating drift between spec and code.
-- **Automated validation** - Request/response validation is derived from the schema, not hand-coded.
-- **Living documentation** - The schema IS the documentation. Always in sync.
+- **WakaTime API compatibility** - We're implementing a known, documented API. The spec captures the exact contract we must fulfill.
+- **Spec before code** - No implementation until the spec is reviewed and accepted. This catches design mistakes early.
+- **Type safety** - TypeScript types are generated from the spec, eliminating drift between contract and code.
+- **Automated validation** - Request/response validation is derived from the spec, not hand-coded.
+- **Living documentation** - The spec IS the documentation. Always in sync.
+
+## Core Principles
+
+1. **Spec is the source of truth** - Code serves the spec, not the other way around.
+2. **Spec before code** - No implementation until the spec change is committed and validated.
+3. **Specs are versioned artifacts** - `openapi.yaml` receives the same rigor as production code: peer review, branching, CI validation.
+4. **Intent over implementation** - The spec captures *what* and *why*; implementation captures *how*.
+5. **Drift prevention** - Tooling (linters, contract tests, type generation) enforces that code and spec stay in sync.
+6. **Iterate, don't waterfall** - Spec one feature, implement, learn, update. The cycle is minutes to hours, not weeks.
+
+## SDD Workflow (per feature)
+
+```
+┌─────────────────────────────────────────────────┐
+│ 1. SPEC                                         │
+│    - Create feature branch from develop          │
+│    - Define/review endpoint in openapi.yaml      │
+│    - Define request params, body, response       │
+│    - Define error responses                      │
+│    - Commit: "spec: add /endpoint"               │
+├─────────────────────────────────────────────────┤
+│ 2. GENERATE                                     │
+│    - Run: npm run generate                       │
+│    - Verify generated types match intent         │
+│    - Commit: "chore: regenerate types"           │
+├─────────────────────────────────────────────────┤
+│ 3. DATABASE                                     │
+│    - Write migration SQL if new tables needed    │
+│    - Ensure DB schema aligns with API spec       │
+├─────────────────────────────────────────────────┤
+│ 4. IMPLEMENT                                    │
+│    - Write route handler using generated types   │
+│    - Write service logic                         │
+│    - Commit: "feat: implement /endpoint"         │
+├─────────────────────────────────────────────────┤
+│ 5. VALIDATE                                     │
+│    - npx tsc --noEmit (type check)               │
+│    - Test endpoint against spec contract         │
+│    - Verify WakaTime plugin compatibility        │
+│    - Check error responses match spec            │
+├─────────────────────────────────────────────────┤
+│ 6. PR & REVIEW                                  │
+│    - Push feature branch, create PR to develop   │
+│    - Copilot auto-review triggers on PR creation │
+│    - Triage review findings (see below)          │
+│    - Merge when review passes                    │
+└─────────────────────────────────────────────────┘
+```
+
+### Commit Ordering
+
+Within a PR, commits must follow this order. This lets reviewers see the contract change first, then verify the implementation matches.
+
+1. **Spec change** - modifications to `schemas/openapi.yaml`
+2. **Type generation** - `npm run generate` output committed separately
+3. **Implementation** - route handlers, services, migrations
+
+For pure refactoring or bug fixes that don't change the API contract, the spec commit is skipped.
+
+## Review Finding Triage
+
+When a reviewer (human or Copilot) identifies issues, triage by severity:
+
+| Finding Type | Action | Rationale |
+|---|---|---|
+| **Blocker** (security, breaking change, data loss) | Fix inline before merge | Cannot ship |
+| **Medium** (missing validation, wrong status code) | Fix inline if < 30 min; otherwise create issue | Prevents scope creep |
+| **Minor** (naming, style, refactoring opportunity) | Create follow-up issue | Don't block the PR |
+| **Spec-level issue** | **Always a separate issue + spec-first PR** | See below |
+
+### When a Review Reveals a Spec Problem
+
+This is the critical case. If a reviewer discovers that the spec itself is wrong during an implementation PR review:
+
+1. **Do not fix the spec inside the implementation PR.** This violates spec-first and bypasses spec review.
+2. **Create a new issue** documenting the spec problem. Label it `spec`.
+3. **Decide on PR disposition:**
+   - If the implementation is still valid with the current spec → merge, then fix spec in a follow-up PR.
+   - If the spec issue makes the implementation incorrect → block the PR, fix spec first, regenerate types, then update implementation.
+4. **Close the loop:** The spec-fix PR references the original review comment.
+
+## Branching & PR Strategy
+
+```
+master (production — deploy target)
+  │
+  └── develop (integration — PR target)
+        │
+        ├── feat/heartbeat-ingestion
+        ├── feat/timezone-support
+        ├── refactor/extract-helper
+        └── ...
+```
+
+- **`master`** is production. Only updated via `develop` merge.
+- **`develop`** is the integration branch. All PRs target `develop`.
+- **Feature branches** are named by type: `feat/`, `fix/`, `refactor/`, `spec/`.
+- **Spec-only PRs** are allowed when a feature needs spec review before implementation.
+- **One feature per PR** keeps reviews focused and feedback actionable.
+
+## Spec Change Policy
+
+1. **Spec changes require review** - Any modification to `openapi.yaml` is a contract change.
+2. **Additive changes preferred** - Adding optional fields or new endpoints is safe.
+3. **Breaking changes** - Removing fields, changing types, or altering required fields must be flagged.
+4. **Regenerate after changes** - Always run `npm run generate` after spec modifications.
+5. **Never hand-edit generated files** - `src/types/generated.ts` is machine-generated only.
+6. **WakaTime compatibility** - Spec must remain compatible with official WakaTime editor plugins.
+
+## Anti-Patterns
+
+Avoid these common SDD mistakes:
+
+1. **Code-first drift** - Writing implementation first and "updating the spec later." The spec never gets updated.
+2. **Spec as decoration** - Having a spec file that nobody validates. Without CI enforcement, the spec becomes stale.
+3. **Over-specifying** - Designing every possible endpoint upfront (waterfall trap). Spec one feature at a time.
+4. **Hand-editing generated code** - Any manual tweak will be overwritten on the next generation run.
+5. **Monolithic spec PRs** - Changing 20 endpoints in one PR. Keep spec changes focused.
+6. **Fixing spec inside implementation PRs** - Breaks the spec-first invariant and bypasses spec review.
+
+## PR Review Process
+
+### Automated (Copilot)
+Copilot code review runs automatically on every PR and re-runs on each push. It checks against:
+- `.github/copilot-instructions.md` — project-wide rules
+- `.github/instructions/*.instructions.md` — path-scoped rules (TypeScript, routes, SQL, security, schema)
+
+### What Copilot Reviews
+| Scope | Instruction File | Focus |
+|-------|-----------------|-------|
+| All TypeScript | `typescript.instructions.md` | Strict types, no `any`, `import type`, const |
+| Route handlers | `routes.instructions.md` | Auth check, validation, status codes, error handling |
+| SQL files | `sql.instructions.md` | Parameterized queries, indexes, D1 limits |
+| Security | `security.instructions.md` | Injection, secrets in logs, missing auth, crypto |
+| OpenAPI spec | `schema.instructions.md` | operationId, required fields, $ref usage |
+
+### Review Checklist (manual, before merge)
+- [ ] Spec defines the endpoint completely
+- [ ] `npm run generate` was run after any spec change
+- [ ] Generated types are used in route handlers (not hand-written)
+- [ ] DB migration aligns with spec models
+- [ ] No secrets or tokens in error responses or logs
+- [ ] Copilot review findings addressed or explicitly dismissed
 
 ## Development Phases
 
-### Phase 0: Schema Definition (Current)
-
-```
-OpenAPI Schema (schemas/openapi.yaml)
-    |
-    +-- Single Source of Truth for all API contracts
-    +-- Defines endpoints, request/response bodies, auth, errors
-    +-- Reviewed and finalized before implementation begins
-```
+### Phase 0: Spec Definition (Current)
 
 **Artifacts produced:**
 - `schemas/openapi.yaml` - Complete OpenAPI 3.1 specification
-- `schemas/components/` - Reusable schema components (if needed)
 
 ### Phase 1: Code Generation & Scaffolding
 
-```
-OpenAPI Schema
-    |
-    +---> TypeScript Types (src/types/generated.ts)
-    +---> Request Validators (src/validators/)
-    +---> Route Stubs (src/routes/)
-    +---> Mock Responses (for testing)
-```
-
 **Tools:**
 - `openapi-typescript` - Generate TypeScript types from OpenAPI
-- Custom validation middleware derived from schema
-- Hono route structure matching schema paths
+- Custom validation middleware derived from spec
+- Hono route structure matching spec paths
 
 ### Phase 2: Implementation (per feature group)
 
-For each feature group, follow this cycle:
-
-```
-1. Verify schema defines the endpoint completely
-2. Generate/update types from schema
-3. Write database migration if needed (src/db/)
-4. Implement route handler
-5. Add request validation (schema-derived)
-6. Add response validation (dev mode only)
-7. Test against schema contract
-```
+For each feature group, follow the SDD workflow above.
 
 ### Phase 3: Validation & Testing
 
 ```
-Schema
+Spec
     |
-    +---> Contract Tests (does implementation match schema?)
+    +---> Contract Tests (does implementation match spec?)
     +---> Integration Tests (do endpoints work end-to-end?)
     +---> Compatibility Tests (do WakaTime plugins work?)
-```
-
-## File Structure
-
-```
-cloudtime/
-├── schemas/
-│   └── openapi.yaml              # SSoT - OpenAPI 3.1 specification
-├── docs/
-│   ├── wakatime-feature-research.md  # Feature research
-│   └── development-flow.md          # This document
-├── src/
-│   ├── db/
-│   │   ├── schema.sql            # Database DDL (derived from OpenAPI models)
-│   │   └── migrations/           # Incremental migrations
-│   ├── types/
-│   │   ├── generated.ts          # Auto-generated from OpenAPI schema
-│   │   └── index.ts              # Re-exports + manual extensions
-│   ├── validators/
-│   │   └── index.ts              # Schema-derived request validation
-│   ├── routes/
-│   │   ├── heartbeats.ts         # Heartbeat endpoints
-│   │   ├── summaries.ts          # Summary endpoints
-│   │   ├── stats.ts              # Stats endpoints
-│   │   ├── users.ts              # User endpoints
-│   │   ├── durations.ts          # Duration endpoints
-│   │   ├── goals.ts              # Goal endpoints
-│   │   ├── leaderboards.ts       # Leaderboard endpoints
-│   │   └── ...                   # Other route groups
-│   ├── services/
-│   │   ├── heartbeat.ts          # Heartbeat business logic
-│   │   ├── aggregation.ts        # Summary/stats aggregation
-│   │   └── ...                   # Other services
-│   ├── utils/
-│   │   └── auth.ts               # Authentication (already implemented)
-│   └── index.ts                  # App entry point
-├── scripts/
-│   └── generate-types.ts         # Type generation from OpenAPI
-├── package.json
-├── tsconfig.json
-└── wrangler.toml
 ```
 
 ## Deployment Modes
@@ -187,97 +261,6 @@ Activated by `INSTANCE_MODE=multi`. DB schema already supports these; only route
 | 23 | Account Merge Flow | `POST /auth/link/approve/{id}` (pending_links) |
 | 24 | Email Reports | Cron-based weekly/daily emails |
 
-## SDD Workflow (per feature)
-
-```
-┌─────────────────────────────────────────────────┐
-│ 1. SCHEMA                                       │
-│    - Create feature branch from main             │
-│    - Define/review endpoint in openapi.yaml      │
-│    - Define request params, body, response       │
-│    - Define error responses                      │
-├─────────────────────────────────────────────────┤
-│ 2. GENERATE                                     │
-│    - Run type generation: npm run generate       │
-│    - Verify generated types match intent         │
-├─────────────────────────────────────────────────┤
-│ 3. DATABASE                                     │
-│    - Write migration SQL if new tables needed    │
-│    - Ensure DB schema aligns with API schema     │
-├─────────────────────────────────────────────────┤
-│ 4. IMPLEMENT                                    │
-│    - Write route handler using generated types   │
-│    - Write service logic                         │
-│    - Use schema-derived validation               │
-├─────────────────────────────────────────────────┤
-│ 5. VALIDATE                                     │
-│    - Test endpoint against schema contract       │
-│    - Verify WakaTime plugin compatibility        │
-│    - Check error responses match schema          │
-├─────────────────────────────────────────────────┤
-│ 6. PR & REVIEW                                  │
-│    - Push feature branch, create PR to main      │
-│    - Copilot auto-review triggers on PR creation │
-│    - Review checks:                              │
-│      • Schema conformance                        │
-│      • Security (auth, input validation, secrets)│
-│      • TypeScript standards                      │
-│      • SQL injection prevention                  │
-│      • Error handling patterns                   │
-│    - Fix Copilot findings, push updates          │
-│    - Copilot re-reviews on each push             │
-│    - Merge when review passes                    │
-└─────────────────────────────────────────────────┘
-```
-
-## Branching & PR Strategy
-
-```
-main (protected)
-  │
-  ├── feat/m1-user-management
-  ├── feat/m1-heartbeat-ingestion
-  ├── feat/m1-status-bar
-  └── ...
-```
-
-- **`main` branch** is always deployable. Direct pushes are not allowed.
-- **Feature branches** are named `feat/<milestone>-<feature>` (e.g., `feat/m1-heartbeat-ingestion`).
-- **Schema-only PRs** are allowed when a feature needs schema review before implementation.
-- **One feature per PR** keeps reviews focused and Copilot feedback actionable.
-
-## PR Review Process
-
-### Automated (Copilot)
-Copilot code review runs automatically on every PR and re-runs on each push. It checks against:
-- `.github/copilot-instructions.md` — project-wide rules
-- `.github/instructions/*.instructions.md` — path-scoped rules (TypeScript, routes, SQL, security, schema)
-
-### What Copilot Reviews
-| Scope | Instruction File | Focus |
-|-------|-----------------|-------|
-| All TypeScript | `typescript.instructions.md` | Strict types, no `any`, `import type`, const |
-| Route handlers | `routes.instructions.md` | Auth check, validation, status codes, error handling |
-| SQL files | `sql.instructions.md` | Parameterized queries, indexes, D1 limits |
-| Security | `security.instructions.md` | Injection, secrets in logs, missing auth, crypto |
-| OpenAPI schema | `schema.instructions.md` | operationId, required fields, $ref usage |
-
-### Review Checklist (manual, before merge)
-- [ ] Schema defines the endpoint completely
-- [ ] `npm run generate` was run after any schema change
-- [ ] Generated types are used in route handlers (not hand-written)
-- [ ] DB migration aligns with schema models
-- [ ] No secrets or tokens in error responses or logs
-- [ ] Copilot review findings addressed or explicitly dismissed
-
-## Schema Change Policy
-
-1. **Schema changes require review** - Any modification to `openapi.yaml` is a contract change.
-2. **Additive changes preferred** - Adding optional fields or new endpoints is safe.
-3. **Breaking changes** - Removing fields, changing types, or altering required fields must be flagged.
-4. **Regenerate after changes** - Always run `npm run generate` after schema modifications.
-5. **WakaTime compatibility** - Schema must remain compatible with official WakaTime editor plugins.
-
 ## Key Decisions
 
 - **OpenAPI 3.1** - Latest spec with full JSON Schema support
@@ -285,4 +268,4 @@ Copilot code review runs automatically on every PR and re-runs on each push. It 
 - **D1 database** - Cloudflare's serverless SQL (SQLite-based)
 - **KV for caching** - API key resolution, status bar cache
 - **Cron triggers** - Hourly aggregation for summaries/stats
-- **No code-first schema generation** - Schema is always hand-written first, code follows
+- **No code-first generation** - Spec is always hand-written first, code follows
