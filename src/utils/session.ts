@@ -14,6 +14,34 @@ const ACTIVITY_THROTTLE = 5 * 60; // 5min
 const STATE_TTL = 600; // 10min
 const SESSION_CACHE_TTL = 300; // 5min
 
+const TOKEN_HASH_RE = /^[0-9a-f]{64}$/;
+
+// ─── Helpers ─────────────────────────────────────────────
+
+function isValidTokenHash(hash: string): boolean {
+  return TOKEN_HASH_RE.test(hash);
+}
+
+/** Throttled activity update — writes D1 only if last activity exceeds threshold. */
+function maybeUpdateActivity(
+  db: D1Database,
+  tokenHash: string,
+  now: Date,
+  lastActive: Date,
+  data: SessionData,
+): Promise<void> {
+  if ((now.getTime() - lastActive.getTime()) / 1000 > ACTIVITY_THROTTLE) {
+    const nowStr = toSqliteDateTime(now);
+    data.lastActiveAt = nowStr;
+    return db
+      .prepare("UPDATE sessions SET last_active_at = ? WHERE token_hash = ?")
+      .bind(nowStr, tokenHash)
+      .run()
+      .then(() => {});
+  }
+  return Promise.resolve();
+}
+
 // ─── Session CRUD ────────────────────────────────────────
 
 export interface SessionData {
@@ -34,9 +62,8 @@ export async function createSession(
   const expiresAt = toSqliteDateTime(new Date(Date.now() + ABSOLUTE_EXPIRY * 1000));
 
   const ip = request.headers.get("CF-Connecting-IP") ?? null;
-  const cf = (request as Request & { cf?: { country?: string; city?: string } }).cf;
-  const country = cf?.country ?? null;
-  const city = cf?.city ?? null;
+  const country = request.cf?.country as string | undefined ?? null;
+  const city = request.cf?.city as string | undefined ?? null;
   const userAgent = request.headers.get("User-Agent") ?? null;
 
   await db
@@ -55,6 +82,8 @@ export async function validateSession(
   kv: KVNamespace,
   tokenHash: string,
 ): Promise<SessionData | null> {
+  if (!isValidTokenHash(tokenHash)) return null;
+
   // Check KV cache first
   const cacheKey = `session:${tokenHash}`;
   const cached = await kv.get(cacheKey);
@@ -90,14 +119,7 @@ export async function validateSession(
       }
 
       // Throttled activity update (D1 only to reduce KV write volume)
-      if ((now.getTime() - lastActive.getTime()) / 1000 > ACTIVITY_THROTTLE) {
-        const nowStr = toSqliteDateTime(now);
-        data.lastActiveAt = nowStr;
-        await db
-          .prepare("UPDATE sessions SET last_active_at = ? WHERE token_hash = ?")
-          .bind(nowStr, tokenHash)
-          .run();
-      }
+      await maybeUpdateActivity(db, tokenHash, now, lastActive, data);
 
       return data;
     }
@@ -134,15 +156,7 @@ export async function validateSession(
     lastActiveAt: row.last_active_at,
   };
 
-  // Throttled activity update
-  if ((now.getTime() - lastActive.getTime()) / 1000 > ACTIVITY_THROTTLE) {
-    const nowStr = toSqliteDateTime(now);
-    data.lastActiveAt = nowStr;
-    await db
-      .prepare("UPDATE sessions SET last_active_at = ? WHERE token_hash = ?")
-      .bind(nowStr, tokenHash)
-      .run();
-  }
+  await maybeUpdateActivity(db, tokenHash, now, lastActive, data);
 
   // Cache in KV
   await kv.put(cacheKey, JSON.stringify(data), { expirationTtl: SESSION_CACHE_TTL });
@@ -155,10 +169,10 @@ export async function invalidateSession(
   kv: KVNamespace,
   tokenHash: string,
 ): Promise<void> {
-  await Promise.all([
-    db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run(),
-    kv.delete(`session:${tokenHash}`),
-  ]);
+  // D1 first — if it fails the session stays valid (safe).
+  // If KV delete were first and D1 failed, the session would be re-cached on next validate.
+  await db.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(tokenHash).run();
+  await kv.delete(`session:${tokenHash}`);
 }
 
 export async function invalidateOtherSessions(
@@ -167,21 +181,13 @@ export async function invalidateOtherSessions(
   userId: string,
   currentTokenHash: string,
 ): Promise<void> {
-  // Get all other session hashes to clear KV
+  // Atomic DELETE + RETURNING avoids TOCTOU between SELECT and DELETE
   const { results } = await db
-    .prepare("SELECT token_hash FROM sessions WHERE user_id = ? AND token_hash != ?")
+    .prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash != ? RETURNING token_hash")
     .bind(userId, currentTokenHash)
     .all<{ token_hash: string }>();
 
-  const deletes: Promise<unknown>[] = results.map((r) => kv.delete(`session:${r.token_hash}`));
-  deletes.push(
-    db
-      .prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?")
-      .bind(userId, currentTokenHash)
-      .run(),
-  );
-
-  await Promise.all(deletes);
+  await Promise.all(results.map((r) => kv.delete(`session:${r.token_hash}`)));
 }
 
 export async function invalidateAllUserSessions(
@@ -189,17 +195,13 @@ export async function invalidateAllUserSessions(
   kv: KVNamespace,
   userId: string,
 ): Promise<void> {
+  // Atomic DELETE + RETURNING avoids TOCTOU between SELECT and DELETE
   const { results } = await db
-    .prepare("SELECT token_hash FROM sessions WHERE user_id = ?")
+    .prepare("DELETE FROM sessions WHERE user_id = ? RETURNING token_hash")
     .bind(userId)
     .all<{ token_hash: string }>();
 
-  const deletes: Promise<unknown>[] = results.map((r) => kv.delete(`session:${r.token_hash}`));
-  deletes.push(
-    db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run(),
-  );
-
-  await Promise.all(deletes);
+  await Promise.all(results.map((r) => kv.delete(`session:${r.token_hash}`)));
 }
 
 // ─── Cookie Helpers ──────────────────────────────────────
