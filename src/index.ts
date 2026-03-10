@@ -10,6 +10,18 @@ import { aggregateHeartbeats } from "./cron/aggregate";
 
 const app = new Hono<{ Bindings: Env }>();
 
+// CORS configuration for browser-based clients.
+// NOTE: CORS is a browser-only protection — curl/Postman/server-side requests
+// ignore CORS headers entirely. Actual access control is enforced by authMiddleware
+// (API key) and session validation, not by CORS.
+// NOTE: Hono's CORS middleware sends `Access-Control-Allow-Credentials: true`
+// even when the origin function returns null (rejecting the origin). Browsers
+// still block the response because `Access-Control-Allow-Origin` is omitted,
+// so this is not exploitable, but security scanners may flag it.
+// Assumes same-origin deployment (frontend and API share APP_URL origin).
+// Session cookies use SameSite=Lax which prevents cross-origin fetch from
+// sending cookies — only top-level navigation GETs include them. If a
+// cross-origin frontend is needed, SameSite=None must be considered.
 app.use(
   "/*",
   cors({
@@ -27,7 +39,7 @@ app.use(
       }
     },
     credentials: true,
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowMethods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
     allowHeaders: ["Content-Type", "Authorization"],
     maxAge: 86400,
   }),
