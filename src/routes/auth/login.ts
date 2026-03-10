@@ -164,9 +164,9 @@ login.get("/:provider/callback", async (c) => {
 
     // No existing OAuth link — check if email matches an existing user
     if (userInfo.providerEmail) {
-      const emailMatch = await c.env.DB.prepare("SELECT id, username FROM users WHERE email = ?")
+      const emailMatch = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?")
         .bind(userInfo.providerEmail)
-        .first<{ id: string; username: string }>();
+        .first<{ id: string }>();
 
       if (emailMatch) {
         // Limit active pending links per user
@@ -224,12 +224,16 @@ login.get("/:provider/callback", async (c) => {
           )
           .first<{ id: string }>();
 
+        if (!linkResult) {
+          return c.json({ error: "Internal server error" }, 500, securityHeaders());
+        }
+
         // Return minimal pending link info (no full user profile — unauthenticated response)
         return c.json(
           {
             data: {
               pending_link: {
-                id: linkResult?.id ?? pendingId,
+                id: linkResult.id,
                 provider: provider as OAuthProvider,
                 provider_username: userInfo.providerUsername,
                 provider_email: userInfo.providerEmail as string,
@@ -322,7 +326,7 @@ login.get("/:provider/callback", async (c) => {
       } catch (insertErr) {
         // UNIQUE constraint violation on email — concurrent signup with same email
         const msg = insertErr instanceof Error ? insertErr.message : "";
-        if (msg.includes("UNIQUE constraint failed")) {
+        if (msg.includes("UNIQUE constraint failed: users.email")) {
           return c.json({ error: "An account with this email already exists" }, 409, securityHeaders());
         }
         throw insertErr;

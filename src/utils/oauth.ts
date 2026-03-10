@@ -45,7 +45,7 @@ const PROVIDER_FETCH_OPTS = {
 function validateRedirectUri(redirectUri: string, env: Env): void {
   if (!env.APP_URL) {
     if (env.ENVIRONMENT === "development") return;
-    throw new Error("APP_URL is required for redirect URI validation in production");
+    throw new Error("APP_URL is required for redirect URI validation in non-development environments");
   }
 
   let appOrigin: string;

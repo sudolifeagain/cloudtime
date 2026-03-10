@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
-  email TEXT UNIQUE,
+  email TEXT UNIQUE COLLATE NOCASE,
   display_name TEXT,
   photo TEXT,
   bio TEXT,
