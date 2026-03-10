@@ -58,9 +58,6 @@ get:
     **Response headers for defense in depth:**
     - `Referrer-Policy: no-referrer` — prevents authorization code leakage via Referer header.
     - `Cache-Control: no-store` — prevents caching of authentication responses.
-
-    On first-time user creation, the response includes `api_key` (shown only once).
-    The API key is stored as a SHA-256 hash in the database; the plaintext is not recoverable.
   security: []
   parameters:
     - name: provider
@@ -123,11 +120,6 @@ get:
                 properties:
                   user:
                     $ref: ../../components/schemas/User.yaml
-                  api_key:
-                    type: string
-                    description: |
-                      API key for editor plugins (ck_...). Only returned on first-time user creation.
-                      Stored as SHA-256 hash; this is the only time the plaintext is available.
                   is_new_user:
                     type: boolean
                   pending_link:
