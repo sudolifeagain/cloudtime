@@ -76,26 +76,21 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
       (async () => {
-        // Query expired sessions first (before deletion) for KV cache cleanup
-        const [, expiredSessions] = await Promise.all([
+        // Atomic DELETE + RETURNING avoids TOCTOU between SELECT and DELETE
+        const [, batchResults] = await Promise.all([
           aggregateHeartbeats(env.DB),
-          env.DB.prepare(
-            "SELECT token_hash FROM sessions WHERE expires_at < datetime('now') OR last_active_at < datetime('now', '-1 day')",
-          ).all<{ token_hash: string }>(),
-        ]);
-
-        // Delete expired records from D1
-        await env.DB.batch([
-          env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')"),
-          env.DB.prepare("DELETE FROM sessions WHERE last_active_at < datetime('now', '-1 day')"),
-          env.DB.prepare("DELETE FROM pending_links WHERE expires_at < datetime('now')"),
+          env.DB.batch([
+            env.DB.prepare(
+              "DELETE FROM sessions WHERE expires_at < datetime('now') OR last_active_at < datetime('now', '-1 day') RETURNING token_hash",
+            ),
+            env.DB.prepare("DELETE FROM pending_links WHERE expires_at < datetime('now')"),
+          ]),
         ]);
 
         // Clean up KV cache for deleted sessions
-        if (expiredSessions.results.length > 0) {
-          await Promise.all(
-            expiredSessions.results.map((r) => env.KV.delete(`session:${r.token_hash}`)),
-          );
+        const expired = (batchResults[0].results ?? []) as { token_hash: string }[];
+        if (expired.length > 0) {
+          await Promise.all(expired.map((r) => env.KV.delete(`session:${r.token_hash}`)));
         }
       })(),
     );
