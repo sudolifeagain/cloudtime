@@ -13,8 +13,11 @@ auth.use(
   "/*",
   csrf({
     origin: (origin, c) => {
-      const appUrl = (c.env as Env).APP_URL?.replace(/\/+$/, "");
-      return appUrl ? origin === appUrl : true;
+      const env = c.env as Env;
+      const appUrl = env.APP_URL?.replace(/\/+$/, "");
+      if (appUrl) return origin === appUrl;
+      // Only bypass CSRF in development; fail closed in production
+      return env.ENVIRONMENT === "development";
     },
   }),
 );

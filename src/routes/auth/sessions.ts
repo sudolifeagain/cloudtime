@@ -1,7 +1,7 @@
 /**
  * Session management, provider management, and API key routes.
  * 8 endpoints: GET/DELETE /session, GET/DELETE /sessions, DELETE /sessions/:id,
- * GET/DELETE /providers/:provider, POST /api-key
+ * GET /providers, DELETE /providers/:provider, POST /api-key
  */
 import { Hono } from "hono";
 import type { SessionAuthEnv } from "../../types";
@@ -69,10 +69,15 @@ sessions.get("/session", async (c) => {
 
 // DELETE /session (logout)
 sessions.delete("/session", async (c) => {
-  const tokenHash = c.get("sessionTokenHash");
-  await invalidateSession(c.env.DB, c.env.KV, tokenHash);
-  clearSessionCookie(c, c.env);
-  return c.body(null, 204);
+  try {
+    const tokenHash = c.get("sessionTokenHash");
+    await invalidateSession(c.env.DB, c.env.KV, tokenHash);
+    clearSessionCookie(c, c.env);
+    return c.body(null, 204);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+  }
 });
 
 // GET /sessions (list all active sessions)
@@ -84,6 +89,7 @@ sessions.get("/sessions", async (c) => {
     const { results } = await c.env.DB.prepare(
       `SELECT id, ip, country, city, user_agent, created_at, expires_at, last_active_at
        FROM sessions WHERE user_id = ? AND expires_at > datetime('now')
+         AND last_active_at >= datetime('now', '-1 day')
        ORDER BY last_active_at DESC`,
     )
       .bind(userId)
@@ -123,62 +129,77 @@ sessions.get("/sessions", async (c) => {
 
 // DELETE /sessions (revoke all other sessions)
 sessions.delete("/sessions", async (c) => {
-  const userId = c.get("userId");
-  const currentTokenHash = c.get("sessionTokenHash");
-  await invalidateOtherSessions(c.env.DB, c.env.KV, userId, currentTokenHash);
-  return c.body(null, 204);
+  try {
+    const userId = c.get("userId");
+    const currentTokenHash = c.get("sessionTokenHash");
+    await invalidateOtherSessions(c.env.DB, c.env.KV, userId, currentTokenHash);
+    return c.body(null, 204);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+  }
 });
 
 // DELETE /sessions/:session_id
 sessions.delete("/sessions/:session_id", async (c) => {
-  const userId = c.get("userId");
-  const targetSessionId = c.req.param("session_id");
-  const currentSessionId = c.get("sessionId");
+  try {
+    const userId = c.get("userId");
+    const targetSessionId = c.req.param("session_id");
+    const currentSessionId = c.get("sessionId");
 
-  const target = await c.env.DB.prepare(
-    "SELECT token_hash FROM sessions WHERE id = ? AND user_id = ?",
-  )
-    .bind(targetSessionId, userId)
-    .first<{ token_hash: string }>();
+    const target = await c.env.DB.prepare(
+      "SELECT token_hash FROM sessions WHERE id = ? AND user_id = ?",
+    )
+      .bind(targetSessionId, userId)
+      .first<{ token_hash: string }>();
 
-  if (!target) return c.json({ error: "Not found" }, 404);
+    if (!target) return c.json({ error: "Not found" }, 404);
 
-  await invalidateSession(c.env.DB, c.env.KV, target.token_hash);
+    await invalidateSession(c.env.DB, c.env.KV, target.token_hash);
 
-  if (targetSessionId === currentSessionId) {
-    clearSessionCookie(c, c.env);
+    if (targetSessionId === currentSessionId) {
+      clearSessionCookie(c, c.env);
+    }
+
+    return c.body(null, 204);
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
-
-  return c.body(null, 204);
 });
 
 // GET /providers (list linked providers)
 sessions.get("/providers", async (c) => {
-  const userId = c.get("userId");
+  try {
+    const userId = c.get("userId");
 
-  const { results } = await c.env.DB.prepare(
-    "SELECT provider, provider_user_id, provider_username, provider_email, email_verified, created_at FROM oauth_accounts WHERE user_id = ?",
-  )
-    .bind(userId)
-    .all<{
-      provider: string;
-      provider_user_id: string;
-      provider_username: string;
-      provider_email: string | null;
-      email_verified: number;
-      created_at: string;
-    }>();
+    const { results } = await c.env.DB.prepare(
+      "SELECT provider, provider_user_id, provider_username, provider_email, email_verified, created_at FROM oauth_accounts WHERE user_id = ?",
+    )
+      .bind(userId)
+      .all<{
+        provider: string;
+        provider_user_id: string;
+        provider_username: string;
+        provider_email: string | null;
+        email_verified: number;
+        created_at: string;
+      }>();
 
-  return c.json({
-    data: results.map((p) => ({
-      provider: p.provider as OAuthProvider,
-      provider_user_id: p.provider_user_id,
-      provider_username: p.provider_username,
-      provider_email: p.provider_email ?? undefined,
-      email_verified: p.email_verified === 1,
-      created_at: normalizeDateTime(p.created_at),
-    })),
-  });
+    return c.json({
+      data: results.map((p) => ({
+        provider: p.provider as OAuthProvider,
+        provider_user_id: p.provider_user_id,
+        provider_username: p.provider_username,
+        provider_email: p.provider_email ?? undefined,
+        email_verified: p.email_verified === 1,
+        created_at: normalizeDateTime(p.created_at),
+      })),
+    });
+  } catch (err) {
+    console.error("Auth error:", err instanceof Error ? err.message : err);
+    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+  }
 });
 
 // DELETE /providers/:provider (unlink)
@@ -197,9 +218,10 @@ sessions.delete("/providers/:provider", async (c) => {
         .all<{ provider: string }>(),
       c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
         .bind(userId)
-        .first<{ api_key_hash: string | null }>(),
+        .first<{ api_key_hash: string }>(),
     ]);
 
+    // api_key_hash is NOT NULL, so hasApiKey is always true — guard is defensive
     const hasApiKey = !!userRow?.api_key_hash;
     const otherProviders = linked.filter((p) => p.provider !== provider).length;
     if (otherProviders === 0 && !hasApiKey) {
@@ -231,14 +253,16 @@ sessions.post("/api-key", async (c) => {
 
     const { plaintext, hash } = await generateApiKey();
 
+    // Delete old API key from KV cache before updating DB to prevent stale cache hits.
+    // If the DB update fails after this, the old key is still valid in D1 and will
+    // be re-cached on next use.
+    await c.env.KV.delete(`apikey:${user.api_key_hash}`);
+
     await c.env.DB.prepare("UPDATE users SET api_key_hash = ?, modified_at = datetime('now') WHERE id = ?")
       .bind(hash, userId)
       .run();
 
-    await Promise.all([
-      c.env.KV.delete(`apikey:${user.api_key_hash}`),
-      invalidateOtherSessions(c.env.DB, c.env.KV, userId, currentTokenHash),
-    ]);
+    await invalidateOtherSessions(c.env.DB, c.env.KV, userId, currentTokenHash);
 
     return c.json(
       { data: { api_key: plaintext } },
