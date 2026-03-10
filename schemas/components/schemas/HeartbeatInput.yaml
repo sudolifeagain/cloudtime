@@ -13,6 +13,8 @@ properties:
       - file
       - app
       - domain
+      - url
+      - event
   time:
     type: number
     format: double
@@ -28,8 +30,10 @@ properties:
   language:
     type: string
   dependencies:
-    type: string
-    description: Comma-separated dependency names
+    type: array
+    items:
+      type: string
+    description: Dependency names
   lines:
     type: integer
   ai_line_changes:
@@ -46,3 +50,9 @@ properties:
     type: string
   operating_system:
     type: string
+  machine:
+    type: string
+    description: Machine hostname (alternative to X-Machine-Name header)
+  user_agent:
+    type: string
+    description: Editor plugin user agent string

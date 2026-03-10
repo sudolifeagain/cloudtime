@@ -25,6 +25,18 @@ get:
                 type: array
                 items:
                   $ref: ../../components/schemas/Heartbeat.yaml
+              start:
+                type: string
+                format: date-time
+                description: Start of the requested date in the user's timezone (ISO 8601)
+              end:
+                type: string
+                format: date-time
+                description: End of the requested date in the user's timezone (ISO 8601)
+              timezone:
+                type: string
+                description: IANA timezone used for date boundary resolution
+                example: America/New_York
     '400':
       $ref: ../../components/responses/BadRequest.yaml
     '401':
@@ -34,6 +46,9 @@ post:
   tags:
     - heartbeats
   summary: Create a single heartbeat
+  parameters:
+    - $ref: ../../components/parameters/UserAgentHeader.yaml
+    - $ref: ../../components/parameters/MachineNameHeader.yaml
   requestBody:
     required: true
     content:

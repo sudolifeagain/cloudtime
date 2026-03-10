@@ -3,6 +3,9 @@ post:
   tags:
     - heartbeats
   summary: Create up to 25 heartbeats at once
+  parameters:
+    - $ref: ../../components/parameters/UserAgentHeader.yaml
+    - $ref: ../../components/parameters/MachineNameHeader.yaml
   requestBody:
     required: true
     content:
@@ -30,7 +33,7 @@ post:
                   maxItems: 2
                   items: false
                   prefixItems:
-                    - $ref: ../../components/schemas/Heartbeat.yaml
+                    - $ref: ../../components/schemas/HeartbeatBulkItem.yaml
                     - type: integer
                       description: HTTP status code
     '400':

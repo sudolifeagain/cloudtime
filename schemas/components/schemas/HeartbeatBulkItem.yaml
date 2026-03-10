@@ -1,0 +1,10 @@
+type: object
+properties:
+  data:
+    type: object
+    properties:
+      id:
+        type: string
+  error:
+    type: string
+    nullable: true

@@ -1,0 +1,8 @@
+name: X-Machine-Name
+in: header
+description: >-
+  Machine hostname where the editor plugin is running.
+  Used to populate the machine field in heartbeat responses.
+required: false
+schema:
+  type: string

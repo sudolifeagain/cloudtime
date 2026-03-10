@@ -1,0 +1,9 @@
+name: User-Agent
+in: header
+description: >-
+  Editor plugin user agent string. Typically formatted as
+  "wakatime/vX.Y.Z (os-kernel-arch) editor/version plugin/version".
+  Parsed server-side to extract editor, OS, and plugin metadata.
+required: false
+schema:
+  type: string
