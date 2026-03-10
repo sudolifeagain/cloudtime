@@ -10,11 +10,11 @@ import { securityHeaders } from "./helpers";
 export const sessionMw = createMiddleware<SessionAuthEnv>(async (c, next) => {
   try {
     const token = getSessionTokenFromCookie(c, c.env);
-    if (!token) return c.json({ error: "Unauthorized" }, 401);
+    if (!token) return c.json({ error: "Unauthorized" }, 401, securityHeaders());
 
     const tokenHash = await sha256Hex(token);
     const session = await validateSession(c.env.DB, c.env.KV, tokenHash);
-    if (!session) return c.json({ error: "Unauthorized" }, 401);
+    if (!session) return c.json({ error: "Unauthorized" }, 401, securityHeaders());
 
     c.set("userId", session.userId);
     c.set("sessionId", session.sessionId);
