@@ -5,6 +5,7 @@ import { authMiddleware } from "../middleware/auth";
 
 type HeartbeatInput = components["schemas"]["HeartbeatInput"];
 type Heartbeat = components["schemas"]["Heartbeat"];
+type HeartbeatBulkItem = components["schemas"]["HeartbeatBulkItem"];
 
 // D1 row representation (is_write is integer, created_at may be non-ISO)
 type HeartbeatRow = Omit<Heartbeat, "is_write" | "created_at"> & {
@@ -20,6 +21,7 @@ const VALID_CATEGORIES = new Set([
   "designing", "ai coding", "advising", "meeting", "planning",
   "supporting", "translating",
 ]);
+// TODO: Read from users.timeout column for per-user configuration
 const SESSION_TIMEOUT_SECONDS = 900; // 15 minutes
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -161,9 +163,9 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
   const now = new Date().toISOString();
 
   // Per-item validation
-  type BulkItem = { data: { id: string } | null; error: string | null };
   const validationErrors: (string | null)[] = inputs.map((input) => validateHeartbeatInput(input));
   const ids = inputs.map(() => crypto.randomUUID());
+  const validCount = validationErrors.filter((e) => e === null).length;
 
   // Build insert statements only for valid heartbeats
   const stmts: D1PreparedStatement[] = [];
@@ -191,17 +193,25 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
     stmts.push(c.env.DB.prepare(UPSERT_PROJECT_SQL).bind(userId, project, times.min, times.max));
   }
 
+  let batchResults: D1Result[] = [];
   if (stmts.length > 0) {
     try {
-      await c.env.DB.batch(stmts);
+      batchResults = await c.env.DB.batch(stmts);
     } catch {
       return c.json({ error: "Internal server error" }, 500);
     }
   }
 
-  const responses: [BulkItem, number][] = inputs.map((_, i) => {
+  // Map batch results back to per-input indices (valid items only)
+  let batchIdx = 0;
+  const responses: [HeartbeatBulkItem, number][] = inputs.map((_, i) => {
     if (validationErrors[i]) {
       return [{ data: null, error: validationErrors[i] }, 400];
+    }
+    const success = batchResults[batchIdx]?.success ?? false;
+    batchIdx++;
+    if (!success) {
+      return [{ data: null, error: "Insert failed" }, 500];
     }
     return [{ data: { id: ids[i] }, error: null }, 201];
   });
@@ -282,6 +292,12 @@ function validateHeartbeatInput(input: HeartbeatInput): string | null {
     return "is_write must be a boolean";
   }
 
+  if (input.dependencies !== undefined
+      && typeof input.dependencies !== "string"
+      && !Array.isArray(input.dependencies)) {
+    return "dependencies must be a string or array of strings";
+  }
+
   return null;
 }
 
@@ -307,6 +323,7 @@ async function insertHeartbeat(
     ...input,
     is_write: input.is_write ?? false,
     machine,
+    // TODO: Resolve user_agent string to user_agents table ID instead of storing raw string
     user_agent_id: userAgent,
     created_at: now,
   };
@@ -318,8 +335,19 @@ function rowToHeartbeat(row: HeartbeatRow): Heartbeat {
     ? row.created_at
     : row.created_at.replace(" ", "T") + "Z";
 
+  // Parse dependencies from JSON string back to array for API response
+  let dependencies = row.dependencies;
+  if (typeof dependencies === "string") {
+    try {
+      dependencies = JSON.parse(dependencies);
+    } catch {
+      // Keep as-is if not valid JSON
+    }
+  }
+
   return {
     ...row,
+    dependencies,
     is_write: row.is_write === 1,
     created_at: createdAt,
   };
