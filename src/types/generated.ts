@@ -1082,6 +1082,7 @@ export interface components {
             project_root_count?: number;
             branch?: string;
             language?: string;
+            /** @description Dependency names, as comma-separated string or array */
             dependencies?: string | string[];
             lines?: number;
             ai_line_changes?: number;
@@ -1099,7 +1100,6 @@ export interface components {
         Heartbeat: components["schemas"]["HeartbeatInput"] & {
             id: string;
             user_id: string;
-            machine?: string;
             user_agent_id?: string;
             /** Format: date-time */
             created_at: string;

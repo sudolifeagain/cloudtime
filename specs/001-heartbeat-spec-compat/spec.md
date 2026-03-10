@@ -1,23 +1,23 @@
-# Feature Specification: Heartbeat Spec WakaTime-CLI Compatibility
+# Feature Specification: Heartbeat Spec WakaTime-compatible CLI Compatibility
 
 **Feature Branch**: `001-heartbeat-spec-compat`
 **Created**: 2026-03-11
 **Status**: Draft
-**Input**: Update heartbeat OpenAPI spec for wakatime-cli compatibility
+**Input**: Update heartbeat OpenAPI spec for WakaTime-compatible CLI compatibility
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Editor plugin sends heartbeats with full metadata (Priority: P1)
 
-A developer uses an editor plugin (VS Code, JetBrains, etc.) that sends heartbeats via wakatime-cli. The CLI includes fields such as `machine` name, `user_agent` string, and `dependencies` as a JSON array. The system MUST accept these fields without rejecting valid heartbeats.
+A developer uses an editor plugin (VS Code, JetBrains, etc.) that sends heartbeats via a WakaTime-compatible CLI. The CLI includes fields such as `machine` name, `user_agent` string, and `dependencies` as a JSON array. The system MUST accept these fields without rejecting valid heartbeats.
 
-**Why this priority**: Without accepting the full field set from wakatime-cli, editor plugins will encounter errors or lose tracking data. This is the core compatibility requirement.
+**Why this priority**: Without accepting the full field set from WakaTime-compatible CLI clients, editor plugins will encounter errors or lose tracking data. This is the core compatibility requirement.
 
-**Independent Test**: Send a heartbeat with all wakatime-cli fields populated (including machine, user_agent, dependencies as array) and verify it is accepted and stored.
+**Independent Test**: Send a heartbeat with all WakaTime-compatible CLI fields populated (including machine, user_agent, dependencies as array) and verify it is accepted and stored.
 
 **Acceptance Scenarios**:
 
-1. **Given** a configured editor plugin, **When** wakatime-cli sends a POST /heartbeats with `machine`, `user_agent`, and `dependencies` as `["react", "lodash"]`, **Then** the system accepts it with 201 and returns the created heartbeat.
+1. **Given** a configured editor plugin, **When** a WakaTime-compatible CLI sends a POST /heartbeats with `machine`, `user_agent`, and `dependencies` as `["react", "lodash"]`, **Then** the system accepts it with 201 and returns the created heartbeat.
 2. **Given** a heartbeat with `type: "url"` and `category: "meeting"`, **When** submitted via POST /heartbeats, **Then** the system accepts it without validation errors.
 3. **Given** a heartbeat with `X-Machine-Name` and `User-Agent` headers, **When** submitted, **Then** the system extracts and stores the machine name and user agent values.
 
@@ -25,9 +25,9 @@ A developer uses an editor plugin (VS Code, JetBrains, etc.) that sends heartbea
 
 ### User Story 2 - Bulk heartbeat submission returns compatible response (Priority: P1)
 
-wakatime-cli sends heartbeats in bulk (up to 25 per request) and expects each item in the response to contain `{data: {id}, error}` with an HTTP status code — not a raw `[Heartbeat, code]` tuple.
+A WakaTime-compatible CLI sends heartbeats in bulk (up to 25 per request) and expects each item in the response to contain `{data: {id}, error}` with an HTTP status code — not a raw `[Heartbeat, code]` tuple.
 
-**Why this priority**: The bulk endpoint is the primary submission path for wakatime-cli. An incompatible response format causes the CLI to fail silently or retry indefinitely.
+**Why this priority**: The bulk endpoint is the primary submission path for WakaTime-compatible CLI clients. An incompatible response format causes the CLI to fail silently or retry indefinitely.
 
 **Independent Test**: Send a bulk POST with 3 heartbeats and verify each response item matches the `[{data: {id}, error}, code]` format.
 
@@ -42,7 +42,7 @@ wakatime-cli sends heartbeats in bulk (up to 25 per request) and expects each it
 
 A dashboard or API consumer queries heartbeats for a given day and receives `start`, `end`, and `timezone` fields in each heartbeat record, enabling proper time-range display without client-side calculation.
 
-**Why this priority**: This is a read-path enhancement for API parity with WakaTime/Wakapi. It does not block plugin functionality but improves dashboard compatibility.
+**Why this priority**: This is a read-path enhancement for API parity with WakaTime-compatible services (e.g. Wakapi). It does not block plugin functionality but improves dashboard compatibility.
 
 **Independent Test**: Send GET /heartbeats?date=2026-03-11 and verify each returned heartbeat includes `start`, `end`, and `timezone` fields.
 
@@ -77,7 +77,7 @@ A dashboard or API consumer queries heartbeats for a given day and receives `sta
 
 ### Key Entities
 
-- **HeartbeatInput**: The payload sent by editor plugins. Key new attributes: `machine` (string, optional), `user_agent` (string, optional), `dependencies` (string array), expanded `type` and `category` enums.
+- **HeartbeatInput**: The payload sent by editor plugins. Key new attributes: `machine` (string, optional), `user_agent` (string, optional — resolved to `user_agent_id` via the `user_agents` table), `dependencies` (string array), expanded `type` and `category` enums.
 - **HeartbeatBulkItem**: New response shape for bulk submissions. Contains `data` (object with `id` or null) and `error` (string or null). Replaces raw Heartbeat object in bulk response tuples.
 - **Category**: Enum of 21 activity categories describing what the developer is doing.
 - **EntityType**: Enum of 5 entity types: `file`, `app`, `domain`, `url`, `event`.
@@ -86,8 +86,8 @@ A dashboard or API consumer queries heartbeats for a given day and receives `sta
 
 ### Measurable Outcomes
 
-- **SC-001**: All heartbeats sent by wakatime-cli (with full field set including machine, user_agent, dependencies array, new type/category values) are accepted without errors.
-- **SC-002**: Bulk heartbeat responses are parsed successfully by wakatime-cli without retry loops or silent failures.
+- **SC-001**: All heartbeats sent by WakaTime-compatible CLI clients (with full field set including machine, user_agent, dependencies array, new type/category values) are accepted without errors.
+- **SC-002**: Bulk heartbeat responses are parsed successfully by WakaTime-compatible CLI clients without retry loops or silent failures.
 - **SC-003**: GET /heartbeats responses include start, end, and timezone fields for 100% of returned heartbeats.
 - **SC-004**: All 21 category values and 5 entity type values pass validation when submitted.
 

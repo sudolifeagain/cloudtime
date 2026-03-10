@@ -30,6 +30,7 @@ properties:
   language:
     type: string
   dependencies:
+    description: Dependency names, as comma-separated string or array
     oneOf:
       - type: string
         description: Comma-separated dependency names

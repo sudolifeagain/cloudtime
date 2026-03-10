@@ -10,8 +10,6 @@ allOf:
         type: string
       user_id:
         type: string
-      machine:
-        type: string
       user_agent_id:
         type: string
       created_at:

@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Heartbeat Spec WakaTime-CLI Compatibility
+# Specification Quality Checklist: Heartbeat Spec WakaTime-compatible CLI Compatibility
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-03-11

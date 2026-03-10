@@ -37,6 +37,14 @@
 - `machine`: body field > `X-Machine-Name` header > null
 - `user_agent`: body field > `User-Agent` header > null
 
+### user_agent → user_agent_id Resolution
+
+The input field `user_agent` (raw string) is resolved to `user_agent_id` (stored/response) via the `user_agents` table:
+1. Receive `user_agent` string from body or `User-Agent` header
+2. Look up or create a row in `user_agents` table matching the string
+3. Store the `user_agents.id` in `heartbeats.user_agent_id`
+4. The response schema exposes `user_agent_id`, not the raw string
+
 ### Dependencies Normalization
 
 | Input | Stored Value |

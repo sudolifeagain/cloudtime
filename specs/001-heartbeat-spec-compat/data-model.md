@@ -1,4 +1,4 @@
-# Data Model: Heartbeat Spec WakaTime-CLI Compatibility
+# Data Model: Heartbeat Spec WakaTime-compatible CLI Compatibility
 
 ## Entity Changes
 

@@ -1,11 +1,11 @@
-# Implementation Plan: Heartbeat Spec WakaTime-CLI Compatibility
+# Implementation Plan: Heartbeat Spec WakaTime-compatible CLI Compatibility
 
 **Branch**: `001-heartbeat-spec-compat` | **Date**: 2026-03-11 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/001-heartbeat-spec-compat/spec.md`
 
 ## Summary
 
-Update the heartbeat OpenAPI spec and route handlers to achieve full wakatime-cli compatibility. This includes expanding enums (category, entity type), changing `dependencies` to accept both string and array formats, adding `machine`/`user_agent` body fields with header fallback, fixing bulk response format to `[HeartbeatBulkItem, code]`, and adding computed `start`/`end`/`timezone` fields to GET responses.
+Update the heartbeat OpenAPI spec and route handlers to achieve full WakaTime-compatible CLI compatibility. This includes expanding enums (category, entity type), changing `dependencies` to accept both string and array formats, adding `machine`/`user_agent` body fields with header fallback, fixing bulk response format to `[HeartbeatBulkItem, code]`, and adding computed `start`/`end`/`timezone` fields to GET responses.
 
 ## Technical Context
 
@@ -28,7 +28,7 @@ Update the heartbeat OpenAPI spec and route handlers to achieve full wakatime-cl
 | I. SDD | PASS | Spec changes committed before implementation. Commit order: spec → generate → implement. |
 | II. Cloudflare-Native | PASS | No new D1 tables. Bulk insert uses `db.batch()`. GET response fields computed at query time (no extra writes). |
 | III. Type Safety | PASS | All schema changes go through `npm run generate`. Route handlers will use generated types. |
-| IV. Legal/Trademark | PASS | No WakaTime code referenced. Spec derived from our own OpenAPI schema. |
+| IV. Legal/Trademark | PASS | No third-party code referenced. Spec derived from our own OpenAPI schema. |
 | V. Simplicity First | PASS | No new abstractions. Dependencies normalization is inline logic. `end` computation reuses existing heartbeat query. |
 
 ## Project Structure

@@ -1,4 +1,4 @@
-# Tasks: Heartbeat Spec WakaTime-CLI Compatibility
+# Tasks: Heartbeat Spec WakaTime-compatible CLI Compatibility
 
 **Input**: Design documents from `/specs/001-heartbeat-spec-compat/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
@@ -54,7 +54,7 @@
 
 ## Phase 3: User Story 1 — Editor plugin sends heartbeats with full metadata (Priority: P1) 🎯 MVP
 
-**Goal**: Accept all wakatime-cli fields (expanded type/category enums, machine, user_agent, dependencies as array or string) without rejecting valid heartbeats.
+**Goal**: Accept all WakaTime-compatible CLI fields (expanded type/category enums, machine, user_agent, dependencies as array or string) without rejecting valid heartbeats.
 
 **Independent Test**: POST a heartbeat with `type: "url"`, `category: "meeting"`, `machine: "my-laptop"`, `user_agent: "wakatime/v1.90.0"`, `dependencies: ["react", "lodash"]` — verify 201 with stored data.
 
@@ -68,7 +68,7 @@
 - [ ] T017 [US1] Update `bindHeartbeatParams()` in `src/routes/heartbeats.ts` to accept and bind normalized `dependencies` (JSON string) and resolved `user_agent` value
 - [ ] T018 [US1] Validate with manual curl test: POST single heartbeat with all new fields populated, verify 201 and correct storage
 
-**Checkpoint**: US1 complete — editor plugins can send heartbeats with full wakatime-cli field set.
+**Checkpoint**: US1 complete — editor plugins can send heartbeats with full WakaTime-compatible CLI field set.
 
 ---
 
@@ -85,7 +85,7 @@
 - [ ] T021 [US2] Update bulk POST response construction in `src/routes/heartbeats.ts` — build `responses` array as `[HeartbeatBulkItem, number][]` where `HeartbeatBulkItem = {data: {id} | null, error: string | null}`; valid items get `[{data: {id}, error: null}, 201]`, invalid items get `[{data: null, error: "..."}, 400]`
 - [ ] T022 [US2] Validate with manual curl test: POST bulk with mix of valid and invalid heartbeats, verify per-item response format
 
-**Checkpoint**: US2 complete — wakatime-cli can parse bulk responses without retry loops.
+**Checkpoint**: US2 complete — WakaTime-compatible CLI can parse bulk responses without retry loops.
 
 ---
 

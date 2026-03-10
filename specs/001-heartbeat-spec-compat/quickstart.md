@@ -1,4 +1,4 @@
-# Quickstart: Heartbeat Spec WakaTime-CLI Compatibility
+# Quickstart: Heartbeat Spec WakaTime-compatible CLI Compatibility
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ Edit the following schema files under `schemas/`:
 7. `paths/heartbeats/heartbeats.yaml` — add header params to POST, add fields to GET response
 8. `paths/heartbeats/heartbeats-bulk.yaml` — update response schema
 
-Commit: `spec: update heartbeat schema for wakatime-cli compatibility`
+Commit: `spec: update heartbeat schema for WakaTime-compatible CLI compatibility`
 
 ### Step 2: Regenerate Types
 
@@ -40,7 +40,7 @@ Edit `src/routes/heartbeats.ts`:
 3. Update bulk response format to `[HeartbeatBulkItem, code]`
 4. Add `start`, `end`, `timezone` computation to GET response
 
-Commit: `feat: implement heartbeat wakatime-cli compatibility`
+Commit: `feat: implement heartbeat WakaTime-compatible CLI compatibility`
 
 ### Step 4: Validate
 
