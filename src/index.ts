@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { Env } from "./types";
@@ -13,6 +14,7 @@ import { aggregateHeartbeats } from "./cron/aggregate";
 const app = new Hono<{ Bindings: Env }>();
 
 app.use("/*", secureHeaders());
+app.use("/*", bodyLimit({ maxSize: 256 * 1024 })); // 256 KB (CVE-2025-59139 mitigation)
 
 // CORS configuration for browser-based clients.
 // NOTE: CORS is a browser-only protection — curl/Postman/server-side requests

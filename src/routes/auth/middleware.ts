@@ -21,7 +21,7 @@ export const sessionMw = createMiddleware<SessionAuthEnv>(async (c, next) => {
     c.set("sessionTokenHash", tokenHash);
     await next();
   } catch (err) {
-    console.error("Auth error:", err instanceof Error ? err.message : err);
+    console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
     return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
