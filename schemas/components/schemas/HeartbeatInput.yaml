@@ -13,6 +13,8 @@ properties:
       - file
       - app
       - domain
+      - url
+      - event
   time:
     type: number
     format: double
@@ -28,8 +30,14 @@ properties:
   language:
     type: string
   dependencies:
-    type: string
-    description: Comma-separated dependency names
+    description: Dependency names, as comma-separated string or array
+    oneOf:
+      - type: string
+        description: Comma-separated dependency names
+      - type: array
+        items:
+          type: string
+        description: Array of dependency names
   lines:
     type: integer
   ai_line_changes:
@@ -46,3 +54,9 @@ properties:
     type: string
   operating_system:
     type: string
+  machine:
+    type: string
+    description: Machine/device name
+  user_agent:
+    type: string
+    description: User agent string from editor plugin

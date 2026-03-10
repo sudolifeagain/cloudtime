@@ -31,3 +31,8 @@
 - Cron aggregation must be incremental (process only new data since `last_aggregated_at`)
 - Workers free tier: 10ms CPU per request. Keep handlers fast — offload heavy work to Cron
 - See `docs/cloudflare-constraints.md` for full limits and mitigation strategies
+
+## SpecKit 2-PR Workflow
+- **PR1 (Spec + Design)**: SpecKit artifacts (`specs/`), OpenAPI spec (`schemas/`), generated types (`src/types/generated.ts`). No implementation code.
+- **PR2 (Implementation)**: Route handlers and business logic. Only after PR1 is merged.
+- Never mix spec changes and implementation in the same PR
