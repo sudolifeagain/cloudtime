@@ -14,10 +14,15 @@ auth.use(
   csrf({
     origin: (origin, c) => {
       const env = c.env as Env;
-      const appUrl = env.APP_URL?.replace(/\/+$/, "");
-      if (appUrl) return origin === appUrl;
-      // Only bypass CSRF in development; fail closed in production
-      return env.ENVIRONMENT === "development";
+      if (!env.APP_URL) {
+        // Only bypass CSRF in development; fail closed in production
+        return env.ENVIRONMENT === "development";
+      }
+      try {
+        return origin === new URL(env.APP_URL).origin;
+      } catch {
+        return false;
+      }
     },
   }),
 );

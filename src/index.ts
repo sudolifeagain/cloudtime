@@ -78,9 +78,11 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
       (async () => {
-        // Atomic DELETE + RETURNING avoids TOCTOU between SELECT and DELETE
-        const [, batchResults] = await Promise.all([
+        // Run aggregation and session cleanup independently so a failure
+        // in one does not prevent the other from completing.
+        const [, batchResults] = await Promise.allSettled([
           aggregateHeartbeats(env.DB),
+          // Atomic DELETE + RETURNING avoids TOCTOU between SELECT and DELETE
           env.DB.batch([
             env.DB.prepare(
               "DELETE FROM sessions WHERE expires_at < datetime('now') OR last_active_at < datetime('now', '-1 day') RETURNING token_hash",
@@ -90,9 +92,11 @@ export default {
         ]);
 
         // Clean up KV cache for deleted sessions
-        const expired = (batchResults[0].results ?? []) as { token_hash: string }[];
-        if (expired.length > 0) {
-          await Promise.all(expired.map((r) => env.KV.delete(`session:${r.token_hash}`)));
+        if (batchResults?.status === "fulfilled") {
+          const expired = (batchResults.value[0].results ?? []) as { token_hash: string }[];
+          if (expired.length > 0) {
+            await Promise.all(expired.map((r) => env.KV.delete(`session:${r.token_hash}`)));
+          }
         }
       })(),
     );

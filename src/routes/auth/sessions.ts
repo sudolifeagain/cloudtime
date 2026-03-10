@@ -37,7 +37,7 @@ sessions.get("/session", async (c) => {
         .all<{
           provider: string;
           provider_user_id: string;
-          provider_username: string;
+          provider_username: string | null;
           provider_email: string | null;
           email_verified: number;
           created_at: string;
@@ -53,7 +53,7 @@ sessions.get("/session", async (c) => {
           providers: providers.results.map((p) => ({
             provider: p.provider as OAuthProvider,
             provider_user_id: p.provider_user_id,
-            provider_username: p.provider_username,
+            provider_username: p.provider_username ?? "",
             provider_email: p.provider_email ?? undefined,
             email_verified: p.email_verified === 1,
             created_at: normalizeDateTime(p.created_at),
@@ -185,7 +185,7 @@ sessions.get("/providers", async (c) => {
       .all<{
         provider: string;
         provider_user_id: string;
-        provider_username: string;
+        provider_username: string | null;
         provider_email: string | null;
         email_verified: number;
         created_at: string;
@@ -195,7 +195,7 @@ sessions.get("/providers", async (c) => {
       data: results.map((p) => ({
         provider: p.provider as OAuthProvider,
         provider_user_id: p.provider_user_id,
-        provider_username: p.provider_username,
+        provider_username: p.provider_username ?? "",
         provider_email: p.provider_email ?? undefined,
         email_verified: p.email_verified === 1,
         created_at: normalizeDateTime(p.created_at),
