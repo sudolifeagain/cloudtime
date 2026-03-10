@@ -10,7 +10,25 @@ import { aggregateHeartbeats } from "./cron/aggregate";
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use("/*", cors());
+app.use(
+  "/*",
+  cors({
+    origin: (origin, c) => {
+      const appUrl = c.env.APP_URL;
+      if (!appUrl) return origin; // Dev: reflect any origin
+      try {
+        const allowed = new URL(appUrl).origin;
+        return origin === allowed ? origin : null;
+      } catch {
+        return null;
+      }
+    },
+    credentials: true,
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+    maxAge: 86400,
+  }),
+);
 
 // Health check
 app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
