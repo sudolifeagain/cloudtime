@@ -1066,12 +1066,12 @@ export interface components {
             expires_at?: string;
         };
         /** @enum {string} */
-        Category: "coding" | "building" | "indexing" | "debugging" | "browsing" | "running tests" | "writing tests" | "manual testing" | "writing docs" | "communicating" | "code reviewing" | "notes" | "researching" | "learning" | "designing" | "ai coding";
+        Category: "coding" | "building" | "indexing" | "debugging" | "browsing" | "running tests" | "writing tests" | "manual testing" | "writing docs" | "communicating" | "code reviewing" | "notes" | "researching" | "learning" | "designing" | "ai coding" | "advising" | "meeting" | "planning" | "supporting" | "translating";
         HeartbeatInput: {
             /** @description File path, app name, or domain */
             entity: string;
             /** @enum {string} */
-            type: "file" | "app" | "domain";
+            type: "file" | "app" | "domain" | "url" | "event";
             /**
              * Format: double
              * @description UNIX epoch timestamp
@@ -1082,8 +1082,7 @@ export interface components {
             project_root_count?: number;
             branch?: string;
             language?: string;
-            /** @description Comma-separated dependency names */
-            dependencies?: string;
+            dependencies?: string | string[];
             lines?: number;
             ai_line_changes?: number;
             human_line_changes?: number;
@@ -1092,6 +1091,10 @@ export interface components {
             is_write?: boolean;
             editor?: string;
             operating_system?: string;
+            /** @description Machine/device name */
+            machine?: string;
+            /** @description User agent string from editor plugin */
+            user_agent?: string;
         };
         Heartbeat: components["schemas"]["HeartbeatInput"] & {
             id: string;
@@ -1100,6 +1103,26 @@ export interface components {
             user_agent_id?: string;
             /** Format: date-time */
             created_at: string;
+            /**
+             * Format: double
+             * @description Session start timestamp (equals heartbeat time)
+             */
+            start?: number;
+            /**
+             * Format: double
+             * @description Session end timestamp (next heartbeat time within 15min threshold, or equals start)
+             */
+            end?: number;
+            /** @description IANA timezone string */
+            timezone?: string;
+        };
+        HeartbeatBulkItem: {
+            /** @description Created heartbeat ID or null on error */
+            data: {
+                id: string;
+            } | null;
+            /** @description Error message or null on success */
+            error: string | null;
         };
         /** @enum {string} */
         SummaryRange: "Today" | "Yesterday" | "Last 7 Days" | "Last 7 Days from Yesterday" | "Last 14 Days" | "Last 30 Days" | "This Week" | "Last Week" | "This Month" | "Last Month";
@@ -1533,7 +1556,12 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        /** @description Machine/device name (fallback if not provided in request body) */
+        MachineNameHeader: string;
+        /** @description User agent string (fallback if not provided in request body) */
+        UserAgentHeader: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -2101,7 +2129,12 @@ export interface operations {
     createHeartbeat: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Machine/device name (fallback if not provided in request body) */
+                "X-Machine-Name"?: components["parameters"]["MachineNameHeader"];
+                /** @description User agent string (fallback if not provided in request body) */
+                "User-Agent"?: components["parameters"]["UserAgentHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2129,7 +2162,12 @@ export interface operations {
     createHeartbeatsBulk: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Machine/device name (fallback if not provided in request body) */
+                "X-Machine-Name"?: components["parameters"]["MachineNameHeader"];
+                /** @description User agent string (fallback if not provided in request body) */
+                "User-Agent"?: components["parameters"]["UserAgentHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2147,7 +2185,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         responses: [
-                            components["schemas"]["Heartbeat"],
+                            components["schemas"]["HeartbeatBulkItem"],
                             number
                         ][];
                     };
