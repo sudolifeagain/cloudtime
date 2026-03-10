@@ -107,7 +107,8 @@ heartbeats.get("/heartbeats", async (c) => {
       return { ...hb, start, end, timezone: "UTC" };
     });
     return c.json({ data: enriched });
-  } catch {
+  } catch (err) {
+    console.error("GET /heartbeats error:", err);
     return c.json({ error: "Internal server error" }, 500);
   }
 });
@@ -134,7 +135,8 @@ heartbeats.post("/heartbeats", async (c) => {
   try {
     const heartbeat = await insertHeartbeat(c.env.DB, userId, input, machine, userAgent);
     return c.json({ data: heartbeat }, 201);
-  } catch {
+  } catch (err) {
+    console.error("POST /heartbeats error:", err);
     return c.json({ error: "Internal server error" }, 500);
   }
 });
@@ -197,7 +199,8 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
   if (stmts.length > 0) {
     try {
       batchResults = await c.env.DB.batch(stmts);
-    } catch {
+    } catch (err) {
+      console.error("POST /heartbeats.bulk error:", err);
       return c.json({ error: "Internal server error" }, 500);
     }
   }
@@ -253,7 +256,8 @@ heartbeats.delete("/heartbeats.bulk", async (c) => {
     )
       .bind(userId, range.dayStart, range.dayEnd, ...body.ids)
       .run();
-  } catch {
+  } catch (err) {
+    console.error("DELETE /heartbeats.bulk error:", err);
     return c.json({ error: "Internal server error" }, 500);
   }
 
