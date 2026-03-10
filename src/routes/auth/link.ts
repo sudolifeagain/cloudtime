@@ -75,7 +75,14 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
     await c.env.DB.batch([
       c.env.DB.prepare(
         `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(provider, provider_user_id) DO UPDATE SET
+           provider_username = excluded.provider_username,
+           provider_email = excluded.provider_email,
+           email_verified = excluded.email_verified,
+           access_token_encrypted = excluded.access_token_encrypted,
+           refresh_token_encrypted = excluded.refresh_token_encrypted,
+           token_expires_at = excluded.token_expires_at`,
       ).bind(
         oauthId,
         userId,
@@ -166,11 +173,11 @@ link.get("/link/:provider/callback", async (c) => {
 
   // Validate session from cookie
   const token = getSessionTokenFromCookie(c, c.env);
-  if (!token) return c.json({ error: "Unauthorized" }, 401);
+  if (!token) return c.json({ error: "Unauthorized" }, 401, securityHeaders());
   const tokenHash = await sha256Hex(token);
   const session = await validateSession(c.env.DB, c.env.KV, tokenHash);
   if (!session || session.userId !== stateData.linkUserId) {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "Unauthorized" }, 401, securityHeaders());
   }
 
   try {
