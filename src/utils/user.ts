@@ -30,9 +30,9 @@ export function normalizeDateTime(dt: string): string {
   return dt.includes("T") ? dt : dt.replace(" ", "T") + "Z";
 }
 
-/** Convert a Date to SQLite datetime string ("YYYY-MM-DD HH:MM:SS.sss"). */
+/** Convert a Date to SQLite datetime string ("YYYY-MM-DD HH:MM:SS"). */
 export function toSqliteDateTime(date: Date = new Date()): string {
-  return date.toISOString().replace("T", " ").replace("Z", "");
+  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "");
 }
 
 export function rowToUser(
