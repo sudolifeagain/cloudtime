@@ -43,12 +43,13 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
     const pendingLinkId = c.req.param("pending_link_id");
 
     const pending = await c.env.DB.prepare(
-      "SELECT * FROM pending_links WHERE id = ? AND existing_user_id = ?",
+      `SELECT provider, provider_user_id, provider_username, provider_email,
+              email_verified, access_token_encrypted, refresh_token_encrypted,
+              token_expires_at, expires_at
+       FROM pending_links WHERE id = ? AND existing_user_id = ?`,
     )
       .bind(pendingLinkId, userId)
       .first<{
-        id: string;
-        existing_user_id: string;
         provider: string;
         provider_user_id: string;
         provider_username: string | null;
@@ -60,13 +61,29 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
         expires_at: string;
       }>();
 
-    if (!pending) return c.json({ error: "Not found" }, 404);
+    if (!pending) return c.json({ error: "Not found" }, 404, securityHeaders());
 
     // Check expiry
     const expiresAt = new Date(normalizeDateTime(pending.expires_at));
     if (new Date() > expiresAt) {
       await c.env.DB.prepare("DELETE FROM pending_links WHERE id = ?").bind(pendingLinkId).run();
-      return c.json({ error: "Pending link expired" }, 410);
+      return c.json({ error: "Pending link expired" }, 410, securityHeaders());
+    }
+
+    // Check if this provider account was linked to another user in the meantime
+    const existingLink = await c.env.DB.prepare(
+      "SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?",
+    )
+      .bind(pending.provider, pending.provider_user_id)
+      .first<{ user_id: string }>();
+
+    if (existingLink && existingLink.user_id !== userId) {
+      await c.env.DB.prepare("DELETE FROM pending_links WHERE id = ?").bind(pendingLinkId).run();
+      return c.json(
+        { error: "This provider account is already linked to another user" },
+        409,
+        securityHeaders(),
+      );
     }
 
     const oauthId = crypto.randomUUID();
