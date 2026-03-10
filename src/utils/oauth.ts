@@ -43,7 +43,10 @@ const PROVIDER_FETCH_OPTS = {
  * constructs redirectUri from the request Host header (RFC 9700).
  */
 function validateRedirectUri(redirectUri: string, env: Env): void {
-  if (!env.APP_URL) return;
+  if (!env.APP_URL) {
+    if (env.ENVIRONMENT === "development") return;
+    throw new Error("APP_URL is required for redirect URI validation in production");
+  }
 
   let appOrigin: string;
   let redirectOrigin: string;

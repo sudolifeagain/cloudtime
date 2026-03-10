@@ -40,7 +40,7 @@ const login = new Hono<{ Bindings: Env }>();
 // GET /:provider (initiate OAuth login)
 login.get("/:provider", async (c) => {
   const provider = c.req.param("provider");
-  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400);
+  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, securityHeaders());
 
   try {
     const codeVerifier = generateCodeVerifier();
@@ -138,17 +138,18 @@ login.get("/:provider/callback", async (c) => {
         )
         .run();
 
-      // Create session
-      const sessionToken = generateSessionToken();
-      const sessionTokenHash = await sha256Hex(sessionToken);
-      await createSession(c.env.DB, c.env.KV, existingOAuth.user_id, sessionTokenHash, c.req.raw);
-      setSessionCookie(c, sessionToken, c.env);
-
+      // Verify user exists before creating session
       const userRow = await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
         .bind(existingOAuth.user_id)
         .first<UserRow>();
 
       if (!userRow) return c.json({ error: "Internal server error" }, 500, securityHeaders());
+
+      // Create session only after confirming user exists
+      const sessionToken = generateSessionToken();
+      const sessionTokenHash = await sha256Hex(sessionToken);
+      await createSession(c.env.DB, c.env.KV, existingOAuth.user_id, sessionTokenHash, c.req.raw);
+      setSessionCookie(c, sessionToken, c.env);
 
       return c.json(
         { data: { user: rowToUser(userRow), is_new_user: false } },
@@ -193,7 +194,15 @@ login.get("/:provider/callback", async (c) => {
 
         await c.env.DB.prepare(
           `INSERT INTO pending_links (id, existing_user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at, expires_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(existing_user_id, provider, provider_user_id) DO UPDATE SET
+             provider_username = excluded.provider_username,
+             provider_email = excluded.provider_email,
+             email_verified = excluded.email_verified,
+             access_token_encrypted = excluded.access_token_encrypted,
+             refresh_token_encrypted = excluded.refresh_token_encrypted,
+             token_expires_at = excluded.token_expires_at,
+             expires_at = excluded.expires_at`,
         )
           .bind(
             pendingId,
@@ -234,15 +243,9 @@ login.get("/:provider/callback", async (c) => {
     const userId = crypto.randomUUID();
     const { plaintext: apiKeyPlaintext, hash: apiKeyHash } = await generateApiKey();
 
-    let username = userInfo.providerUsername.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64) || `user_${userId.slice(0, 8)}`;
-
-    // Handle username collision by appending random suffix
-    const existingUsername = await c.env.DB.prepare("SELECT 1 FROM users WHERE username = ?")
-      .bind(username)
-      .first();
-    if (existingUsername) {
-      username = `${username.slice(0, 55)}_${userId.slice(0, 8)}`;
-    }
+    // Use UUID-suffixed username to avoid TOCTOU race on UNIQUE constraint
+    const baseUsername = userInfo.providerUsername.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 55) || "user";
+    const username = `${baseUsername}_${userId.slice(0, 8)}`;
 
     // Encrypt tokens with AAD context
     const encCtx = `${userId}:${provider}`;
@@ -312,17 +315,18 @@ login.get("/:provider/callback", async (c) => {
       ]);
     }
 
-    // Create session
-    const sessionToken = generateSessionToken();
-    const sessionTokenHash = await sha256Hex(sessionToken);
-    await createSession(c.env.DB, c.env.KV, userId, sessionTokenHash, c.req.raw);
-    setSessionCookie(c, sessionToken, c.env);
-
+    // Verify user was created before creating session
     const userRow = await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
       .bind(userId)
       .first<UserRow>();
 
     if (!userRow) return c.json({ error: "Internal server error" }, 500, securityHeaders());
+
+    // Create session only after confirming user exists
+    const sessionToken = generateSessionToken();
+    const sessionTokenHash = await sha256Hex(sessionToken);
+    await createSession(c.env.DB, c.env.KV, userId, sessionTokenHash, c.req.raw);
+    setSessionCookie(c, sessionToken, c.env);
 
     return c.json(
       {
