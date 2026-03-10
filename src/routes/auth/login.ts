@@ -350,7 +350,6 @@ login.get("/:provider/callback", async (c) => {
       {
         data: {
           user: rowToUser(userRow),
-          api_key: apiKeyPlaintext,
           is_new_user: true,
         },
       },
