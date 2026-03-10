@@ -1,0 +1,6 @@
+name: X-Machine-Name
+in: header
+required: false
+schema:
+  type: string
+description: Machine/device name (fallback if not provided in request body)

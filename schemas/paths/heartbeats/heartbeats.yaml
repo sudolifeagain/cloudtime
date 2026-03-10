@@ -34,6 +34,9 @@ post:
   tags:
     - heartbeats
   summary: Create a single heartbeat
+  parameters:
+    - $ref: ../../components/parameters/MachineNameHeader.yaml
+    - $ref: ../../components/parameters/UserAgentHeader.yaml
   requestBody:
     required: true
     content:

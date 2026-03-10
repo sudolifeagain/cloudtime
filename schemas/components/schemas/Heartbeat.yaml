@@ -17,3 +17,14 @@ allOf:
       created_at:
         type: string
         format: date-time
+      start:
+        type: number
+        format: double
+        description: Session start timestamp (equals heartbeat time)
+      end:
+        type: number
+        format: double
+        description: Session end timestamp (next heartbeat time within 15min threshold, or equals start)
+      timezone:
+        type: string
+        description: IANA timezone string
