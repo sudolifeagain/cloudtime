@@ -115,9 +115,6 @@ export interface paths {
          *     **Response headers for defense in depth:**
          *     - `Referrer-Policy: no-referrer` — prevents authorization code leakage via Referer header.
          *     - `Cache-Control: no-store` — prevents caching of authentication responses.
-         *
-         *     On first-time user creation, the response includes `api_key` (shown only once).
-         *     The API key is stored as a SHA-256 hash in the database; the plaintext is not recoverable.
          */
         get: operations["oauthCallback"];
         put?: never;
@@ -1639,11 +1636,6 @@ export interface operations {
                     "application/json": {
                         data: {
                             user: components["schemas"]["User"];
-                            /**
-                             * @description API key for editor plugins (ck_...). Only returned on first-time user creation.
-                             *     Stored as SHA-256 hash; this is the only time the plaintext is available.
-                             */
-                            api_key?: string;
                             is_new_user?: boolean;
                             /**
                              * @description Present when the provider's verified email matches an existing account.
