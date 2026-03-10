@@ -56,7 +56,7 @@ login.get("/:provider", async (c) => {
 
     return c.redirect(authorizeUrl, 302);
   } catch (err) {
-    console.error("OAuth start error:", err instanceof Error ? err.stack ?? err.message : err);
+    console.error("OAuth start error:", err instanceof Error ? err.message : "Unknown error");
     return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
@@ -69,7 +69,8 @@ login.get("/:provider/callback", async (c) => {
   // Handle OAuth error (e.g., user denied access)
   const oauthError = c.req.query("error");
   if (oauthError) {
-    console.error(`OAuth error from ${provider}: ${oauthError}`);
+    const sanitized = oauthError.replace(/[\r\n]/g, "").slice(0, 100);
+    console.error(`OAuth error from ${provider}: ${sanitized}`);
     return c.json({ error: "OAuth authorization failed" }, 400, securityHeaders());
   }
 
@@ -81,6 +82,9 @@ login.get("/:provider/callback", async (c) => {
 
   if (!stateParam || !code || !stateCookie) {
     return c.json({ error: "Missing state or code" }, 400, securityHeaders());
+  }
+  if (code.length > 2048) {
+    return c.json({ error: "Invalid code" }, 400, securityHeaders());
   }
 
   if (!(await timingSafeEqual(stateParam, stateCookie))) {
@@ -228,7 +232,7 @@ login.get("/:provider/callback", async (c) => {
                 id: linkResult?.id ?? pendingId,
                 provider: provider as OAuthProvider,
                 provider_username: userInfo.providerUsername,
-                provider_email: userInfo.providerEmail!,
+                provider_email: userInfo.providerEmail as string,
                 expires_at: normalizeDateTime(pendingExpiry),
               },
             },
@@ -350,7 +354,7 @@ login.get("/:provider/callback", async (c) => {
       securityHeaders(),
     );
   } catch (err) {
-    console.error("OAuth callback error:", err instanceof Error ? `${err.name}: ${err.stack ?? err.message}` : "Unknown error");
+    console.error("OAuth callback error:", err instanceof Error ? err.message : "Unknown error");
     return c.json({ error: "Internal server error" }, 500, securityHeaders());
   }
 });
