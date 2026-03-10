@@ -60,13 +60,13 @@
 
 ### Implementation for User Story 1 (PR2)
 
-- [ ] T012 [US1] Update `VALID_TYPES` set in `src/routes/heartbeats.ts` to include `url` and `event` (total: 5 values)
-- [ ] T013 [US1] Add `VALID_CATEGORIES` set in `src/routes/heartbeats.ts` with all 21 category values and add category validation to `validateHeartbeatInput()`
-- [ ] T014 [US1] Add dependencies normalization logic in `src/routes/heartbeats.ts` — if `dependencies` is a string, split on commas and trim whitespace; if array, use as-is; serialize as JSON string for DB storage. Apply in both single POST and bulk POST paths before `bindHeartbeatParams`
-- [ ] T015 [US1] Update `machine` resolution in `src/routes/heartbeats.ts` — body `machine` field takes priority over `X-Machine-Name` header; update single POST and bulk POST handlers
-- [ ] T016 [US1] Add `user_agent` resolution in `src/routes/heartbeats.ts` — body `user_agent` field takes priority over `User-Agent` header; pass resolved value to `bindHeartbeatParams` (store in `user_agent_id` column or new column as appropriate)
-- [ ] T017 [US1] Update `bindHeartbeatParams()` in `src/routes/heartbeats.ts` to accept and bind normalized `dependencies` (JSON string) and resolved `user_agent` value
-- [ ] T018 [US1] Validate with manual curl test: POST single heartbeat with all new fields populated, verify 201 and correct storage
+- [x] T012 [US1] Update `VALID_TYPES` set in `src/routes/heartbeats.ts` to include `url` and `event` (total: 5 values)
+- [x] T013 [US1] Add `VALID_CATEGORIES` set in `src/routes/heartbeats.ts` with all 21 category values and add category validation to `validateHeartbeatInput()`
+- [x] T014 [US1] Add dependencies normalization logic in `src/routes/heartbeats.ts` — if `dependencies` is a string, split on commas and trim whitespace; if array, use as-is; serialize as JSON string for DB storage. Apply in both single POST and bulk POST paths before `bindHeartbeatParams`
+- [x] T015 [US1] Update `machine` resolution in `src/routes/heartbeats.ts` — body `machine` field takes priority over `X-Machine-Name` header; update single POST and bulk POST handlers
+- [x] T016 [US1] Add `user_agent` resolution in `src/routes/heartbeats.ts` — body `user_agent` field takes priority over `User-Agent` header; pass resolved value to `bindHeartbeatParams` (store in `user_agent_id` column or new column as appropriate)
+- [x] T017 [US1] Update `bindHeartbeatParams()` in `src/routes/heartbeats.ts` to accept and bind normalized `dependencies` (JSON string) and resolved `user_agent` value
+- [x] T018 [US1] Validate with manual curl test: POST single heartbeat with all new fields populated, verify 201 and correct storage
 
 **Checkpoint**: US1 complete — editor plugins can send heartbeats with full WakaTime-compatible CLI field set.
 
@@ -80,10 +80,10 @@
 
 ### Implementation for User Story 2 (PR2)
 
-- [ ] T019 [US2] Refactor bulk POST validation in `src/routes/heartbeats.ts` — remove early-return-all-on-any-error; validate each heartbeat independently and track per-item validation results
-- [ ] T020 [US2] Update bulk POST insert logic in `src/routes/heartbeats.ts` — only insert valid heartbeats via `db.batch()`; skip invalid ones
-- [ ] T021 [US2] Update bulk POST response construction in `src/routes/heartbeats.ts` — build `responses` array as `[HeartbeatBulkItem, number][]` where `HeartbeatBulkItem = {data: {id} | null, error: string | null}`; valid items get `[{data: {id}, error: null}, 201]`, invalid items get `[{data: null, error: "..."}, 400]`
-- [ ] T022 [US2] Validate with manual curl test: POST bulk with mix of valid and invalid heartbeats, verify per-item response format
+- [x] T019 [US2] Refactor bulk POST validation in `src/routes/heartbeats.ts` — remove early-return-all-on-any-error; validate each heartbeat independently and track per-item validation results
+- [x] T020 [US2] Update bulk POST insert logic in `src/routes/heartbeats.ts` — only insert valid heartbeats via `db.batch()`; skip invalid ones
+- [x] T021 [US2] Update bulk POST response construction in `src/routes/heartbeats.ts` — build `responses` array as `[HeartbeatBulkItem, number][]` where `HeartbeatBulkItem = {data: {id} | null, error: string | null}`; valid items get `[{data: {id}, error: null}, 201]`, invalid items get `[{data: null, error: "..."}, 400]`
+- [x] T022 [US2] Validate with manual curl test: POST bulk with mix of valid and invalid heartbeats, verify per-item response format
 
 **Checkpoint**: US2 complete — WakaTime-compatible CLI can parse bulk responses without retry loops.
 
@@ -97,10 +97,10 @@
 
 ### Implementation for User Story 3 (PR2)
 
-- [ ] T023 [US3] Add session timeout constant (`SESSION_TIMEOUT_SECONDS = 900`) in `src/routes/heartbeats.ts`
-- [ ] T024 [US3] Update `rowToHeartbeat()` (or create enrichment function) in `src/routes/heartbeats.ts` to accept next heartbeat's time and compute `start` (= `time`), `end` (= next heartbeat's `time` if gap ≤ 15 min, else = `start`), and `timezone` (default to user's timezone or `"UTC"`)
-- [ ] T025 [US3] Update GET `/heartbeats` handler in `src/routes/heartbeats.ts` to iterate results in order and pass each heartbeat + next heartbeat's time to the enrichment function
-- [ ] T026 [US3] Validate with manual curl test: query heartbeats for a date and verify `start`, `end`, `timezone` fields are present and correctly computed
+- [x] T023 [US3] Add session timeout constant (`SESSION_TIMEOUT_SECONDS = 900`) in `src/routes/heartbeats.ts`
+- [x] T024 [US3] Update `rowToHeartbeat()` (or create enrichment function) in `src/routes/heartbeats.ts` to accept next heartbeat's time and compute `start` (= `time`), `end` (= next heartbeat's `time` if gap ≤ 15 min, else = `start`), and `timezone` (default to user's timezone or `"UTC"`)
+- [x] T025 [US3] Update GET `/heartbeats` handler in `src/routes/heartbeats.ts` to iterate results in order and pass each heartbeat + next heartbeat's time to the enrichment function
+- [x] T026 [US3] Validate with manual curl test: query heartbeats for a date and verify `start`, `end`, `timezone` fields are present and correctly computed
 
 **Checkpoint**: US3 complete — dashboards see enriched heartbeat data with time ranges.
 
@@ -110,9 +110,9 @@
 
 **Purpose**: Final validation across all user stories
 
-- [ ] T027 [P] Run `npx tsc --noEmit` to verify all type checks pass in `src/routes/heartbeats.ts`
-- [ ] T028 Run full quickstart.md verification: execute all 3 curl commands from `specs/001-heartbeat-spec-compat/quickstart.md` and verify expected responses
-- [ ] T029 [P] Verify edge cases from spec.md: comma-separated dependencies string normalization, unknown category/type rejection (400), absent `X-Machine-Name` header (machine = null), bulk >25 items rejected
+- [x] T027 [P] Run `npx tsc --noEmit` to verify all type checks pass in `src/routes/heartbeats.ts`
+- [x] T028 Run full quickstart.md verification: execute all 3 curl commands from `specs/001-heartbeat-spec-compat/quickstart.md` and verify expected responses
+- [x] T029 [P] Verify edge cases from spec.md: comma-separated dependencies string normalization, unknown category/type rejection (400), absent `X-Machine-Name` header (machine = null), bulk >25 items rejected
 
 ---
 
