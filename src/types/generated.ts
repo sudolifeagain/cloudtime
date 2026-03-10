@@ -1066,12 +1066,12 @@ export interface components {
             expires_at?: string;
         };
         /** @enum {string} */
-        Category: "coding" | "building" | "indexing" | "debugging" | "browsing" | "running tests" | "writing tests" | "manual testing" | "writing docs" | "communicating" | "code reviewing" | "notes" | "researching" | "learning" | "designing" | "ai coding";
+        Category: "coding" | "building" | "indexing" | "debugging" | "browsing" | "running tests" | "writing tests" | "manual testing" | "writing docs" | "communicating" | "code reviewing" | "notes" | "researching" | "learning" | "designing" | "ai coding" | "advising" | "meeting" | "planning" | "supporting" | "translating";
         HeartbeatInput: {
             /** @description File path, app name, or domain */
             entity: string;
             /** @enum {string} */
-            type: "file" | "app" | "domain";
+            type: "file" | "app" | "domain" | "url" | "event";
             /**
              * Format: double
              * @description UNIX epoch timestamp
@@ -1082,8 +1082,8 @@ export interface components {
             project_root_count?: number;
             branch?: string;
             language?: string;
-            /** @description Comma-separated dependency names */
-            dependencies?: string;
+            /** @description Dependency names */
+            dependencies?: string[];
             lines?: number;
             ai_line_changes?: number;
             human_line_changes?: number;
@@ -1092,6 +1092,10 @@ export interface components {
             is_write?: boolean;
             editor?: string;
             operating_system?: string;
+            /** @description Machine hostname (alternative to X-Machine-Name header) */
+            machine?: string;
+            /** @description Editor plugin user agent string */
+            user_agent?: string;
         };
         Heartbeat: components["schemas"]["HeartbeatInput"] & {
             id: string;
@@ -1100,6 +1104,12 @@ export interface components {
             user_agent_id?: string;
             /** Format: date-time */
             created_at: string;
+        };
+        HeartbeatBulkItem: {
+            data?: {
+                id?: string;
+            };
+            error?: string | null;
         };
         /** @enum {string} */
         SummaryRange: "Today" | "Yesterday" | "Last 7 Days" | "Last 7 Days from Yesterday" | "Last 14 Days" | "Last 30 Days" | "This Week" | "Last Week" | "This Month" | "Last Month";
@@ -1533,7 +1543,12 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        /** @description Editor plugin user agent string. Typically formatted as "wakatime/vX.Y.Z (os-kernel-arch) editor/version plugin/version". Parsed server-side to extract editor, OS, and plugin metadata. */
+        UserAgentHeader: string;
+        /** @description Machine hostname where the editor plugin is running. Used to populate the machine field in heartbeat responses. */
+        MachineNameHeader: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -2091,6 +2106,21 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Heartbeat"][];
+                        /**
+                         * Format: date-time
+                         * @description Start of the requested date in the user's timezone (ISO 8601)
+                         */
+                        start?: string;
+                        /**
+                         * Format: date-time
+                         * @description End of the requested date in the user's timezone (ISO 8601)
+                         */
+                        end?: string;
+                        /**
+                         * @description IANA timezone used for date boundary resolution
+                         * @example America/New_York
+                         */
+                        timezone?: string;
                     };
                 };
             };
@@ -2101,7 +2131,12 @@ export interface operations {
     createHeartbeat: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Editor plugin user agent string. Typically formatted as "wakatime/vX.Y.Z (os-kernel-arch) editor/version plugin/version". Parsed server-side to extract editor, OS, and plugin metadata. */
+                "User-Agent"?: components["parameters"]["UserAgentHeader"];
+                /** @description Machine hostname where the editor plugin is running. Used to populate the machine field in heartbeat responses. */
+                "X-Machine-Name"?: components["parameters"]["MachineNameHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2129,7 +2164,12 @@ export interface operations {
     createHeartbeatsBulk: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Editor plugin user agent string. Typically formatted as "wakatime/vX.Y.Z (os-kernel-arch) editor/version plugin/version". Parsed server-side to extract editor, OS, and plugin metadata. */
+                "User-Agent"?: components["parameters"]["UserAgentHeader"];
+                /** @description Machine hostname where the editor plugin is running. Used to populate the machine field in heartbeat responses. */
+                "X-Machine-Name"?: components["parameters"]["MachineNameHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2147,7 +2187,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         responses: [
-                            components["schemas"]["Heartbeat"],
+                            components["schemas"]["HeartbeatBulkItem"],
                             number
                         ][];
                     };
