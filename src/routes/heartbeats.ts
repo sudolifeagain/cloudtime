@@ -12,7 +12,15 @@ type HeartbeatRow = Omit<Heartbeat, "is_write" | "created_at"> & {
   created_at: string;
 };
 
-const VALID_TYPES = new Set(["file", "app", "domain"]);
+const VALID_TYPES = new Set(["file", "app", "domain", "url", "event"]);
+const VALID_CATEGORIES = new Set([
+  "coding", "building", "indexing", "debugging", "browsing",
+  "running tests", "writing tests", "manual testing", "writing docs",
+  "communicating", "code reviewing", "notes", "researching", "learning",
+  "designing", "ai coding", "advising", "meeting", "planning",
+  "supporting", "translating",
+]);
+const SESSION_TIMEOUT_SECONDS = 900; // 15 minutes
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function parseDateRange(date: string): { dayStart: number; dayEnd: number } | null {
@@ -43,17 +51,18 @@ function bindHeartbeatParams(
   userId: string,
   input: HeartbeatInput,
   machine: string | undefined,
+  userAgent: string | undefined,
   now: string
 ): D1PreparedStatement {
   return stmt.bind(
     id, userId, input.entity, input.type, input.time,
     input.category ?? null, input.project ?? null, input.project_root_count ?? null,
-    input.branch ?? null, input.language ?? null, input.dependencies ?? null,
+    input.branch ?? null, input.language ?? null, normalizeDependencies(input.dependencies),
     input.lines ?? null, input.ai_line_changes ?? null, input.human_line_changes ?? null,
     input.lineno ?? null, input.cursorpos ?? null, input.is_write ? 1 : 0,
     input.editor ?? null, input.operating_system ?? null,
     machine ?? null,
-    null, // TODO: user_agent_id — resolve from User-Agent header to user_agents table
+    userAgent ?? null,
     now
   );
 }
@@ -85,7 +94,17 @@ heartbeats.get("/heartbeats", async (c) => {
       .bind(userId, range.dayStart, range.dayEnd)
       .all<HeartbeatRow>();
 
-    return c.json({ data: results.map(rowToHeartbeat) });
+    const heartbeats = results.map(rowToHeartbeat);
+    // Enrich with start/end/timezone (computed at query time)
+    const enriched = heartbeats.map((hb, i) => {
+      const start = hb.time;
+      const nextTime = i < heartbeats.length - 1 ? heartbeats[i + 1].time : undefined;
+      const end = (nextTime !== undefined && nextTime - start <= SESSION_TIMEOUT_SECONDS)
+        ? nextTime
+        : start;
+      return { ...hb, start, end, timezone: "UTC" };
+    });
+    return c.json({ data: enriched });
   } catch {
     return c.json({ error: "Internal server error" }, 500);
   }
@@ -107,10 +126,11 @@ heartbeats.post("/heartbeats", async (c) => {
     return c.json({ error: err }, 400);
   }
 
-  const machine = c.req.header("X-Machine-Name") ?? undefined;
+  const machine = input.machine ?? c.req.header("X-Machine-Name") ?? undefined;
+  const userAgent = input.user_agent ?? c.req.header("User-Agent") ?? undefined;
 
   try {
-    const heartbeat = await insertHeartbeat(c.env.DB, userId, input, machine);
+    const heartbeat = await insertHeartbeat(c.env.DB, userId, input, machine, userAgent);
     return c.json({ data: heartbeat }, 201);
   } catch {
     return c.json({ error: "Internal server error" }, 500);
@@ -135,27 +155,28 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
     return c.json({ error: "Maximum 25 heartbeats per request" }, 400);
   }
 
-  for (let i = 0; i < inputs.length; i++) {
-    const err = validateHeartbeatInput(inputs[i]);
-    if (err) {
-      return c.json({ error: `heartbeats[${i}]: ${err}` }, 400);
-    }
-  }
-
-  const machine = c.req.header("X-Machine-Name") ?? undefined;
+  // Resolve machine/user_agent: body field > header > undefined
+  const headerMachine = c.req.header("X-Machine-Name") ?? undefined;
+  const headerUserAgent = c.req.header("User-Agent") ?? undefined;
   const now = new Date().toISOString();
 
-  // Pre-generate IDs for all heartbeats
+  // Per-item validation
+  type BulkItem = { data: { id: string } | null; error: string | null };
+  const validationErrors: (string | null)[] = inputs.map((input) => validateHeartbeatInput(input));
   const ids = inputs.map(() => crypto.randomUUID());
 
-  // Use D1 batch for bulk insert + project upserts
-  const stmts: D1PreparedStatement[] = inputs.map((input, i) =>
-    bindHeartbeatParams(c.env.DB.prepare(INSERT_HEARTBEAT_SQL), ids[i], userId, input, machine, now)
-  );
-
-  // Collect unique projects with min/max times for upsert
+  // Build insert statements only for valid heartbeats
+  const stmts: D1PreparedStatement[] = [];
   const projectTimes = new Map<string, { min: number; max: number }>();
-  for (const input of inputs) {
+
+  for (let i = 0; i < inputs.length; i++) {
+    if (validationErrors[i]) continue; // skip invalid
+    const input = inputs[i];
+    const machine = input.machine ?? headerMachine;
+    const userAgent = input.user_agent ?? headerUserAgent;
+    stmts.push(
+      bindHeartbeatParams(c.env.DB.prepare(INSERT_HEARTBEAT_SQL), ids[i], userId, input, machine, userAgent, now)
+    );
     if (input.project) {
       const existing = projectTimes.get(input.project);
       if (existing) {
@@ -170,24 +191,19 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
     stmts.push(c.env.DB.prepare(UPSERT_PROJECT_SQL).bind(userId, project, times.min, times.max));
   }
 
-  let results: D1Result[];
-  try {
-    results = await c.env.DB.batch(stmts);
-  } catch {
-    return c.json({ error: "Internal server error" }, 500);
+  if (stmts.length > 0) {
+    try {
+      await c.env.DB.batch(stmts);
+    } catch {
+      return c.json({ error: "Internal server error" }, 500);
+    }
   }
 
-  const responses: [Heartbeat, number][] = inputs.map((input, i) => {
-    const heartbeat: Heartbeat = {
-      id: ids[i],
-      user_id: userId,
-      ...input,
-      is_write: input.is_write ?? false,
-      machine,
-      created_at: now,
-    };
-    const success = results[i]?.success ?? false;
-    return [heartbeat, success ? 201 : 500];
+  const responses: [BulkItem, number][] = inputs.map((_, i) => {
+    if (validationErrors[i]) {
+      return [{ data: null, error: validationErrors[i] }, 400];
+    }
+    return [{ data: { id: ids[i] }, error: null }, 201];
   });
 
   return c.json({ responses }, 202);
@@ -236,11 +252,22 @@ heartbeats.delete("/heartbeats.bulk", async (c) => {
 
 // --- Helpers ---
 
+/** Normalize dependencies to a JSON string for DB storage. */
+function normalizeDependencies(deps: string | string[] | undefined): string | null {
+  if (deps === undefined || deps === null) return null;
+  if (Array.isArray(deps)) return JSON.stringify(deps);
+  // Comma-separated string → array
+  return JSON.stringify(deps.split(",").map((s) => s.trim()).filter(Boolean));
+}
+
 function validateHeartbeatInput(input: HeartbeatInput): string | null {
   if (!input || typeof input !== "object") return "must be an object";
   if (typeof input.entity !== "string" || input.entity.length === 0) return "entity is required";
-  if (!VALID_TYPES.has(input.type)) return "type must be one of: file, app, domain";
+  if (!VALID_TYPES.has(input.type)) return `type must be one of: ${[...VALID_TYPES].join(", ")}`;
   if (typeof input.time !== "number" || !Number.isFinite(input.time)) return "time must be a valid number";
+  if (input.category !== undefined && !VALID_CATEGORIES.has(input.category)) {
+    return `category must be one of: ${[...VALID_CATEGORIES].join(", ")}`;
+  }
 
   // Validate optional numeric fields when present
   const numericFields = ["project_root_count", "lines", "ai_line_changes", "human_line_changes", "lineno", "cursorpos"] as const;
@@ -262,12 +289,13 @@ async function insertHeartbeat(
   db: D1Database,
   userId: string,
   input: HeartbeatInput,
-  machine?: string
+  machine?: string,
+  userAgent?: string
 ): Promise<Heartbeat> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const stmts = [bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, now)];
+  const stmts = [bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, userAgent, now)];
   if (input.project) {
     stmts.push(db.prepare(UPSERT_PROJECT_SQL).bind(userId, input.project, input.time, input.time));
   }
@@ -279,6 +307,7 @@ async function insertHeartbeat(
     ...input,
     is_write: input.is_write ?? false,
     machine,
+    user_agent_id: userAgent,
     created_at: now,
   };
 }
