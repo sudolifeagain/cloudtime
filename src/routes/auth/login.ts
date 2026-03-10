@@ -192,7 +192,7 @@ login.get("/:provider/callback", async (c) => {
           .replace("T", " ")
           .replace("Z", "");
 
-        await c.env.DB.prepare(
+        const linkResult = await c.env.DB.prepare(
           `INSERT INTO pending_links (id, existing_user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at, expires_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(existing_user_id, provider, provider_user_id) DO UPDATE SET
@@ -202,7 +202,8 @@ login.get("/:provider/callback", async (c) => {
              access_token_encrypted = excluded.access_token_encrypted,
              refresh_token_encrypted = excluded.refresh_token_encrypted,
              token_expires_at = excluded.token_expires_at,
-             expires_at = excluded.expires_at`,
+             expires_at = excluded.expires_at
+           RETURNING id`,
         )
           .bind(
             pendingId,
@@ -217,14 +218,14 @@ login.get("/:provider/callback", async (c) => {
             userInfo.tokenExpiresAt,
             pendingExpiry,
           )
-          .run();
+          .first<{ id: string }>();
 
         // Return minimal pending link info (no full user profile — unauthenticated response)
         return c.json(
           {
             data: {
               pending_link: {
-                id: pendingId,
+                id: linkResult?.id ?? pendingId,
                 provider: provider as OAuthProvider,
                 provider_username: userInfo.providerUsername,
                 provider_email: userInfo.providerEmail!,
@@ -292,27 +293,36 @@ login.get("/:provider/callback", async (c) => {
       }
     } else {
       // Multi-user mode: unconditional insert
-      await c.env.DB.batch([
-        c.env.DB.prepare(
-          `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
-           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
-        ).bind(userId, username, userInfo.providerEmail, apiKeyHash),
-        c.env.DB.prepare(
-          `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(
-          oauthAccountId,
-          userId,
-          provider,
-          userInfo.providerUserId,
-          userInfo.providerUsername,
-          userInfo.providerEmail,
-          userInfo.emailVerified ? 1 : 0,
-          accessTokenEnc,
-          refreshTokenEnc,
-          userInfo.tokenExpiresAt,
-        ),
-      ]);
+      try {
+        await c.env.DB.batch([
+          c.env.DB.prepare(
+            `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
+             VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+          ).bind(userId, username, userInfo.providerEmail, apiKeyHash),
+          c.env.DB.prepare(
+            `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(
+            oauthAccountId,
+            userId,
+            provider,
+            userInfo.providerUserId,
+            userInfo.providerUsername,
+            userInfo.providerEmail,
+            userInfo.emailVerified ? 1 : 0,
+            accessTokenEnc,
+            refreshTokenEnc,
+            userInfo.tokenExpiresAt,
+          ),
+        ]);
+      } catch (insertErr) {
+        // UNIQUE constraint violation on email — concurrent signup with same email
+        const msg = insertErr instanceof Error ? insertErr.message : "";
+        if (msg.includes("UNIQUE constraint failed")) {
+          return c.json({ error: "An account with this email already exists" }, 409, securityHeaders());
+        }
+        throw insertErr;
+      }
     }
 
     // Verify user was created before creating session
