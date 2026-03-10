@@ -30,7 +30,7 @@ import {
   getStateCookie,
   clearStateCookie,
 } from "../../utils/session";
-import { type UserRow, USER_COLUMNS, rowToUser } from "../../utils/user";
+import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../../utils/user";
 import { sessionMw } from "./middleware";
 import { getRedirectUri, securityHeaders } from "./helpers";
 
@@ -63,7 +63,7 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
     if (!pending) return c.json({ error: "Not found" }, 404);
 
     // Check expiry
-    const expiresAt = new Date(pending.expires_at.replace(" ", "T") + "Z");
+    const expiresAt = new Date(normalizeDateTime(pending.expires_at));
     if (new Date() > expiresAt) {
       await c.env.DB.prepare("DELETE FROM pending_links WHERE id = ?").bind(pendingLinkId).run();
       return c.json({ error: "Pending link expired" }, 410);
@@ -97,7 +97,7 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
 
     if (!userRow) return c.json({ error: "Unauthorized" }, 401);
 
-    return c.json({ data: { user: rowToUser(userRow) } });
+    return c.json({ data: { user: rowToUser(userRow) } }, 200, securityHeaders());
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.message : "Unknown error");
     return c.json({ error: "Internal server error" }, 500, securityHeaders());
@@ -112,15 +112,15 @@ link.post("/link/:provider", sessionMw, async (c) => {
   try {
     const userId = c.get("userId");
     const codeVerifier = generateCodeVerifier();
-  const codeChallenge = await generateCodeChallenge(codeVerifier);
-  const state = generateState();
-  const nonce = provider === "google" ? generateNonce() : undefined;
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+    const state = generateState();
+    const nonce = provider === "google" ? generateNonce() : undefined;
 
-  const redirectUri = getRedirectUri(c, provider, true);
-  const authorizeUrl = buildAuthorizeUrl(provider, c.env, redirectUri, codeChallenge, state, nonce);
+    const redirectUri = getRedirectUri(c, provider, true);
+    const authorizeUrl = buildAuthorizeUrl(provider, c.env, redirectUri, codeChallenge, state, nonce);
 
-  await storeOAuthState(c.env.KV, state, { codeVerifier, nonce, linkUserId: userId });
-  setStateCookie(c, state, c.env);
+    await storeOAuthState(c.env.KV, state, { codeVerifier, nonce, linkUserId: userId });
+    setStateCookie(c, state, c.env);
 
     return c.redirect(authorizeUrl, 302);
   } catch (err) {
