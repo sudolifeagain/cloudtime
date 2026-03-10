@@ -15,7 +15,10 @@ app.use(
   cors({
     origin: (origin, c) => {
       const appUrl = c.env.APP_URL;
-      if (!appUrl) return origin; // Dev: reflect any origin
+      if (!appUrl) {
+        // Only reflect origin in development; fail closed in production
+        return c.env.ENVIRONMENT === "development" && origin ? origin : null;
+      }
       try {
         const allowed = new URL(appUrl).origin;
         return origin === allowed ? origin : null;
@@ -24,7 +27,7 @@ app.use(
       }
     },
     credentials: true,
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     maxAge: 86400,
   }),
