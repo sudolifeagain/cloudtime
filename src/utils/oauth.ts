@@ -43,7 +43,10 @@ const PROVIDER_FETCH_OPTS = {
  * constructs redirectUri from the request Host header (RFC 9700).
  */
 function validateRedirectUri(redirectUri: string, env: Env): void {
-  if (!env.APP_URL) return;
+  if (!env.APP_URL) {
+    if (env.ENVIRONMENT === "development") return;
+    throw new Error("APP_URL is required for redirect URI validation in non-development environments");
+  }
 
   let appOrigin: string;
   let redirectOrigin: string;
@@ -65,7 +68,7 @@ export function buildAuthorizeUrl(
   redirectUri: string,
   codeChallenge: string,
   state: string,
-  nonce: string,
+  nonce?: string,
 ): string {
   validateRedirectUri(redirectUri, env);
 
@@ -92,7 +95,7 @@ export function buildAuthorizeUrl(
       url.searchParams.set("state", state);
       url.searchParams.set("code_challenge", codeChallenge);
       url.searchParams.set("code_challenge_method", "S256");
-      url.searchParams.set("nonce", nonce);
+      if (nonce) url.searchParams.set("nonce", nonce);
       return url.toString();
     }
     case "discord": {
@@ -201,7 +204,7 @@ export async function fetchUserInfo(
   tokenResponse: TokenResponse,
   env: Env,
   kv: KVNamespace,
-  nonce: string,
+  nonce?: string,
 ): Promise<ProviderUserInfo> {
   const expiresAt = tokenResponse.expires_in
     ? new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString()
@@ -213,6 +216,9 @@ export async function fetchUserInfo(
     case "google": {
       if (!tokenResponse.id_token) {
         throw new Error("Google OAuth response missing id_token — ensure 'openid' scope is requested");
+      }
+      if (!nonce) {
+        throw new Error("Nonce is required for Google OAuth");
       }
       return validateGoogleIdToken(
         tokenResponse.id_token,

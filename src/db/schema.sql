@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
-  email TEXT,
+  email TEXT UNIQUE COLLATE NOCASE,
   display_name TEXT,
   photo TEXT,
   bio TEXT,
@@ -81,8 +81,11 @@ CREATE TABLE IF NOT EXISTS pending_links (
   token_expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT NOT NULL,
-  FOREIGN KEY (existing_user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (existing_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE(existing_user_id, provider, provider_user_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_pending_links_expires ON pending_links(expires_at);
 
 -- ============================================================
 -- Heartbeats (core tracking data)
