@@ -40,7 +40,6 @@ npm run db:init
 # Set secrets
 wrangler secret put GITHUB_CLIENT_ID
 wrangler secret put GITHUB_CLIENT_SECRET
-wrangler secret put SESSION_SECRET
 wrangler secret put ENCRYPTION_KEY
 # Repeat for Google/Discord if using those providers
 ```
