@@ -32,7 +32,7 @@ import {
 } from "../../utils/session";
 import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../../utils/user";
 import { sessionMw } from "./middleware";
-import { getRedirectUri, securityHeaders } from "./helpers";
+import { getRedirectUri, noCacheHeaders } from "./helpers";
 
 const link = new Hono<SessionAuthEnv>();
 
@@ -61,13 +61,13 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
         expires_at: string;
       }>();
 
-    if (!pending) return c.json({ error: "Not found" }, 404, securityHeaders());
+    if (!pending) return c.json({ error: "Not found" }, 404, noCacheHeaders());
 
     // Check expiry
     const expiresAt = new Date(normalizeDateTime(pending.expires_at));
     if (new Date() > expiresAt) {
       await c.env.DB.prepare("DELETE FROM pending_links WHERE id = ?").bind(pendingLinkId).run();
-      return c.json({ error: "Pending link expired" }, 410, securityHeaders());
+      return c.json({ error: "Pending link expired" }, 410, noCacheHeaders());
     }
 
     // Check if this provider account was linked to another user in the meantime
@@ -82,7 +82,7 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
       return c.json(
         { error: "This provider account is already linked to another user" },
         409,
-        securityHeaders(),
+        noCacheHeaders(),
       );
     }
 
@@ -121,17 +121,17 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
 
     if (!userRow) return c.json({ error: "Unauthorized" }, 401);
 
-    return c.json({ data: { user: rowToUser(userRow) } }, 200, securityHeaders());
+    return c.json({ data: { user: rowToUser(userRow) } }, 200, noCacheHeaders());
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.message : "Unknown error");
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
 // POST /link/:provider (initiate linking — session required)
 link.post("/link/:provider", sessionMw, async (c) => {
   const provider = c.req.param("provider");
-  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, securityHeaders());
+  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, noCacheHeaders());
 
   try {
     const userId = c.get("userId");
@@ -149,21 +149,21 @@ link.post("/link/:provider", sessionMw, async (c) => {
     return c.redirect(authorizeUrl, 302);
   } catch (err) {
     console.error("Link start error:", err instanceof Error ? err.message : "Unknown error");
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
 // GET /link/:provider/callback (link callback — read session from cookie manually)
 link.get("/link/:provider/callback", async (c) => {
   const provider = c.req.param("provider");
-  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, securityHeaders());
+  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, noCacheHeaders());
 
   // Handle OAuth error (e.g., user denied access)
   const oauthError = c.req.query("error");
   if (oauthError) {
     const sanitized = oauthError.replace(/[\r\n]/g, "").slice(0, 100);
     console.error(`OAuth link error from ${provider}: ${sanitized}`);
-    return c.json({ error: "OAuth authorization failed" }, 400, securityHeaders());
+    return c.json({ error: "OAuth authorization failed" }, 400, noCacheHeaders());
   }
 
   // Validate state (double-submit)
@@ -173,28 +173,28 @@ link.get("/link/:provider/callback", async (c) => {
   clearStateCookie(c, c.env);
 
   if (!stateParam || !code || !stateCookie) {
-    return c.json({ error: "Missing state or code" }, 400, securityHeaders());
+    return c.json({ error: "Missing state or code" }, 400, noCacheHeaders());
   }
   if (code.length > 2048) {
-    return c.json({ error: "Invalid code" }, 400, securityHeaders());
+    return c.json({ error: "Invalid code" }, 400, noCacheHeaders());
   }
 
   if (!(await timingSafeEqual(stateParam, stateCookie))) {
-    return c.json({ error: "State mismatch" }, 400, securityHeaders());
+    return c.json({ error: "State mismatch" }, 400, noCacheHeaders());
   }
 
   const stateData = await consumeOAuthState(c.env.KV, stateParam);
   if (!stateData || !stateData.linkUserId) {
-    return c.json({ error: "Invalid or expired state" }, 400, securityHeaders());
+    return c.json({ error: "Invalid or expired state" }, 400, noCacheHeaders());
   }
 
   // Validate session from cookie
   const token = getSessionTokenFromCookie(c, c.env);
-  if (!token) return c.json({ error: "Unauthorized" }, 401, securityHeaders());
+  if (!token) return c.json({ error: "Unauthorized" }, 401, noCacheHeaders());
   const tokenHash = await sha256Hex(token);
   const session = await validateSession(c.env.DB, c.env.KV, tokenHash);
   if (!session || session.userId !== stateData.linkUserId) {
-    return c.json({ error: "Unauthorized" }, 401, securityHeaders());
+    return c.json({ error: "Unauthorized" }, 401, noCacheHeaders());
   }
 
   try {
@@ -207,7 +207,7 @@ link.get("/link/:provider/callback", async (c) => {
       return c.json(
         { error: "Email not verified with provider. Please verify your email first." },
         400,
-        securityHeaders(),
+        noCacheHeaders(),
       );
     }
 
@@ -219,7 +219,7 @@ link.get("/link/:provider/callback", async (c) => {
       .first<{ user_id: string }>();
 
     if (existingLink && existingLink.user_id !== stateData.linkUserId) {
-      return c.json({ error: "This provider account is already linked to another user" }, 409, securityHeaders());
+      return c.json({ error: "This provider account is already linked to another user" }, 409, noCacheHeaders());
     }
 
     // Encrypt tokens with AAD context (binds ciphertext to this user+provider)
@@ -271,11 +271,11 @@ link.get("/link/:provider/callback", async (c) => {
     return c.json(
       { data: { provider, provider_username: userInfo.providerUsername } },
       200,
-      securityHeaders(),
+      noCacheHeaders(),
     );
   } catch (err) {
     console.error("Link callback error:", err instanceof Error ? err.message : "Unknown error");
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 

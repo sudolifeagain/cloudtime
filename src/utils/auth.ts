@@ -24,7 +24,7 @@ export function getApiKey(req: HonoRequest): string | null {
     return authHeader.slice(7);
   }
 
-  return req.query("api_key") ?? null;
+  return req.query("api_key") || null;
 }
 
 /**
