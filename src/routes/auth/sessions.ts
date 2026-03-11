@@ -60,8 +60,6 @@ sessions.get("/session", async (c) => {
           })),
         },
       },
-      200,
-      { "Cache-Control": "no-store" },
     );
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
@@ -75,7 +73,9 @@ sessions.delete("/session", async (c) => {
     const tokenHash = c.get("sessionTokenHash");
     await invalidateSession(c.env.DB, c.env.KV, tokenHash);
     clearSessionCookie(c, c.env);
-    return c.body(null, 204);
+    return c.body(null, 204, {
+      "Clear-Site-Data": '"cookies", "storage"',
+    });
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
     return c.json({ error: "Internal server error" }, 500, securityHeaders());
@@ -120,8 +120,6 @@ sessions.get("/sessions", async (c) => {
           is_current: s.id === currentSessionId,
         })),
       },
-      200,
-      { "Cache-Control": "no-store" },
     );
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
@@ -269,11 +267,7 @@ sessions.post("/api-key", async (c) => {
 
     await invalidateOtherSessions(c.env.DB, c.env.KV, userId, currentTokenHash);
 
-    return c.json(
-      { data: { api_key: plaintext } },
-      200,
-      { "Cache-Control": "no-store" },
-    );
+    return c.json({ data: { api_key: plaintext } });
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
     return c.json({ error: "Internal server error" }, 500, securityHeaders());

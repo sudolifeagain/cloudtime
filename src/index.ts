@@ -14,7 +14,15 @@ import { aggregateHeartbeats } from "./cron/aggregate";
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use("/*", secureHeaders());
+app.use(
+  "/*",
+  secureHeaders({
+    contentSecurityPolicy: {
+      defaultSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  }),
+);
 app.use("/*", bodyLimit({ maxSize: 256 * 1024 })); // 256 KB (CVE-2025-59139 mitigation)
 
 // CORS configuration for browser-based clients.

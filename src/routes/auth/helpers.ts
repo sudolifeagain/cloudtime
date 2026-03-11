@@ -19,7 +19,6 @@ export function getRedirectUri(c: { req: { url: string }; env: Env }, provider: 
 
 export function securityHeaders(): Record<string, string> {
   return {
-    "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
     Pragma: "no-cache",
   };

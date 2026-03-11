@@ -11,7 +11,10 @@ export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
     const userId = await getUserId(apiKey, c.env);
     if (!userId) return c.json({ error: "Unauthorized" }, 401);
     c.set("userId", userId);
-    return next();
+    await next();
+    c.header("Cache-Control", "no-store");
+    c.header("Pragma", "no-cache");
+    return;
   }
 
   // 2. No API key — try session cookie
@@ -21,7 +24,10 @@ export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
     const session = await validateSession(c.env.DB, c.env.KV, tokenHash);
     if (session) {
       c.set("userId", session.userId);
-      return next();
+      await next();
+      c.header("Cache-Control", "no-store");
+      c.header("Pragma", "no-cache");
+      return;
     }
   }
 
