@@ -58,26 +58,28 @@ app.use(
 // vulnerable to CSRF (browsers cannot set custom headers via forms/navigation,
 // and fetch with custom headers triggers a CORS preflight blocked by origin policy).
 // NOTE: ?api_key= query param auth is intentionally NOT exempt. Query params can
-// be forged via HTML forms, and the auth middleware falls back to session cookies
-// when the API key is invalid — which would allow a CSRF attack. Editor plugins
-// use Authorization: Basic/Bearer so this does not affect them.
+// be forged via HTML forms, and authMiddleware rejects invalid API keys with 401
+// without falling back to session cookies — but empty ?api_key= values are falsy
+// and DO fall through to session auth. Editor plugins use Authorization:
+// Basic/Bearer so this does not affect them.
+const csrfMiddleware = csrf({
+  origin: (origin, c) => {
+    const env = c.env as Env;
+    if (!env.APP_URL) {
+      return env.ENVIRONMENT === "development";
+    }
+    try {
+      return origin === new URL(env.APP_URL).origin;
+    } catch {
+      return false;
+    }
+  },
+});
 app.use("/*", async (c, next) => {
   if (c.req.header("Authorization")) {
     return next();
   }
-  return csrf({
-    origin: (origin, c) => {
-      const env = c.env as Env;
-      if (!env.APP_URL) {
-        return env.ENVIRONMENT === "development";
-      }
-      try {
-        return origin === new URL(env.APP_URL).origin;
-      } catch {
-        return false;
-      }
-    },
-  })(c, next);
+  return csrfMiddleware(c, next);
 });
 
 // Health check
