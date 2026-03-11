@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
+import { csrf } from "hono/csrf";
 import { secureHeaders } from "hono/secure-headers";
 import type { Env } from "./types";
 import meta from "./routes/meta";
@@ -50,6 +51,34 @@ app.use(
     maxAge: 86400,
   }),
 );
+
+// Global CSRF protection — validates Origin header for non-safe methods
+// (POST, PUT, PATCH, DELETE). Safe methods (GET, HEAD, OPTIONS) are skipped.
+// Requests with an Authorization header are exempt because API key auth is not
+// vulnerable to CSRF (browsers cannot set custom headers via forms/navigation,
+// and fetch with custom headers triggers a CORS preflight blocked by origin policy).
+// NOTE: ?api_key= query param auth is intentionally NOT exempt. Query params can
+// be forged via HTML forms, and the auth middleware falls back to session cookies
+// when the API key is invalid — which would allow a CSRF attack. Editor plugins
+// use Authorization: Basic/Bearer so this does not affect them.
+app.use("/*", async (c, next) => {
+  if (c.req.header("Authorization")) {
+    return next();
+  }
+  return csrf({
+    origin: (origin, c) => {
+      const env = c.env as Env;
+      if (!env.APP_URL) {
+        return env.ENVIRONMENT === "development";
+      }
+      try {
+        return origin === new URL(env.APP_URL).origin;
+      } catch {
+        return false;
+      }
+    },
+  })(c, next);
+});
 
 // Health check
 app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
