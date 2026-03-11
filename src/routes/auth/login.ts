@@ -250,7 +250,7 @@ login.get("/:provider/callback", async (c) => {
     // No existing account — new user creation
     const isSingleUser = c.env.INSTANCE_MODE !== "multi";
     const userId = crypto.randomUUID();
-    const { plaintext: apiKeyPlaintext, hash: apiKeyHash } = await generateApiKey();
+    const { hash: apiKeyHash } = await generateApiKey();
 
     // Use UUID-suffixed username to avoid TOCTOU race on UNIQUE constraint
     const baseUsername = userInfo.providerUsername.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 55) || "user";
