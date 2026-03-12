@@ -931,7 +931,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Aggregate stats of all users */
+        /**
+         * Aggregate stats of all users
+         * @description Summary data is bucketed by each user's profile timezone at aggregation time. In single-user mode, the query timezone and bucketing timezone align when the user's profile timezone matches. Cross-user timezone aggregation is a known limitation deferred to multi-user support.
+         */
         get: operations["getGlobalStats"];
         put?: never;
         post?: never;
@@ -2232,7 +2235,7 @@ export interface operations {
                 /** @description Keystroke timeout in minutes */
                 timeout?: number;
                 writes_only?: boolean;
-                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. */
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to the authenticated user's profile timezone when omitted. */
                 timezone?: string;
             };
             header?: never;
@@ -2267,7 +2270,7 @@ export interface operations {
             query?: {
                 timeout?: number;
                 writes_only?: boolean;
-                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. */
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to the authenticated user's profile timezone when omitted. */
                 timezone?: string;
             };
             header?: never;
@@ -2307,7 +2310,7 @@ export interface operations {
     getStatusBarToday: {
         parameters: {
             query?: {
-                /** @description IANA timezone (e.g. Asia/Tokyo). Determines what "today" means. Defaults to UTC when omitted. */
+                /** @description IANA timezone (e.g. Asia/Tokyo). Determines what "today" means. Defaults to the authenticated user's profile timezone when omitted. */
                 timezone?: string;
             };
             header?: never;
@@ -2365,6 +2368,7 @@ export interface operations {
                 branches?: string;
                 timeout?: number;
                 writes_only?: boolean;
+                /** @description IANA timezone (e.g. Asia/Tokyo). Determines epoch boundaries for the given date. Defaults to the authenticated user's profile timezone when omitted. */
                 timezone?: string;
                 slice_by?: "project" | "entity" | "language" | "dependencies" | "operating_system" | "editor" | "category" | "machine";
             };
@@ -3049,7 +3053,7 @@ export interface operations {
     getGlobalStats: {
         parameters: {
             query?: {
-                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. */
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. See endpoint description for timezone bucketing notes. */
                 timezone?: string;
             };
             header?: never;

@@ -45,7 +45,8 @@ get:
       in: query
       description: >-
         IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range
-        resolution. Defaults to UTC when omitted.
+        resolution. Defaults to the authenticated user's profile timezone when
+        omitted.
       schema:
         type: string
         example: Asia/Tokyo
