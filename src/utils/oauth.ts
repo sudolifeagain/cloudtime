@@ -482,15 +482,26 @@ export async function revokeProviderToken(
     case "google": {
       // Prefer refresh token (revoking it cascades to the access token)
       const token = refreshToken ?? accessToken;
-      const body = new URLSearchParams({ token });
       const res = await fetch("https://oauth2.googleapis.com/revoke", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: body.toString(),
+        body: new URLSearchParams({ token }).toString(),
         ...PROVIDER_FETCH_OPTS,
       });
       if (!res.ok) {
         console.error(`Google token revocation failed: HTTP ${res.status}`);
+        // If refresh token revocation failed, also try revoking the access token directly
+        if (refreshToken) {
+          const fallback = await fetch("https://oauth2.googleapis.com/revoke", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ token: accessToken }).toString(),
+            ...PROVIDER_FETCH_OPTS,
+          });
+          if (!fallback.ok) {
+            console.error(`Google access token revocation also failed: HTTP ${fallback.status}`);
+          }
+        }
       }
       break;
     }
