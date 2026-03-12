@@ -1,8 +1,25 @@
 import { createMiddleware } from "hono/factory";
+import type { Context } from "hono";
 import type { AuthEnv } from "../types";
 import { getApiKey, getUserId } from "../utils/auth";
 import { sha256Hex } from "../utils/crypto";
 import { getSessionTokenFromCookie, validateSession } from "../utils/session";
+
+/**
+ * Lazily fetch the authenticated user's profile timezone.
+ * Caches on the Hono context so the D1 query runs at most once per request.
+ */
+export async function getUserTimezone(c: Context<AuthEnv>): Promise<string> {
+  const cached = c.get("userTimezone");
+  if (cached) return cached;
+  const row = await c.env.DB
+    .prepare("SELECT timezone FROM users WHERE id = ?")
+    .bind(c.get("userId"))
+    .first<{ timezone: string }>();
+  const tz = row?.timezone ?? "UTC";
+  c.set("userTimezone", tz);
+  return tz;
+}
 
 export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
   try {

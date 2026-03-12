@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
-import { authMiddleware } from "../middleware/auth";
-import { formatDigital, formatHumanReadable, getToday, formatDate, isValidTimezone } from "../utils/time-format";
+import { authMiddleware, getUserTimezone } from "../middleware/auth";
+import { formatDigital, formatHumanReadable, getToday, formatDate, isValidTimezone, getEpochBoundsForDate } from "../utils/time-format";
 import { resolveStatsRange } from "../utils/stats-range";
 import { buildSummary, aggregateDimension, DIMENSIONS, DIMENSION_TO_KEY, type SummaryRow } from "../utils/summary-builder";
 import { checkUpToDate } from "../utils/aggregation-status";
@@ -22,10 +22,11 @@ stats.use("/*", authMiddleware);
 
 stats.get("/stats/:range", async (c) => {
   const rangeParam = c.req.param("range");
-  const tz = c.req.query("timezone");
-  if (tz && !isValidTimezone(tz)) {
+  const tzParam = c.req.query("timezone");
+  if (tzParam && !isValidTimezone(tzParam)) {
     return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
   }
+  const tz = tzParam || await getUserTimezone(c);
   const resolved = resolveStatsRange(rangeParam, tz);
   if (!resolved) {
     return c.json({ error: "Invalid range. Use: last_7_days, last_30_days, last_6_months, last_year, all_time, YYYY, or YYYY-MM" }, 400);
@@ -90,7 +91,7 @@ stats.get("/stats/:range", async (c) => {
       start: `${resolved.start}T00:00:00Z`,
       end: `${resolved.end}T23:59:59Z`,
       text: resolved.text,
-      timezone: tz ?? "UTC",
+      timezone: tz,
     },
     status: isUpToDate ? "ok" : "pending_update",
     is_already_updating: false,
@@ -104,12 +105,13 @@ stats.get("/stats/:range", async (c) => {
 
 stats.get("/status_bar/today", async (c) => {
   const userId = c.get("userId");
-  const tz = c.req.query("timezone");
-  if (tz && !isValidTimezone(tz)) {
+  const tzParam = c.req.query("timezone");
+  if (tzParam && !isValidTimezone(tzParam)) {
     return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
   }
+  const tz = tzParam || await getUserTimezone(c);
   const today = formatDate(getToday(tz));
-  const cacheKey = `statusbar:${userId}:${today}`;
+  const cacheKey = `statusbar:${userId}:${today}:${tz}`;
 
   // Check KV cache
   const cached = await c.env.KV.get(cacheKey, "json") as { data: Summary; cached_at: string } | null;
@@ -135,10 +137,11 @@ stats.get("/status_bar/today", async (c) => {
 stats.get("/all_time_since_today", async (c) => {
   const userId = c.get("userId");
   const project = c.req.query("project");
-  const tz = c.req.query("timezone");
-  if (tz && !isValidTimezone(tz)) {
+  const tzParam = c.req.query("timezone");
+  if (tzParam && !isValidTimezone(tzParam)) {
     return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
   }
+  const tz = tzParam || await getUserTimezone(c);
 
   let sql = "SELECT COALESCE(SUM(total_seconds), 0) as total_seconds, MIN(date) as first_date FROM summaries WHERE user_id = ?";
   const params: (string | number)[] = [userId];
@@ -166,7 +169,7 @@ stats.get("/all_time_since_today", async (c) => {
       start: `${firstDate}T00:00:00Z`,
       end: `${today}T23:59:59Z`,
       text: "All Time",
-      timezone: tz ?? "UTC",
+      timezone: tz,
     },
     ...(project ? { project } : {}),
   };
@@ -199,14 +202,14 @@ stats.get("/durations", async (c) => {
   const project = c.req.query("project");
   const branchesParam = c.req.query("branches");
   const sliceBy = c.req.query("slice_by") ?? "project";
+  const tzParam = c.req.query("timezone");
+  if (tzParam && !isValidTimezone(tzParam)) {
+    return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
+  }
+  const tz = tzParam || await getUserTimezone(c);
 
-  // Convert date to UNIX epoch range
-  const dayStart = Date.UTC(
-    parseInt(date.slice(0, 4)),
-    parseInt(date.slice(5, 7)) - 1,
-    parseInt(date.slice(8, 10)),
-  ) / 1000;
-  const dayEnd = dayStart + 86400;
+  // Convert date to UNIX epoch range in user's timezone
+  const { start: dayStart, end: dayEnd } = getEpochBoundsForDate(date, tz);
 
   // Build query
   let sql = `SELECT time, entity, project, language, branch, category, machine, editor, operating_system, is_write
@@ -272,7 +275,7 @@ stats.get("/durations", async (c) => {
     branches: Array.from(branchSet).sort(),
     start: date,
     end: date,
-    timezone: "UTC",
+    timezone: tz,
   });
 });
 
