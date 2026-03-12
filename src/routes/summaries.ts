@@ -22,10 +22,11 @@ summaries.get("/summaries", async (c) => {
   const end = c.req.query("end");
   const project = c.req.query("project");
   const branchesParam = c.req.query("branches");
-  const tz = c.req.query("timezone");
-  if (tz && !isValidTimezone(tz)) {
+  const tzParam = c.req.query("timezone");
+  if (tzParam && !isValidTimezone(tzParam)) {
     return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
   }
+  const tz = tzParam || c.get("userTimezone");
 
   const resolved = resolveDateRange(range, start, end, tz);
   if (!resolved) {

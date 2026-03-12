@@ -4,6 +4,14 @@ import { getApiKey, getUserId } from "../utils/auth";
 import { sha256Hex } from "../utils/crypto";
 import { getSessionTokenFromCookie, validateSession } from "../utils/session";
 
+async function fetchUserTimezone(db: D1Database, userId: string): Promise<string> {
+  const row = await db
+    .prepare("SELECT timezone FROM users WHERE id = ?")
+    .bind(userId)
+    .first<{ timezone: string }>();
+  return row?.timezone ?? "UTC";
+}
+
 export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
   try {
     // 1. Try API key auth — if a key is present but invalid, reject immediately
@@ -12,6 +20,7 @@ export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
       const userId = await getUserId(apiKey, c.env);
       if (!userId) return c.json({ error: "Unauthorized" }, 401);
       c.set("userId", userId);
+      c.set("userTimezone", await fetchUserTimezone(c.env.DB, userId));
       await next();
       c.header("Cache-Control", "no-store");
       c.header("Pragma", "no-cache");
@@ -25,6 +34,7 @@ export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
       const session = await validateSession(c.env.DB, c.env.KV, tokenHash);
       if (session) {
         c.set("userId", session.userId);
+        c.set("userTimezone", await fetchUserTimezone(c.env.DB, session.userId));
         await next();
         c.header("Cache-Control", "no-store");
         c.header("Pragma", "no-cache");

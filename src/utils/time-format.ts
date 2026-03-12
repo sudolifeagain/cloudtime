@@ -67,6 +67,39 @@ export function getToday(tz?: string): Date {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
+/**
+ * Get epoch boundaries (start inclusive, end exclusive) for a calendar date in a timezone.
+ * Returns the UTC epoch seconds for midnight-to-midnight of the given date in the given timezone.
+ */
+export function getEpochBoundsForDate(dateStr: string, tz?: string): { start: number; end: number } {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const utcMidnightSecs = Date.UTC(y, m - 1, d) / 1000;
+
+  if (!tz || tz === "UTC") {
+    return { start: utcMidnightSecs, end: utcMidnightSecs + 86400 };
+  }
+
+  const refDate = new Date(utcMidnightSecs * 1000);
+  const opts: Intl.DateTimeFormatOptions = {
+    year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "numeric", second: "numeric",
+    hourCycle: "h23",
+  };
+
+  const utcParts = new Intl.DateTimeFormat("en-US", { ...opts, timeZone: "UTC" }).formatToParts(refDate);
+  const tzParts = new Intl.DateTimeFormat("en-US", { ...opts, timeZone: tz }).formatToParts(refDate);
+
+  const toMs = (parts: Intl.DateTimeFormatPart[]) => {
+    const g = (t: string) => parseInt(parts.find((p) => p.type === t)?.value ?? "0", 10);
+    return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second"));
+  };
+
+  const offsetSecs = (toMs(tzParts) - toMs(utcParts)) / 1000;
+  const startSecs = utcMidnightSecs - offsetSecs;
+
+  return { start: startSecs, end: startSecs + 86400 };
+}
+
 /** Format seconds as digital clock: "2:30" */
 export function formatDigital(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
