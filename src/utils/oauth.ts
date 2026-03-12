@@ -228,6 +228,8 @@ async function fetchGitHubUser(
 
 // ─── Google (OpenID Connect) ─────────────────────────────
 
+// Per-isolate ephemeral cache — each Workers isolate has its own copy;
+// resets on cold start or isolate eviction, which is fine for a hot-path optimisation.
 let cachedJWKS: jose.JWTVerifyGetKey | null = null;
 let jwksCachedAt = 0;
 const JWKS_MEMORY_TTL = 60_000; // 1 min in-memory, KV has 10min TTL
@@ -385,13 +387,12 @@ export async function revokeProviderToken(
       }
       case "google": {
         const token = refreshToken ?? accessToken;
-        const res = await fetch(
-          `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          },
-        );
+        const body = new URLSearchParams({ token });
+        const res = await fetch("https://oauth2.googleapis.com/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
         if (!res.ok) {
           console.error(`Google token revocation failed: HTTP ${res.status}`);
         }

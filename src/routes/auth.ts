@@ -24,6 +24,7 @@ import {
   fetchUserInfo,
   revokeProviderToken,
   type OAuthProvider,
+  type ProviderUserInfo,
 } from "../utils/oauth";
 import {
   createSession,
@@ -127,6 +128,45 @@ type ProviderRow = {
   email_verified: number;
   created_at: string;
 };
+
+async function encryptProviderTokens(
+  userInfo: ProviderUserInfo,
+  encryptionKey: string,
+  userId: string,
+  provider: OAuthProvider,
+): Promise<{ accessTokenEnc: string; refreshTokenEnc: string | null }> {
+  const encCtx = `${userId}:${provider}`;
+  const accessTokenEnc = await encryptToken(userInfo.accessToken, encryptionKey, encCtx);
+  const refreshTokenEnc = userInfo.refreshToken
+    ? await encryptToken(userInfo.refreshToken, encryptionKey, encCtx)
+    : null;
+  return { accessTokenEnc, refreshTokenEnc };
+}
+
+async function updateOAuthAccount(
+  db: D1Database,
+  provider: OAuthProvider,
+  userInfo: ProviderUserInfo,
+  accessTokenEnc: string,
+  refreshTokenEnc: string | null,
+): Promise<void> {
+  await db.prepare(
+    `UPDATE oauth_accounts SET provider_username = ?, provider_email = ?, email_verified = ?,
+     access_token_encrypted = ?, refresh_token_encrypted = ?, token_expires_at = ?
+     WHERE provider = ? AND provider_user_id = ?`,
+  )
+    .bind(
+      userInfo.providerUsername,
+      userInfo.providerEmail,
+      userInfo.emailVerified ? 1 : 0,
+      accessTokenEnc,
+      refreshTokenEnc,
+      userInfo.tokenExpiresAt,
+      provider,
+      userInfo.providerUserId,
+    )
+    .run();
+}
 
 // ─── Session-authenticated routes (static paths first) ───
 
@@ -265,21 +305,24 @@ auth.delete("/providers/:provider", sessionMw, async (c) => {
   }
 
   // Ensure user keeps at least one other auth method
-  const [{ results: linked }, userRow] = await Promise.all([
+  const [otherProviderCount, userRow, targetRow] = await Promise.all([
     c.env.DB.prepare(
-      "SELECT provider, access_token_encrypted, refresh_token_encrypted FROM oauth_accounts WHERE user_id = ?",
+      "SELECT COUNT(*) as count FROM oauth_accounts WHERE user_id = ? AND provider != ?",
     )
-      .bind(userId)
-      .all<{ provider: string; access_token_encrypted: string | null; refresh_token_encrypted: string | null }>(),
+      .bind(userId, provider)
+      .first<{ count: number }>(),
     c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
       .bind(userId)
       .first<{ api_key_hash: string | null }>(),
+    c.env.DB.prepare(
+      "SELECT access_token_encrypted, refresh_token_encrypted FROM oauth_accounts WHERE user_id = ? AND provider = ?",
+    )
+      .bind(userId, provider)
+      .first<{ access_token_encrypted: string | null; refresh_token_encrypted: string | null }>(),
   ]);
 
   const hasApiKey = !!userRow?.api_key_hash;
-  const targetRow = linked.find((p) => p.provider === provider);
-  const otherProviders = linked.filter((p) => p.provider !== provider).length;
-  if (otherProviders === 0 && !hasApiKey) {
+  if ((otherProviderCount?.count ?? 0) === 0 && !hasApiKey) {
     return c.json({ error: "Cannot unlink the only authentication method" }, 400);
   }
 
@@ -490,34 +533,16 @@ auth.get("/link/:provider/callback", async (c) => {
     .first<{ user_id: string }>();
 
   if (existingLink && existingLink.user_id !== stateData.linkUserId) {
-    return c.json({ error: "This provider account is already linked to another user" }, 409);
+    return c.json({ error: "This provider account is already linked to another user" }, 409, securityHeaders());
   }
 
   // Encrypt tokens with AAD context (binds ciphertext to this user+provider)
-  const encCtx = `${stateData.linkUserId}:${provider}`;
-  const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
-  const refreshTokenEnc = userInfo.refreshToken
-    ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
-    : null;
+  const { accessTokenEnc, refreshTokenEnc } = await encryptProviderTokens(
+    userInfo, c.env.ENCRYPTION_KEY, stateData.linkUserId, provider,
+  );
 
   if (existingLink) {
-    // Update existing link
-    await c.env.DB.prepare(
-      `UPDATE oauth_accounts SET provider_username = ?, provider_email = ?, email_verified = ?,
-       access_token_encrypted = ?, refresh_token_encrypted = ?, token_expires_at = ?
-       WHERE provider = ? AND provider_user_id = ?`,
-    )
-      .bind(
-        userInfo.providerUsername,
-        userInfo.providerEmail,
-        userInfo.emailVerified ? 1 : 0,
-        accessTokenEnc,
-        refreshTokenEnc,
-        userInfo.tokenExpiresAt,
-        provider,
-        userInfo.providerUserId,
-      )
-      .run();
+    await updateOAuthAccount(c.env.DB, provider, userInfo, accessTokenEnc, refreshTokenEnc);
   } else {
     // Create new link
     await c.env.DB.prepare(
@@ -607,7 +632,11 @@ auth.get("/:provider/callback", async (c) => {
 
   // 4. Email verification gate
   if (!userInfo.emailVerified) {
-    return c.json({ error: "Email not verified with provider. Please verify your email first." }, 400);
+    return c.json(
+      { error: "Email not verified with provider. Please verify your email first." },
+      400,
+      securityHeaders(),
+    );
   }
 
   // 5. Account matching — check for existing OAuth link
@@ -619,29 +648,10 @@ auth.get("/:provider/callback", async (c) => {
 
   if (existingOAuth) {
     // ─── Existing user login ─────────────────────
-    const encCtx = `${existingOAuth.user_id}:${provider}`;
-    const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
-    const refreshTokenEnc = userInfo.refreshToken
-      ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
-      : null;
-
-    // Update provider tokens
-    await c.env.DB.prepare(
-      `UPDATE oauth_accounts SET provider_username = ?, provider_email = ?, email_verified = ?,
-       access_token_encrypted = ?, refresh_token_encrypted = ?, token_expires_at = ?
-       WHERE provider = ? AND provider_user_id = ?`,
-    )
-      .bind(
-        userInfo.providerUsername,
-        userInfo.providerEmail,
-        userInfo.emailVerified ? 1 : 0,
-        accessTokenEnc,
-        refreshTokenEnc,
-        userInfo.tokenExpiresAt,
-        provider,
-        userInfo.providerUserId,
-      )
-      .run();
+    const { accessTokenEnc, refreshTokenEnc } = await encryptProviderTokens(
+      userInfo, c.env.ENCRYPTION_KEY, existingOAuth.user_id, provider,
+    );
+    await updateOAuthAccount(c.env.DB, provider, userInfo, accessTokenEnc, refreshTokenEnc);
 
     // Create session
     const sessionToken = generateSessionToken();
@@ -663,9 +673,10 @@ auth.get("/:provider/callback", async (c) => {
   }
 
   // No existing OAuth link — check if email matches an existing user
-  if (userInfo.providerEmail) {
+  const providerEmail = userInfo.providerEmail;
+  if (providerEmail) {
     const emailMatch = await c.env.DB.prepare("SELECT id, username FROM users WHERE email = ?")
-      .bind(userInfo.providerEmail)
+      .bind(providerEmail)
       .first<{ id: string; username: string }>();
 
     if (emailMatch) {
@@ -680,11 +691,9 @@ auth.get("/:provider/callback", async (c) => {
       }
 
       // Encrypt tokens with AAD context
-      const encCtx = `${emailMatch.id}:${provider}`;
-      const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
-      const refreshTokenEnc = userInfo.refreshToken
-        ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
-        : null;
+      const { accessTokenEnc, refreshTokenEnc } = await encryptProviderTokens(
+        userInfo, c.env.ENCRYPTION_KEY, emailMatch.id, provider,
+      );
 
       // Create pending link for manual approval
       const pendingId = crypto.randomUUID();
@@ -720,7 +729,7 @@ auth.get("/:provider/callback", async (c) => {
               id: pendingId,
               provider: provider as OAuthProvider,
               provider_username: userInfo.providerUsername,
-              provider_email: userInfo.providerEmail!,
+              provider_email: providerEmail,
               expires_at: normalizeDateTime(pendingExpiry),
             },
           },
@@ -747,11 +756,9 @@ auth.get("/:provider/callback", async (c) => {
   }
 
   // Encrypt tokens with AAD context
-  const encCtx = `${userId}:${provider}`;
-  const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
-  const refreshTokenEnc = userInfo.refreshToken
-    ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
-    : null;
+  const { accessTokenEnc, refreshTokenEnc } = await encryptProviderTokens(
+    userInfo, c.env.ENCRYPTION_KEY, userId, provider,
+  );
 
   const oauthAccountId = crypto.randomUUID();
 
