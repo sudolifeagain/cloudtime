@@ -133,7 +133,7 @@ login.get("/:provider/callback", async (c) => {
         .bind(
           userInfo.providerUsername,
           userInfo.providerEmail,
-          userInfo.emailVerified ? 1 : 0,
+          1, // emailVerified guaranteed true by gate at line 108
           accessTokenEnc,
           refreshTokenEnc,
           userInfo.tokenExpiresAt,
@@ -249,10 +249,7 @@ login.get("/:provider/callback", async (c) => {
           );
         } else {
           // Existing user's email is NOT verified — skip PendingLink, clear email, fall through to new user creation
-          // FR-008: Security event — PendingLink skipped
-          console.error(`Security: skipping PendingLink — existing user ${emailMatch.id} email unverified for provider ${provider}`);
-          // FR-009: Security event — clearing unverified email
-          console.error(`Security: clearing unverified email ${userInfo.providerEmail} from user ${emailMatch.id}`);
+          // FR-008/FR-009: logged after batch succeeds (see below)
           unverifiedUserId = emailMatch.id;
         }
       }
@@ -287,13 +284,6 @@ login.get("/:provider/callback", async (c) => {
 
     const oauthAccountId = crypto.randomUUID();
 
-    // Email cleanup statement for unverified users (prepended to batch for atomicity)
-    const emailCleanupStmt = unverifiedUserId
-      ? c.env.DB.prepare(
-          `UPDATE users SET email = NULL, modified_at = datetime('now') WHERE id = ?`,
-        ).bind(unverifiedUserId)
-      : null;
-
     if (isSingleUser) {
       // Atomic: create user only if no users exist (prevents TOCTOU race)
       const batchResult = await c.env.DB.batch([
@@ -313,7 +303,7 @@ login.get("/:provider/callback", async (c) => {
           userInfo.providerUserId,
           userInfo.providerUsername,
           userInfo.providerEmail,
-          userInfo.emailVerified ? 1 : 0,
+          1, // emailVerified guaranteed true by gate at line 108
           accessTokenEnc,
           refreshTokenEnc,
           userInfo.tokenExpiresAt,
@@ -346,14 +336,25 @@ login.get("/:provider/callback", async (c) => {
             userInfo.providerUserId,
             userInfo.providerUsername,
             userInfo.providerEmail,
-            userInfo.emailVerified ? 1 : 0,
+            1, // emailVerified guaranteed true by gate at line 108
             accessTokenEnc,
             refreshTokenEnc,
             userInfo.tokenExpiresAt,
           ),
         ];
-        if (emailCleanupStmt) multiUserStmts.unshift(emailCleanupStmt);
+        // Email cleanup for unverified users (prepended to batch for atomicity)
+        if (unverifiedUserId) {
+          multiUserStmts.unshift(
+            c.env.DB.prepare(
+              `UPDATE users SET email = NULL, modified_at = datetime('now') WHERE id = ?`,
+            ).bind(unverifiedUserId),
+          );
+        }
         await c.env.DB.batch(multiUserStmts);
+        // FR-008/FR-009: Security events logged after successful batch
+        if (unverifiedUserId) {
+          console.error(`Security: skipped PendingLink and cleared email for user ${unverifiedUserId} — email unverified, provider ${provider}`);
+        }
       } catch (insertErr) {
         // UNIQUE constraint violation on email — concurrent signup with same email
         const msg = insertErr instanceof Error ? insertErr.message : "";
