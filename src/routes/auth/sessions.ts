@@ -14,7 +14,7 @@ import {
 } from "../../utils/session";
 import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../../utils/user";
 import { sessionMw } from "./middleware";
-import { securityHeaders } from "./helpers";
+import { noCacheHeaders } from "./helpers";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -60,12 +60,10 @@ sessions.get("/session", async (c) => {
           })),
         },
       },
-      200,
-      { "Cache-Control": "no-store" },
     );
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
@@ -75,10 +73,12 @@ sessions.delete("/session", async (c) => {
     const tokenHash = c.get("sessionTokenHash");
     await invalidateSession(c.env.DB, c.env.KV, tokenHash);
     clearSessionCookie(c, c.env);
-    return c.body(null, 204);
+    return c.body(null, 204, {
+      "Clear-Site-Data": '"cookies", "storage"',
+    });
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
@@ -120,12 +120,10 @@ sessions.get("/sessions", async (c) => {
           is_current: s.id === currentSessionId,
         })),
       },
-      200,
-      { "Cache-Control": "no-store" },
     );
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
@@ -138,7 +136,7 @@ sessions.delete("/sessions", async (c) => {
     return c.body(null, 204);
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
@@ -169,7 +167,7 @@ sessions.delete("/sessions/:session_id", async (c) => {
     return c.body(null, 204);
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
@@ -203,7 +201,7 @@ sessions.get("/providers", async (c) => {
     });
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
@@ -240,7 +238,7 @@ sessions.delete("/providers/:provider", async (c) => {
     return c.body(null, 204);
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
@@ -269,14 +267,10 @@ sessions.post("/api-key", async (c) => {
 
     await invalidateOtherSessions(c.env.DB, c.env.KV, userId, currentTokenHash);
 
-    return c.json(
-      { data: { api_key: plaintext } },
-      200,
-      { "Cache-Control": "no-store" },
-    );
+    return c.json({ data: { api_key: plaintext } });
   } catch (err) {
     console.error("Auth error:", err instanceof Error ? err.stack ?? err.message : err);
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 

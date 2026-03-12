@@ -33,14 +33,14 @@ import {
   clearStateCookie,
 } from "../../utils/session";
 import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../../utils/user";
-import { getRedirectUri, securityHeaders } from "./helpers";
+import { getRedirectUri, noCacheHeaders } from "./helpers";
 
 const login = new Hono<{ Bindings: Env }>();
 
 // GET /:provider (initiate OAuth login)
 login.get("/:provider", async (c) => {
   const provider = c.req.param("provider");
-  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, securityHeaders());
+  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, noCacheHeaders());
 
   try {
     const codeVerifier = generateCodeVerifier();
@@ -57,21 +57,21 @@ login.get("/:provider", async (c) => {
     return c.redirect(authorizeUrl, 302);
   } catch (err) {
     console.error("OAuth start error:", err instanceof Error ? err.message : "Unknown error");
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
 // GET /:provider/callback (OAuth callback — most complex)
 login.get("/:provider/callback", async (c) => {
   const provider = c.req.param("provider");
-  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, securityHeaders());
+  if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, noCacheHeaders());
 
   // Handle OAuth error (e.g., user denied access)
   const oauthError = c.req.query("error");
   if (oauthError) {
     const sanitized = oauthError.replace(/[\r\n]/g, "").slice(0, 100);
     console.error(`OAuth error from ${provider}: ${sanitized}`);
-    return c.json({ error: "OAuth authorization failed" }, 400, securityHeaders());
+    return c.json({ error: "OAuth authorization failed" }, 400, noCacheHeaders());
   }
 
   // 1. Validate state (double-submit)
@@ -81,19 +81,19 @@ login.get("/:provider/callback", async (c) => {
   clearStateCookie(c, c.env);
 
   if (!stateParam || !code || !stateCookie) {
-    return c.json({ error: "Missing state or code" }, 400, securityHeaders());
+    return c.json({ error: "Missing state or code" }, 400, noCacheHeaders());
   }
   if (code.length > 2048) {
-    return c.json({ error: "Invalid code" }, 400, securityHeaders());
+    return c.json({ error: "Invalid code" }, 400, noCacheHeaders());
   }
 
   if (!(await timingSafeEqual(stateParam, stateCookie))) {
-    return c.json({ error: "State mismatch" }, 400, securityHeaders());
+    return c.json({ error: "State mismatch" }, 400, noCacheHeaders());
   }
 
   const stateData = await consumeOAuthState(c.env.KV, stateParam);
   if (!stateData) {
-    return c.json({ error: "Invalid or expired state" }, 400, securityHeaders());
+    return c.json({ error: "Invalid or expired state" }, 400, noCacheHeaders());
   }
 
   try {
@@ -106,7 +106,7 @@ login.get("/:provider/callback", async (c) => {
 
     // 4. Email verification gate
     if (!userInfo.emailVerified) {
-      return c.json({ error: "Email not verified with provider. Please verify your email first." }, 400, securityHeaders());
+      return c.json({ error: "Email not verified with provider. Please verify your email first." }, 400, noCacheHeaders());
     }
 
     // 5. Account matching — check for existing OAuth link
@@ -147,7 +147,7 @@ login.get("/:provider/callback", async (c) => {
         .bind(existingOAuth.user_id)
         .first<UserRow>();
 
-      if (!userRow) return c.json({ error: "Internal server error" }, 500, securityHeaders());
+      if (!userRow) return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
 
       // Create session only after confirming user exists
       const sessionToken = generateSessionToken();
@@ -158,7 +158,7 @@ login.get("/:provider/callback", async (c) => {
       return c.json(
         { data: { user: rowToUser(userRow), is_new_user: false } },
         200,
-        securityHeaders(),
+        noCacheHeaders(),
       );
     }
 
@@ -177,7 +177,7 @@ login.get("/:provider/callback", async (c) => {
           .first<{ count: number }>();
         if (activeLinkCount && activeLinkCount.count >= 3) {
           return c.json({ error: "Too many pending link requests" }, 429, {
-            ...securityHeaders(),
+            ...noCacheHeaders(),
             "Retry-After": "3600",
           });
         }
@@ -225,7 +225,7 @@ login.get("/:provider/callback", async (c) => {
           .first<{ id: string }>();
 
         if (!linkResult) {
-          return c.json({ error: "Internal server error" }, 500, securityHeaders());
+          return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
         }
 
         // Return minimal pending link info (no full user profile — unauthenticated response)
@@ -242,7 +242,7 @@ login.get("/:provider/callback", async (c) => {
             },
           },
           200,
-          securityHeaders(),
+          noCacheHeaders(),
         );
       }
     }
@@ -296,7 +296,7 @@ login.get("/:provider/callback", async (c) => {
         return c.json(
           { error: "Registration closed. This instance only allows one user." },
           403,
-          securityHeaders(),
+          noCacheHeaders(),
         );
       }
     } else {
@@ -327,7 +327,7 @@ login.get("/:provider/callback", async (c) => {
         // UNIQUE constraint violation on email — concurrent signup with same email
         const msg = insertErr instanceof Error ? insertErr.message : "";
         if (msg.includes("UNIQUE constraint failed: users.email")) {
-          return c.json({ error: "An account with this email already exists" }, 409, securityHeaders());
+          return c.json({ error: "An account with this email already exists" }, 409, noCacheHeaders());
         }
         throw insertErr;
       }
@@ -338,7 +338,7 @@ login.get("/:provider/callback", async (c) => {
       .bind(userId)
       .first<UserRow>();
 
-    if (!userRow) return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    if (!userRow) return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
 
     // Create session only after confirming user exists
     const sessionToken = generateSessionToken();
@@ -354,11 +354,11 @@ login.get("/:provider/callback", async (c) => {
         },
       },
       200,
-      securityHeaders(),
+      noCacheHeaders(),
     );
   } catch (err) {
     console.error("OAuth callback error:", err instanceof Error ? err.message : "Unknown error");
-    return c.json({ error: "Internal server error" }, 500, securityHeaders());
+    return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
 
