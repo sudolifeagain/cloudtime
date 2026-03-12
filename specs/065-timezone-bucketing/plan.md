@@ -69,7 +69,7 @@ schemas/
 │   ├── summaries/summaries.yaml    # Update timezone param description
 │   ├── stats/stats.yaml            # Update timezone param description
 │   ├── stats/status-bar.yaml       # Update timezone param description
-│   └── stats/durations.yaml        # Update timezone param description
+│   ├── stats/durations.yaml        # Update timezone param description
 │   └── meta/global-stats.yaml      # Add documentation note (FR-006)
 └── components/schemas/             # No changes needed
 

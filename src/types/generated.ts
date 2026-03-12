@@ -931,7 +931,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Aggregate stats of all users */
+        /**
+         * Aggregate stats of all users
+         * @description Summary data is bucketed by each user's profile timezone at aggregation time. In single-user mode, the query timezone and bucketing timezone align when the user's profile timezone matches. Cross-user timezone aggregation is a known limitation deferred to multi-user support.
+         */
         get: operations["getGlobalStats"];
         put?: never;
         post?: never;
@@ -3050,7 +3053,7 @@ export interface operations {
     getGlobalStats: {
         parameters: {
             query?: {
-                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. Note: summary data is bucketed by each user's profile timezone. In single-user mode, the query timezone and bucketing timezone align when the user's profile timezone matches. Cross-user timezone aggregation is a known limitation for future multi-user support. */
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. See endpoint description for timezone bucketing notes. */
                 timezone?: string;
             };
             header?: never;
