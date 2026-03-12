@@ -1,0 +1,27 @@
+get:
+  operationId: getOrgDashboards
+  tags:
+    - orgs
+  summary: List organization dashboards
+  parameters:
+    - name: org_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: List of dashboards
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/OrgDashboard.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

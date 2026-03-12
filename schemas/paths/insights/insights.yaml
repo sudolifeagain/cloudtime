@@ -1,0 +1,57 @@
+get:
+  operationId: getInsight
+  tags:
+    - insights
+  summary: Coding activity insights
+  parameters:
+    - name: insight_type
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+          - weekday
+          - days
+          - best_day
+          - daily_average
+          - projects
+          - languages
+          - editors
+          - categories
+          - machines
+          - operating_systems
+    - name: range
+      in: path
+      required: true
+      schema:
+        type: string
+        description: >-
+          last_7_days, last_30_days, last_6_months, last_year, all_time, or YYYY
+          / YYYY-MM
+    - name: timeout
+      in: query
+      schema:
+        type: integer
+    - name: writes_only
+      in: query
+      schema:
+        type: boolean
+    - name: weekday
+      in: query
+      description: Filter for 'days' insight type (0-6 or monday-sunday)
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Insight data
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/Insight.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

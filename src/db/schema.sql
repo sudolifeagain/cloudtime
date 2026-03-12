@@ -4,14 +4,14 @@
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
-  email TEXT,
+  email TEXT UNIQUE COLLATE NOCASE,
   display_name TEXT,
   photo TEXT,
   bio TEXT,
   city TEXT,
   timezone TEXT NOT NULL DEFAULT 'UTC',
   timeout INTEGER NOT NULL DEFAULT 15,
-  api_key TEXT NOT NULL UNIQUE,
+  api_key_hash TEXT NOT NULL UNIQUE,
   email_verified INTEGER NOT NULL DEFAULT 0,
   is_hireable INTEGER NOT NULL DEFAULT 0,
   github_username TEXT,
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
   provider_user_id TEXT NOT NULL,
   provider_username TEXT,
   provider_email TEXT,
+  email_verified INTEGER NOT NULL DEFAULT 0,
   access_token_encrypted TEXT,
   refresh_token_encrypted TEXT,
   token_expires_at TEXT,
@@ -52,6 +53,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE,
   ip TEXT,
+  country TEXT,
+  city TEXT,
   user_agent TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT NOT NULL,
@@ -73,13 +76,17 @@ CREATE TABLE IF NOT EXISTS pending_links (
   provider_user_id TEXT NOT NULL,
   provider_username TEXT,
   provider_email TEXT,
+  email_verified INTEGER NOT NULL DEFAULT 0,
   access_token_encrypted TEXT,
   refresh_token_encrypted TEXT,
   token_expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT NOT NULL,
-  FOREIGN KEY (existing_user_id) REFERENCES users(id) ON DELETE CASCADE
+  FOREIGN KEY (existing_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE(existing_user_id, provider, provider_user_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_pending_links_expires ON pending_links(expires_at);
 
 -- ============================================================
 -- Heartbeats (core tracking data)
@@ -113,6 +120,7 @@ CREATE TABLE IF NOT EXISTS heartbeats (
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_time ON heartbeats(user_id, time);
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_project ON heartbeats(user_id, project);
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_date ON heartbeats(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_heartbeats_time ON heartbeats(time);
 
 -- ============================================================
 -- Summaries (daily aggregated, populated by cron)
@@ -324,4 +332,27 @@ CREATE TABLE IF NOT EXISTS data_dumps (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- ============================================================
+-- User Projects (pre-aggregated, updated on heartbeat ingestion)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_projects (
+  user_id TEXT NOT NULL,
+  project TEXT NOT NULL,
+  first_heartbeat_at REAL NOT NULL,
+  last_heartbeat_at REAL NOT NULL,
+  PRIMARY KEY (user_id, project),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_projects_last_hb
+  ON user_projects(user_id, last_heartbeat_at);
+
+-- Key-value store for internal state (e.g., last_aggregated_at)
+-- SQLite note: INSERT OR REPLACE deletes then inserts (triggers ON DELETE).
+-- Use INSERT ... ON CONFLICT (key) DO UPDATE SET value = excluded.value instead.
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );

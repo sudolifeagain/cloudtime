@@ -1,0 +1,21 @@
+type: object
+required:
+  - total_seconds
+  - text
+  - digital
+  - is_up_to_date
+properties:
+  total_seconds:
+    type: number
+    format: double
+  text:
+    type: string
+    description: Human readable (e.g., '1,250 hrs 30 mins')
+  digital:
+    type: string
+  is_up_to_date:
+    type: boolean
+  range:
+    $ref: ./TimeRange.yaml
+  project:
+    type: string

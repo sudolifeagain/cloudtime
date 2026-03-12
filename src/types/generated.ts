@@ -11,7 +11,38 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Initiate OAuth flow with a provider */
+        /**
+         * Initiate OAuth flow with a provider
+         * @description Redirects the user to the OAuth provider's authorization page.
+         *
+         *     **Security measures applied by the server:**
+         *     - Generates a cryptographically random `state` parameter (32 bytes, base64url).
+         *       Stored server-side (KV with 10-minute TTL) and set in an HttpOnly cookie.
+         *       Validated on callback using double-submit: both the KV entry and the cookie value
+         *       must match the `state` query parameter. This prevents CSRF even if one store is
+         *       compromised. Invalidated after use (one-time).
+         *     - Generates a PKCE `code_verifier` (32 bytes, base64url) and derives `code_challenge`
+         *       using S256 method (`plain` is not used). The `code_verifier` is stored server-side;
+         *       only the `code_challenge` is sent to the provider. Prevents authorization code
+         *       interception attacks. Note: as a confidential client (server-side secret), both PKCE
+         *       and `client_secret` are used together (defense in depth). PKCE applies only to
+         *       authorization code exchange, not refresh token grants.
+         *       Discord supports S256 only (`plain` is rejected); `role_connections.write` scope
+         *       does not support PKCE. GitHub requires `client_secret` even with PKCE.
+         *     - For Google: also generates a cryptographic `nonce` (32 bytes, base64url) included in
+         *       the authorization request and validated against the `id_token` on callback to prevent
+         *       token replay attacks.
+         *
+         *     **Provider-specific authorization URLs:**
+         *     - GitHub: `https://github.com/login/oauth/authorize` (GitHub App user authorization)
+         *     - Google: `https://accounts.google.com/o/oauth2/v2/auth` (OpenID Connect)
+         *     - Discord: `https://discord.com/oauth2/authorize`
+         *
+         *     **Provider-specific scopes (minimum required):**
+         *     - GitHub App: "Email addresses: Read-only" permission (set at app registration, not per-request)
+         *     - Google: `openid email profile`
+         *     - Discord: `identify email`
+         */
         get: operations["oauthRedirect"];
         put?: never;
         post?: never;
@@ -28,7 +59,63 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** OAuth callback - creates or authenticates user */
+        /**
+         * OAuth callback - creates or authenticates user
+         * @description Handles the OAuth provider's redirect after user authorization.
+         *
+         *     **Security checks performed:**
+         *     1. Validate `state` parameter against server-side store (constant-time comparison).
+         *        Reject if missing, expired (>10 min), or mismatched. Invalidate after use (one-time).
+         *     2. Exchange authorization `code` for tokens at the provider's token endpoint using
+         *        the stored `code_verifier` (PKCE) and `client_secret`.
+         *     3. **Provider-specific identity resolution:**
+         *        - GitHub: Call `GET /user` for profile + `GET /user/emails` for verified primary email.
+         *          Use numeric `id` as immutable identifier (usernames can change).
+         *        - Google: Validate the `id_token` JWT (signature via JWKS, iss, aud, azp, exp, at_hash, nonce).
+         *          `azp` prevents cross-client token reuse; `at_hash` prevents token substitution.
+         *          Use `sub` claim as immutable identifier. Check `email_verified === true`.
+         *          Note: there are unconfirmed reports of Google `sub` changing in ~0.04% of logins.
+         *          As a defensive measure, if a login arrives with a known verified email but unknown
+         *          `sub`, create a PendingLink — never auto-link.
+         *        - Discord: Call `GET /users/@me` for profile. Use snowflake `id` as immutable identifier.
+         *          Check `verified === true` before trusting email.
+         *     4. **Email verification gate:** Check `email_verified === true` as a minimum filter,
+         *        but do NOT treat it as proof of legitimate ownership. Google Workspace
+         *        admin-provisioned accounts and domain-takeover accounts both have
+         *        `email_verified: true` without the individual user ever verifying.
+         *        This is why all email-based matching MUST go through PendingLink manual approval.
+         *        Unverified emails are never used for account matching.
+         *     5. **Account matching:** Match by `(provider, provider_user_id)`. If no match but a
+         *        verified email matches an existing user, create a `PendingLink` for manual approval
+         *        (never auto-merge by email). Note: even `email_verified: true` is not proof of
+         *        continuous domain ownership (e.g., Google Workspace domain resale allows new owners
+         *        to create verified accounts for old email addresses). This is why email matching
+         *        always requires manual PendingLink approval.
+         *     6. **Session fixation prevention:** Always create a new session after successful
+         *        authentication. Invalidate any pre-authentication session. Never reuse session IDs.
+         *
+         *     **Token endpoint Content-Type:** All three providers require
+         *     `application/x-www-form-urlencoded` (per RFC 6749 §4.1.3). Discord is notably strict —
+         *     sending JSON returns a 400 error. Use form-urlencoded universally.
+         *
+         *     **Discord refresh token rotation:** Discord invalidates the previous refresh token
+         *     immediately upon issuing a new one. Implementation MUST persist the new token pair
+         *     atomically (D1 transaction). Concurrent refresh attempts require a single-writer lock
+         *     (KV-based mutex). If the write fails after token exchange, the user must re-authorize.
+         *
+         *     **Google id_token signature verification:** Use the `jose` npm package
+         *     (`createRemoteJWKSet`) which handles JWKS fetch, caching, and automatic refetch on
+         *     unknown `kid`. Cache JWKS in KV with 5-10 min TTL for cold-start resilience.
+         *     This is critical for Workers' 10ms CPU limit — never fetch JWKS on every request.
+         *
+         *     **GitHub error handling:** GitHub's `/login/oauth/access_token` returns `200 OK` even
+         *     on errors — the error is in the response body (`{"error": "bad_verification_code"}`).
+         *     Implementation must check the body for an `error` field, not just HTTP status.
+         *
+         *     **Response headers for defense in depth:**
+         *     - `Referrer-Policy: no-referrer` — prevents authorization code leakage via Referer header.
+         *     - `Cache-Control: no-store` — prevents caching of authentication responses.
+         */
         get: operations["oauthCallback"];
         put?: never;
         post?: never;
@@ -47,7 +134,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Link additional OAuth provider to current account */
+        /**
+         * Link additional OAuth provider to current account
+         * @description Initiates an OAuth flow to link a new provider to the authenticated user's account.
+         *     The user must already be logged in (session cookie required).
+         *
+         *     Same PKCE and state security measures as the initial OAuth flow (/auth/{provider}).
+         *     On callback, the provider is linked to the current session's user (identity is
+         *     already established), which is safer than email-based auto-linking.
+         */
         post: operations["oauthLinkStart"];
         delete?: never;
         options?: never;
@@ -62,7 +157,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** OAuth link callback - links provider to current account */
+        /**
+         * OAuth link callback - links provider to current account
+         * @description Handles the OAuth callback for account linking. The user must be authenticated
+         *     (session cookie sent via SameSite=Lax on the cross-site redirect).
+         *
+         *     **Security checks:**
+         *     - Validates state and PKCE code_verifier (same as login callback).
+         *     - Verifies the provider's email is marked as verified before storing.
+         *     - If the provider account is already linked to a different user, returns 409 Conflict.
+         *
+         *     Uses `Referrer-Policy: no-referrer` and `Cache-Control: no-store` headers.
+         */
         get: operations["oauthLinkCallback"];
         put?: never;
         post?: never;
@@ -81,7 +187,16 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Approve merging an OAuth account into existing user */
+        /**
+         * Approve merging an OAuth account into existing user
+         * @description Approves a pending account link created when an OAuth login's verified email
+         *     matched an existing account. The user must be authenticated as the owner of
+         *     the existing account.
+         *
+         *     Pending links expire after 1 hour (410 Gone if expired).
+         *     On approval, the OAuth provider is linked to the existing account and the
+         *     pending link record is deleted.
+         */
         post: operations["approvePendingLink"];
         delete?: never;
         options?: never;
@@ -130,11 +245,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get current session info */
+        /**
+         * Get current session info
+         * @description Returns the current user and linked OAuth providers for the authenticated session.
+         *
+         *     **Session lifecycle:**
+         *     - Sliding expiration: 24 hours of inactivity invalidates the session.
+         *       `last_active_at` is updated at most once per 5 minutes to reduce D1 writes.
+         *     - Absolute expiration: sessions expire 7 days after creation regardless of activity.
+         *     - Sessions are stored as SHA-256 hashes in D1; the raw token never leaves the client cookie.
+         */
         get: operations["getSession"];
         put?: never;
         post?: never;
-        /** Logout - invalidate current session */
+        /**
+         * Logout - invalidate current session
+         * @description Deletes the session from the database and clears the session cookie.
+         *     Both steps are required: cookie deletion alone leaves a valid session in the DB,
+         *     and DB deletion alone leaves a cookie traveling on the wire.
+         */
         delete: operations["logout"];
         options?: never;
         head?: never;
@@ -150,8 +279,92 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Regenerate API key */
+        /**
+         * Regenerate API key
+         * @description Generates a new API key, immediately invalidating the old one.
+         *     The new key is the only value returned; it cannot be retrieved again.
+         *
+         *     **Security measures:**
+         *     - New key: 32 bytes of cryptographic randomness, base64url-encoded, prefixed with `ck_`.
+         *       The `ck_` prefix enables secret scanning in Git repositories.
+         *     - Storage: only the SHA-256 hash of the key is stored in the database.
+         *     - KV cache: the old key's cache entry is explicitly deleted (not relying on TTL expiry).
+         *     - All other active sessions for this user are invalidated (forces re-authentication
+         *       on other devices to prevent use of a potentially compromised key).
+         *
+         *     **Response includes `Cache-Control: no-store`** to prevent the key from being cached.
+         */
         post: operations["regenerateApiKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active sessions
+         * @description Returns all active sessions for the current user, including the current session
+         *     (marked with `is_current: true`). Never exposes `token_hash` in the response.
+         *
+         *     Useful for "manage active sessions" UI to let users see and revoke
+         *     sessions on other devices.
+         */
+        get: operations["listSessions"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke all other sessions
+         * @description Invalidates all sessions for the current user except the one making the request.
+         *     Useful as a "sign out everywhere else" feature.
+         *
+         *     Also triggered automatically on API key regeneration and credential changes.
+         */
+        delete: operations["revokeAllOtherSessions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke a specific session
+         * @description Invalidates a specific session by ID. The session must belong to the authenticated user.
+         *     If the user revokes their current session, the session cookie is also cleared
+         *     (effectively a logout).
+         */
+        delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get current user's profile */
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -175,15 +388,15 @@ export interface paths {
         patch: operations["updateProfile"];
         trace?: never;
     };
-    "/health": {
+    "/users/current/projects": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Health check */
-        get: operations["getHealth"];
+        /** List user's projects */
+        get: operations["getProjects"];
         put?: never;
         post?: never;
         delete?: never;
@@ -192,17 +405,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/current": {
+    "/users/current/data_dumps": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get current user's profile */
-        get: operations["getCurrentUser"];
+        /** List data exports */
+        get: operations["getDataDumps"];
         put?: never;
-        post?: never;
+        /** Start a data export */
+        post: operations["createDataDump"];
         delete?: never;
         options?: never;
         head?: never;
@@ -245,26 +459,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/current/status_bar/today": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Today's coding activity for IDE status bars
-         * @description Cached version of summaries for today. Returns empty summary while cache updates.
-         */
-        get: operations["getStatusBarToday"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/users/current/summaries": {
         parameters: {
             query?: never;
@@ -274,23 +468,6 @@ export interface paths {
         };
         /** Coding activity summaries for a date range */
         get: operations["getSummaries"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/users/current/durations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Coding durations for a day (heartbeats joined by timeout) */
-        get: operations["getDurations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -316,6 +493,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/current/status_bar/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today's coding activity for IDE status bars
+         * @description Cached version of summaries for today. Returns a summary with zero values while cache is being populated.
+         */
+        get: operations["getStatusBarToday"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/current/all_time_since_today": {
         parameters: {
             query?: never;
@@ -333,15 +530,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/current/projects": {
+    "/users/current/durations": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List user's projects */
-        get: operations["getProjects"];
+        /** Coding durations for a day (heartbeats joined by timeout) */
+        get: operations["getDurations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -521,24 +718,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/current/data_dumps": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List data exports */
-        get: operations["getDataDumps"];
-        put?: never;
-        /** Start a data export */
-        post: operations["createDataDump"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/users/current/external_durations": {
         parameters: {
             query?: never;
@@ -566,7 +745,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create up to 1000 external durations */
+        /** Create up to 100 external durations */
         post: operations["createExternalDurationsBulk"];
         /** Delete external durations */
         delete: operations["deleteExternalDurationsBulk"];
@@ -677,6 +856,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health check */
+        get: operations["getHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/editors": {
         parameters: {
             query?: never;
@@ -728,10 +924,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stats/{range}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Aggregate stats of all users */
+        get: operations["getGlobalStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        OAuthProvider: "github" | "google" | "discord";
         User: {
             id: string;
             username: string;
@@ -750,6 +965,8 @@ export interface components {
             last_project?: string;
             /** @enum {string} */
             plan?: "free" | "basic" | "premium";
+            /** @description Keystroke timeout in minutes */
+            timeout?: number;
             is_hireable?: boolean;
             github_username?: string;
             twitter_username?: string;
@@ -760,11 +977,100 @@ export interface components {
             /** Format: date-time */
             modified_at?: string;
         };
+        PendingLink: {
+            id: string;
+            provider: components["schemas"]["OAuthProvider"];
+            provider_username: string;
+            /** Format: email */
+            provider_email: string;
+            /** @description Username of the existing account to merge into */
+            existing_username?: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        LinkedProvider: {
+            provider: components["schemas"]["OAuthProvider"];
+            /**
+             * @description Immutable provider-specific user identifier.
+             *     GitHub: numeric id, Google: sub claim, Discord: snowflake id.
+             *     Never use email or username as identifier (both are mutable).
+             *     Note: there are unconfirmed reports of Google sub changing in ~0.04%
+             *     of logins. If a login has a known verified email but unknown sub,
+             *     create a PendingLink rather than auto-linking.
+             */
+            provider_user_id: string;
+            provider_username: string;
+            /** Format: email */
+            provider_email?: string;
+            /** @description Whether the provider confirmed the email address is verified */
+            email_verified: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        Session: {
+            /** Format: uuid */
+            id: string;
+            /** @description IP address at session creation */
+            ip?: string;
+            /** @description Country code from Cloudflare cf.country (e.g., "JP", "US") */
+            country?: string;
+            /** @description City name from Cloudflare cf.city (e.g., "Tokyo", "San Francisco") */
+            city?: string;
+            /** @description User-Agent header at session creation */
+            user_agent?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_active_at: string;
+            /**
+             * Format: date-time
+             * @description Absolute expiration (7 days from creation)
+             */
+            expires_at?: string;
+            /** @description True if this is the session making the request */
+            is_current: boolean;
+        };
+        Project: {
+            id: string;
+            name: string;
+            /** Format: uri */
+            repository?: string;
+            /** Format: uri */
+            badge?: string;
+            color?: string;
+            has_public_url?: boolean;
+            human_readable_last_heartbeat_at?: string;
+            /** Format: date-time */
+            last_heartbeat_at?: string;
+            human_readable_first_heartbeat_at?: string;
+            /** Format: date-time */
+            first_heartbeat_at?: string;
+            urlencoded_name?: string;
+            /** Format: uri */
+            url?: string;
+            /** Format: date-time */
+            created_at?: string;
+        };
+        DataDump: {
+            id: string;
+            /** @enum {string} */
+            type: "daily" | "heartbeats";
+            /** @enum {string} */
+            status: "pending" | "processing" | "completed" | "failed";
+            /** Format: uri */
+            download_url?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            expires_at?: string;
+        };
+        /** @enum {string} */
+        Category: "coding" | "building" | "indexing" | "debugging" | "browsing" | "running tests" | "writing tests" | "manual testing" | "writing docs" | "communicating" | "code reviewing" | "notes" | "researching" | "learning" | "designing" | "ai coding" | "advising" | "meeting" | "planning" | "supporting" | "translating";
         HeartbeatInput: {
             /** @description File path, app name, or domain */
             entity: string;
             /** @enum {string} */
-            type: "file" | "app" | "domain";
+            type: "file" | "app" | "domain" | "url" | "event";
             /**
              * Format: double
              * @description UNIX epoch timestamp
@@ -775,37 +1081,57 @@ export interface components {
             project_root_count?: number;
             branch?: string;
             language?: string;
-            /** @description Comma-separated dependency names */
-            dependencies?: string;
+            /** @description Dependency names, as comma-separated string or array */
+            dependencies?: string | string[];
             lines?: number;
             ai_line_changes?: number;
             human_line_changes?: number;
             lineno?: number;
             cursorpos?: number;
             is_write?: boolean;
+            editor?: string;
+            operating_system?: string;
+            /** @description Machine/device name */
+            machine?: string;
+            /** @description User agent string from editor plugin */
+            user_agent?: string;
         };
         Heartbeat: components["schemas"]["HeartbeatInput"] & {
             id: string;
             user_id: string;
-            machine_name_id?: string;
             user_agent_id?: string;
             /** Format: date-time */
             created_at: string;
+            /**
+             * Format: double
+             * @description Session start timestamp (equals heartbeat time)
+             */
+            start?: number;
+            /**
+             * Format: double
+             * @description Session end timestamp (next heartbeat time within 15min threshold, or equals start)
+             */
+            end?: number;
+            /** @description IANA timezone string */
+            timezone?: string;
+        };
+        HeartbeatBulkItem: {
+            /** @description Created heartbeat ID or null on error */
+            data: {
+                id: string;
+            } | null;
+            /** @description Error message or null on success */
+            error: string | null;
         };
         /** @enum {string} */
-        Category: "coding" | "building" | "indexing" | "debugging" | "browsing" | "running tests" | "writing tests" | "manual testing" | "writing docs" | "communicating" | "code reviewing" | "notes" | "researching" | "learning" | "designing" | "ai coding";
-        Summary: {
-            grand_total: components["schemas"]["GrandTotal"];
-            categories?: components["schemas"]["SummaryItem"][];
-            projects?: components["schemas"]["SummaryItem"][];
-            languages?: components["schemas"]["SummaryItem"][];
-            editors?: components["schemas"]["SummaryItem"][];
-            operating_systems?: components["schemas"]["SummaryItem"][];
-            dependencies?: components["schemas"]["SummaryItem"][];
-            machines?: components["schemas"]["SummaryItem"][];
-            branches?: components["schemas"]["SummaryItem"][];
-            entities?: components["schemas"]["SummaryItem"][];
-            range: components["schemas"]["TimeRange"];
+        SummaryRange: "Today" | "Yesterday" | "Last 7 Days" | "Last 7 Days from Yesterday" | "Last 14 Days" | "Last 30 Days" | "This Week" | "Last Week" | "This Month" | "Last Month";
+        GrandTotal: {
+            /** Format: double */
+            total_seconds: number;
+            digital: string;
+            text: string;
+            hours?: number;
+            minutes?: number;
         };
         SummaryItem: {
             name: string;
@@ -821,13 +1147,28 @@ export interface components {
             minutes?: number;
             seconds?: number;
         };
-        GrandTotal: {
-            /** Format: double */
-            total_seconds: number;
-            digital: string;
-            text: string;
-            hours?: number;
-            minutes?: number;
+        TimeRange: {
+            /** Format: date-time */
+            start?: string;
+            /** Format: date-time */
+            end?: string;
+            /** Format: date */
+            date?: string;
+            text?: string;
+            timezone?: string;
+        };
+        Summary: {
+            grand_total: components["schemas"]["GrandTotal"];
+            categories?: components["schemas"]["SummaryItem"][];
+            projects?: components["schemas"]["SummaryItem"][];
+            languages?: components["schemas"]["SummaryItem"][];
+            editors?: components["schemas"]["SummaryItem"][];
+            operating_systems?: components["schemas"]["SummaryItem"][];
+            dependencies?: components["schemas"]["SummaryItem"][];
+            machines?: components["schemas"]["SummaryItem"][];
+            branches?: components["schemas"]["SummaryItem"][];
+            entities?: components["schemas"]["SummaryItem"][];
+            range: components["schemas"]["TimeRange"];
         };
         CumulativeTotal: {
             /** Format: double */
@@ -839,27 +1180,6 @@ export interface components {
             /** Format: double */
             seconds?: number;
             text?: string;
-        };
-        /** @enum {string} */
-        SummaryRange: "Today" | "Yesterday" | "Last 7 Days" | "Last 7 Days from Yesterday" | "Last 14 Days" | "Last 30 Days" | "This Week" | "Last Week" | "This Month" | "Last Month";
-        Duration: {
-            project: string;
-            /**
-             * Format: double
-             * @description Start time as UNIX epoch
-             */
-            time: number;
-            /**
-             * Format: double
-             * @description Duration in seconds
-             */
-            duration: number;
-            color?: string;
-            entity?: string;
-            language?: string;
-            branch?: string;
-            category?: components["schemas"]["Category"];
-            machine_name_id?: string;
         };
         Stats: {
             /** Format: double */
@@ -904,24 +1224,24 @@ export interface components {
             range?: components["schemas"]["TimeRange"];
             project?: string;
         };
-        Project: {
-            id: string;
-            name: string;
-            /** Format: uri */
-            repository?: string;
-            /** Format: uri */
-            badge?: string;
+        Duration: {
+            project: string;
+            /**
+             * Format: double
+             * @description Start time as UNIX epoch
+             */
+            time: number;
+            /**
+             * Format: double
+             * @description Duration in seconds
+             */
+            duration: number;
             color?: string;
-            has_public_url?: boolean;
-            human_readable_last_heartbeat_at?: string;
-            /** Format: date-time */
-            last_heartbeat_at?: string;
-            /** Format: date-time */
-            first_heartbeat_at?: string;
-            /** Format: uri */
-            url?: string;
-            /** Format: date-time */
-            created_at?: string;
+            entity?: string;
+            language?: string;
+            branch?: string;
+            category?: components["schemas"]["Category"];
+            machine?: string;
         };
         Goal: {
             id: string;
@@ -1023,7 +1343,7 @@ export interface components {
             operation: "equals" | "contains" | "starts with" | "ends with";
             source_value: string;
             /** @enum {string} */
-            destination: "project" | "language" | "editor" | "operating_system" | "category";
+            destination: "project" | "language" | "editor" | "operating_system" | "category" | "entity";
             destination_value: string;
             priority?: number;
         };
@@ -1038,7 +1358,7 @@ export interface components {
             operation: "equals" | "contains" | "starts with" | "ends with";
             source_value: string;
             /** @enum {string} */
-            destination: "project" | "language" | "editor" | "operating_system" | "category";
+            destination: "project" | "language" | "editor" | "operating_system" | "category" | "entity";
             destination_value: string;
             priority?: number;
         };
@@ -1065,19 +1385,6 @@ export interface components {
             last_seen_at?: string;
             /** Format: date-time */
             created_at?: string;
-        };
-        DataDump: {
-            id: string;
-            /** @enum {string} */
-            type: "daily" | "heartbeats";
-            /** @enum {string} */
-            status: "pending" | "processing" | "completed" | "failed";
-            /** Format: uri */
-            download_url?: string;
-            /** Format: date-time */
-            created_at?: string;
-            /** Format: date-time */
-            expires_at?: string;
         };
         ExternalDurationInput: {
             external_id: string;
@@ -1161,38 +1468,56 @@ export interface components {
             color?: string;
             is_verified?: boolean;
         };
-        /** @enum {string} */
-        OAuthProvider: "github" | "google" | "discord";
-        LinkedProvider: {
-            provider: components["schemas"]["OAuthProvider"];
-            provider_user_id: string;
-            provider_username: string;
-            provider_email?: string;
-            /** Format: date-time */
-            created_at: string;
-        };
-        PendingLink: {
-            id: string;
-            provider: components["schemas"]["OAuthProvider"];
-            provider_username: string;
-            provider_email: string;
-            /** @description Username of the existing account to merge into */
-            existing_username?: string;
-            /** Format: date-time */
-            expires_at: string;
-        };
-        TimeRange: {
-            /** Format: date-time */
-            start?: string;
-            /** Format: date-time */
-            end?: string;
-            /** Format: date */
-            date?: string;
-            text?: string;
-            timezone?: string;
+        GlobalStats: {
+            /** Format: double */
+            total_seconds?: number;
+            /** Format: double */
+            total_seconds_including_other_language?: number;
+            /** Format: double */
+            daily_average?: number;
+            human_readable_total?: string;
+            human_readable_daily_average?: string;
+            categories?: components["schemas"]["SummaryItem"][];
+            languages?: components["schemas"]["SummaryItem"][];
+            editors?: components["schemas"]["SummaryItem"][];
+            operating_systems?: components["schemas"]["SummaryItem"][];
+            range?: components["schemas"]["TimeRange"];
         };
     };
     responses: {
+        /** @description Invalid request parameters */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @example Bad request */
+                    error?: string;
+                };
+            };
+        };
+        /**
+         * @description Rate limit exceeded. Recommended limits:
+         *     - OAuth start/callback: 10 req/min per IP
+         *     - API key regeneration: 3 req/min per user
+         *     - Account linking: 5 req/min per user
+         *     - Session management: 30 req/min per user
+         *     Implementation: Use Cloudflare Workers native Rate Limiting binding.
+         */
+        TooManyRequests: {
+            headers: {
+                /** @description Seconds until the rate limit resets */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @example Too many requests */
+                    error?: string;
+                };
+            };
+        };
         /** @description Authentication required or invalid credentials */
         Unauthorized: {
             headers: {
@@ -1201,6 +1526,18 @@ export interface components {
             content: {
                 "application/json": {
                     /** @example Unauthorized */
+                    error?: string;
+                };
+            };
+        };
+        /** @description Resource conflict */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @example Conflict */
                     error?: string;
                 };
             };
@@ -1218,7 +1555,12 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        /** @description Machine/device name (fallback if not provided in request body) */
+        MachineNameHeader: string;
+        /** @description User agent string (fallback if not provided in request body) */
+        UserAgentHeader: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -1239,19 +1581,32 @@ export interface operations {
             /** @description Redirect to OAuth provider */
             302: {
                 headers: {
+                    /**
+                     * @description OAuth authorization URL with query parameters: client_id, redirect_uri,
+                     *     response_type=code, state, code_challenge, code_challenge_method=S256,
+                     *     scope (provider-specific), and nonce (Google only).
+                     */
                     Location?: string;
-                    /** @description PKCE code_verifier stored in encrypted cookie */
+                    /**
+                     * @description Short-lived HttpOnly cookie containing the `state` value for CSRF validation
+                     *     on callback. Attributes: HttpOnly, Secure, SameSite=Lax, Max-Age=600, Path=/.
+                     *     SameSite=Lax is required because the OAuth callback is a cross-site navigation.
+                     */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     oauthCallback: {
         parameters: {
             query: {
+                /** @description Authorization code from the OAuth provider (one-time use, max 10 min lifetime) */
                 code: string;
+                /** @description Anti-CSRF state parameter, must match the server-side stored value */
                 state: string;
             };
             header?: never;
@@ -1265,33 +1620,37 @@ export interface operations {
             /** @description Authentication successful */
             200: {
                 headers: {
-                    /** @description Session cookie (HttpOnly, Secure, SameSite=Strict) */
+                    /**
+                     * @description Session cookie. Attributes: HttpOnly, Secure, SameSite=Lax, Path=/, Max-Age=604800.
+                     *     Token is 32 bytes of cryptographic randomness (base64url-encoded).
+                     *     Only the SHA-256 hash is stored server-side.
+                     */
                     "Set-Cookie"?: string;
+                    /** @description Set to `no-referrer` to prevent code leakage */
+                    "Referrer-Policy"?: "no-referrer";
+                    /** @description Set to `no-store` to prevent caching */
+                    "Cache-Control"?: "no-store";
+                    /** @description HTTP/1.0 backward compatibility */
+                    Pragma?: "no-cache";
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
                         data: {
                             user: components["schemas"]["User"];
-                            /** @description API key for editor plugins (ck_...) */
-                            api_key: string;
                             is_new_user?: boolean;
+                            /**
+                             * @description Present when the provider's verified email matches an existing account.
+                             *     The user must approve the link via /auth/link/approve/{pending_link_id}
+                             *     after authenticating with their existing account. Expires in 1 hour.
+                             */
                             pending_link?: components["schemas"]["PendingLink"];
                         };
                     };
                 };
             };
-            /** @description Invalid OAuth callback (bad code/state) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: string;
-                    };
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     oauthLinkStart: {
@@ -1314,6 +1673,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     oauthLinkCallback: {
@@ -1333,6 +1693,12 @@ export interface operations {
             /** @description Provider linked successfully */
             200: {
                 headers: {
+                    /** @description Set to `no-referrer` to prevent code leakage */
+                    "Referrer-Policy"?: "no-referrer";
+                    /** @description Set to `no-store` to prevent caching */
+                    "Cache-Control"?: "no-store";
+                    /** @description HTTP/1.0 backward compatibility */
+                    Pragma?: "no-cache";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1345,17 +1711,8 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Provider account already linked to another user */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: string;
-                    };
-                };
-            };
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     approvePendingLink: {
@@ -1378,11 +1735,11 @@ export interface operations {
                     "application/json": {
                         data: {
                             user: components["schemas"]["User"];
-                            api_key: string;
                         };
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             /** @description Pending link expired */
             410: {
@@ -1395,6 +1752,7 @@ export interface operations {
                     };
                 };
             };
+            429: components["responses"]["TooManyRequests"];
         };
     };
     getLinkedProviders: {
@@ -1438,17 +1796,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Cannot unlink last provider */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error?: string;
-                    };
-                };
-            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1464,6 +1812,8 @@ export interface operations {
             /** @description Current session */
             200: {
                 headers: {
+                    /** @description Set to `no-store` to prevent caching of session data */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1490,12 +1840,13 @@ export interface operations {
             /** @description Session invalidated */
             204: {
                 headers: {
-                    /** @description Clear session cookie */
+                    /** @description Clear session cookie (Max-Age=0) */
                     "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
     regenerateApiKey: {
@@ -1510,13 +1861,109 @@ export interface operations {
             /** @description New API key generated */
             200: {
                 headers: {
+                    /** @description Set to `no-store` to prevent caching */
+                    "Cache-Control"?: "no-store";
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
                         data: {
+                            /**
+                             * @description New API key (ck_...). This is the only time the plaintext is available.
+                             *     Store it securely; it cannot be retrieved from the server.
+                             */
                             api_key: string;
                         };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of active sessions */
+            200: {
+                headers: {
+                    /** @description Set to `no-store` to prevent caching of session metadata */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Session"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    revokeAllOtherSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All other sessions revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    revokeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["User"];
                     };
                 };
             };
@@ -1561,21 +2008,38 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            /** @description Username already taken */
-            409: {
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getProjects: {
+        parameters: {
+            query?: {
+                /** @description Search term */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of projects */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        error?: string;
+                        data: components["schemas"]["Project"][];
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
-    getHealth: {
+    getDataDumps: {
         parameters: {
             query?: never;
             header?: never;
@@ -1584,37 +2048,46 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Server is healthy */
+            /** @description List of data dumps */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        /** @constant */
-                        status: "ok";
+                        data: components["schemas"]["DataDump"][];
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
         };
     };
-    getCurrentUser: {
+    createDataDump: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    type: "daily" | "heartbeats";
+                    /** @default true */
+                    email_when_finished?: boolean;
+                };
+            };
+        };
         responses: {
-            /** @description User profile */
-            200: {
+            /** @description Export started */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["User"];
+                        data: components["schemas"]["DataDump"];
                     };
                 };
             };
@@ -1643,13 +2116,19 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
     createHeartbeat: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Machine/device name (fallback if not provided in request body) */
+                "X-Machine-Name"?: components["parameters"]["MachineNameHeader"];
+                /** @description User agent string (fallback if not provided in request body) */
+                "User-Agent"?: components["parameters"]["UserAgentHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -1670,13 +2149,19 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
     createHeartbeatsBulk: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Machine/device name (fallback if not provided in request body) */
+                "X-Machine-Name"?: components["parameters"]["MachineNameHeader"];
+                /** @description User agent string (fallback if not provided in request body) */
+                "User-Agent"?: components["parameters"]["UserAgentHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -1694,12 +2179,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         responses: [
-                            components["schemas"]["Heartbeat"],
+                            components["schemas"]["HeartbeatBulkItem"],
                             number
                         ][];
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1727,40 +2213,18 @@ export interface operations {
                 };
                 content?: never;
             };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
-    getStatusBarToday: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Today's status bar data */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Summary"];
-                        /** Format: date-time */
-                        cached_at?: string;
-                    };
-                };
-            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
     getSummaries: {
         parameters: {
             query?: {
+                /** @description Required if range is not provided. Use with end. */
                 start?: string;
+                /** @description Required if range is not provided. Use with start. */
                 end?: string;
-                /** @description Predefined range (alternative to start/end) */
+                /** @description Predefined range (alternative to start/end). One of start+end or range is required. */
                 range?: components["schemas"]["SummaryRange"];
                 project?: string;
                 /** @description Comma-separated branch names */
@@ -1768,6 +2232,7 @@ export interface operations {
                 /** @description Keystroke timeout in minutes */
                 timeout?: number;
                 writes_only?: boolean;
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. */
                 timezone?: string;
             };
             header?: never;
@@ -1793,43 +2258,7 @@ export interface operations {
                     };
                 };
             };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
-    getDurations: {
-        parameters: {
-            query: {
-                date: string;
-                project?: string;
-                branches?: string;
-                timeout?: number;
-                writes_only?: boolean;
-                timezone?: string;
-                slice_by?: "project" | "entity" | "language" | "dependencies" | "os" | "editor" | "category" | "machine";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of durations */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["Duration"][];
-                        branches?: string[];
-                        /** Format: date */
-                        start?: string;
-                        /** Format: date */
-                        end?: string;
-                        timezone?: string;
-                    };
-                };
-            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1838,6 +2267,8 @@ export interface operations {
             query?: {
                 timeout?: number;
                 writes_only?: boolean;
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. */
+                timezone?: string;
             };
             header?: never;
             path: {
@@ -1873,6 +2304,34 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getStatusBarToday: {
+        parameters: {
+            query?: {
+                /** @description IANA timezone (e.g. Asia/Tokyo). Determines what "today" means. Defaults to UTC when omitted. */
+                timezone?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Today's status bar data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Summary"];
+                        /** Format: date-time */
+                        cached_at?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     getAllTimeSinceToday: {
         parameters: {
             query?: {
@@ -1898,11 +2357,16 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    getProjects: {
+    getDurations: {
         parameters: {
-            query?: {
-                /** @description Search term */
-                q?: string;
+            query: {
+                date: string;
+                project?: string;
+                branches?: string;
+                timeout?: number;
+                writes_only?: boolean;
+                timezone?: string;
+                slice_by?: "project" | "entity" | "language" | "dependencies" | "operating_system" | "editor" | "category" | "machine";
             };
             header?: never;
             path?: never;
@@ -1910,14 +2374,20 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description List of projects */
+            /** @description List of durations */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Project"][];
+                        data: components["schemas"]["Duration"][];
+                        branches?: string[];
+                        /** Format: date */
+                        start?: string;
+                        /** Format: date */
+                        end?: string;
+                        timezone?: string;
                     };
                 };
             };
@@ -2209,61 +2679,6 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
-    getDataDumps: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List of data dumps */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["DataDump"][];
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
-    createDataDump: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @enum {string} */
-                    type: "daily" | "heartbeats";
-                    /** @default true */
-                    email_when_finished?: boolean;
-                };
-            };
-        };
-        responses: {
-            /** @description Export started */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["DataDump"];
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
     getExternalDurations: {
         parameters: {
             query: {
@@ -2537,6 +2952,29 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server is healthy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "ok";
+                    };
+                };
+            };
+        };
+    };
     getEditors: {
         parameters: {
             query?: {
@@ -2603,6 +3041,45 @@ export interface operations {
                             ip?: string;
                             version?: string;
                         };
+                    };
+                };
+            };
+        };
+    };
+    getGlobalStats: {
+        parameters: {
+            query?: {
+                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. */
+                timezone?: string;
+            };
+            header?: never;
+            path: {
+                range: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregate statistics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GlobalStats"];
+                    };
+                };
+            };
+            /** @description Stats are still being calculated */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: components["schemas"]["GlobalStats"];
+                        message?: string;
                     };
                 };
             };

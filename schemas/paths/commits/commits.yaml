@@ -1,0 +1,43 @@
+get:
+  operationId: getProjectCommits
+  tags:
+    - commits
+  summary: List commits for a project with coding time
+  parameters:
+    - name: project
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: author
+      in: query
+      schema:
+        type: string
+    - name: branch
+      in: query
+      schema:
+        type: string
+    - name: page
+      in: query
+      schema:
+        type: integer
+  responses:
+    '200':
+      description: List of commits
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/Commit.yaml
+              page:
+                type: integer
+              total_pages:
+                type: integer
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

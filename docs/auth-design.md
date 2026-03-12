@@ -33,7 +33,7 @@ Controlled by `INSTANCE_MODE` environment variable:
 | Context | Method | Lifetime |
 |---------|--------|----------|
 | Editor plugins | API key (`ck_...`) via Basic Auth / Bearer | Permanent (until regenerated) |
-| Web UI | Session cookie (`__session`) | 24 hours, sliding |
+| Web UI | Session cookie (`__Host-session`) | 24h idle / 7d absolute |
 | OAuth flow | PKCE + state parameter | One-time |
 
 ## OAuth Flow
@@ -57,7 +57,7 @@ Controlled by `INSTANCE_MODE` environment variable:
      b) NO + email matches existing user → Create PendingLink
      c) NO + new email → Create new user + oauth_account
    - Create session in DB (store SHA-256 of token)
-   - Set __session cookie (HttpOnly, Secure, SameSite=Strict)
+   - Set __Host-session cookie (HttpOnly, Secure, SameSite=Lax, Path=/)
    - Return user + api_key
 ```
 
@@ -103,12 +103,12 @@ Controlled by `INSTANCE_MODE` environment variable:
 
 | Property | Value |
 |----------|-------|
-| Cookie name | `__session` |
-| Cookie flags | `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/` |
-| Token format | 32 bytes random (Web Crypto `getRandomValues`) |
+| Cookie name | `__Host-session` (`__Host-` prefix enforces Secure, Path=/, no Domain) |
+| Cookie flags | `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/` |
+| Token format | 32 bytes random (Web Crypto `getRandomValues`), base64url |
 | Storage | SHA-256 hash in `sessions` table (never plaintext) |
-| TTL | 24 hours from creation |
-| Sliding | `last_active_at` updated on each request |
+| Idle timeout | 24 hours (`last_active_at` updated on each request) |
+| Absolute expiry | 7 days from creation |
 | Revocation | DELETE /auth/session removes from DB |
 | Cleanup | Cron purges expired sessions hourly |
 
@@ -120,7 +120,7 @@ Example: ck_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
 ```
 
 - Generated via Web Crypto API
-- Stored as-is in DB (not hashed, since it must be returned to user)
+- Stored as SHA-256 hash in DB (`api_key_hash` column); plaintext shown only once
 - Can be regenerated via POST /auth/api-key (old key immediately invalidated)
 
 ## Token Encryption at Rest
@@ -157,6 +157,5 @@ GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
 DISCORD_CLIENT_ID
 DISCORD_CLIENT_SECRET
-SESSION_SECRET          # 32+ bytes hex, used for HMAC of state params
-ENCRYPTION_KEY          # 32 bytes hex, AES-256 key for token encryption
+ENCRYPTION_KEY          # 64 hex chars (256 bits), AES-256 key for token encryption
 ```

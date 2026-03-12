@@ -1,0 +1,20 @@
+type: object
+required:
+  - data
+  - error
+properties:
+  data:
+    oneOf:
+      - type: object
+        required:
+          - id
+        properties:
+          id:
+            type: string
+      - type: 'null'
+    description: Created heartbeat ID or null on error
+  error:
+    oneOf:
+      - type: string
+      - type: 'null'
+    description: Error message or null on success

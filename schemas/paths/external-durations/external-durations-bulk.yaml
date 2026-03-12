@@ -1,0 +1,57 @@
+post:
+  operationId: createExternalDurationsBulk
+  tags:
+    - external_durations
+  summary: Create up to 100 external durations
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: array
+          items:
+            $ref: ../../components/schemas/ExternalDurationInput.yaml
+          maxItems: 100
+  responses:
+    '201':
+      description: External durations created
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/ExternalDuration.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+delete:
+  operationId: deleteExternalDurationsBulk
+  tags:
+    - external_durations
+  summary: Delete external durations
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - date
+            - ids
+          properties:
+            date:
+              type: string
+              format: date
+            ids:
+              type: array
+              items:
+                type: string
+  responses:
+    '204':
+      description: External durations deleted
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

@@ -1,0 +1,48 @@
+type: object
+required:
+  - id
+  - action
+  - source
+  - operation
+  - source_value
+  - destination
+  - destination_value
+properties:
+  id:
+    type: string
+  action:
+    type: string
+    enum:
+      - change
+      - delete
+  source:
+    type: string
+    enum:
+      - project
+      - language
+      - editor
+      - operating_system
+      - category
+      - entity
+  operation:
+    type: string
+    enum:
+      - equals
+      - contains
+      - starts with
+      - ends with
+  source_value:
+    type: string
+  destination:
+    type: string
+    enum:
+      - project
+      - language
+      - editor
+      - operating_system
+      - category
+      - entity
+  destination_value:
+    type: string
+  priority:
+    type: integer

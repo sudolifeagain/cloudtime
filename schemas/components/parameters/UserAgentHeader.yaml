@@ -1,0 +1,6 @@
+name: User-Agent
+in: header
+required: false
+schema:
+  type: string
+description: User agent string (fallback if not provided in request body)

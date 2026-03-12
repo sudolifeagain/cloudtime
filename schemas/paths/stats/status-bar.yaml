@@ -1,0 +1,34 @@
+get:
+  operationId: getStatusBarToday
+  tags:
+    - status_bar
+  summary: Today's coding activity for IDE status bars
+  description: >-
+    Cached version of summaries for today. Returns a summary with zero values
+    while cache is being populated.
+  parameters:
+    - name: timezone
+      in: query
+      description: >-
+        IANA timezone (e.g. Asia/Tokyo). Determines what "today" means.
+        Defaults to UTC when omitted.
+      schema:
+        type: string
+        example: Asia/Tokyo
+  responses:
+    '200':
+      description: Today's status bar data
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/Summary.yaml
+              cached_at:
+                type: string
+                format: date-time
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

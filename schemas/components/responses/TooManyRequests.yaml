@@ -1,0 +1,20 @@
+description: |
+  Rate limit exceeded. Recommended limits:
+  - OAuth start/callback: 10 req/min per IP
+  - API key regeneration: 3 req/min per user
+  - Account linking: 5 req/min per user
+  - Session management: 30 req/min per user
+  Implementation: Use Cloudflare Workers native Rate Limiting binding.
+headers:
+  Retry-After:
+    description: Seconds until the rate limit resets
+    schema:
+      type: integer
+content:
+  application/json:
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Too many requests

@@ -1,0 +1,56 @@
+patch:
+  operationId: updateProfile
+  tags:
+    - users
+  summary: Update current user's profile
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            username:
+              type: string
+            display_name:
+              type: string
+            bio:
+              type: string
+            city:
+              type: string
+            timezone:
+              type: string
+            timeout:
+              type: integer
+              minimum: 1
+              maximum: 60
+            is_hireable:
+              type: boolean
+            github_username:
+              type: string
+            twitter_username:
+              type: string
+            website:
+              type: string
+              format: uri
+            photo:
+              type: string
+              format: uri
+  responses:
+    '200':
+      description: Profile updated
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/User.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '409':
+      $ref: ../../components/responses/Conflict.yaml

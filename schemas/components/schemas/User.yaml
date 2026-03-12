@@ -1,0 +1,58 @@
+type: object
+required:
+  - id
+  - username
+  - created_at
+properties:
+  id:
+    type: string
+  username:
+    type: string
+  display_name:
+    type: string
+  email:
+    type: string
+    format: email
+  email_verified:
+    type: boolean
+    description: Whether the user's email has been verified by an OAuth provider
+  photo:
+    type: string
+    format: uri
+  bio:
+    type: string
+  city:
+    type: string
+  timezone:
+    type: string
+  last_heartbeat_at:
+    type: string
+    format: date-time
+  last_project:
+    type: string
+  plan:
+    type: string
+    enum:
+      - free
+      - basic
+      - premium
+  timeout:
+    type: integer
+    description: Keystroke timeout in minutes
+    minimum: 1
+    maximum: 60
+  is_hireable:
+    type: boolean
+  github_username:
+    type: string
+  twitter_username:
+    type: string
+  website:
+    type: string
+    format: uri
+  created_at:
+    type: string
+    format: date-time
+  modified_at:
+    type: string
+    format: date-time

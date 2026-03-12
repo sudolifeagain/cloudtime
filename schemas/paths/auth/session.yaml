@@ -1,0 +1,62 @@
+get:
+  operationId: getSession
+  tags:
+    - auth
+  summary: Get current session info
+  description: |
+    Returns the current user and linked OAuth providers for the authenticated session.
+
+    **Session lifecycle:**
+    - Sliding expiration: 24 hours of inactivity invalidates the session.
+      `last_active_at` is updated at most once per 5 minutes to reduce D1 writes.
+    - Absolute expiration: sessions expire 7 days after creation regardless of activity.
+    - Sessions are stored as SHA-256 hashes in D1; the raw token never leaves the client cookie.
+  responses:
+    '200':
+      description: Current session
+      headers:
+        Cache-Control:
+          description: Set to `no-store` to prevent caching of session data
+          schema:
+            type: string
+            enum:
+              - no-store
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: object
+                required:
+                  - user
+                properties:
+                  user:
+                    $ref: ../../components/schemas/User.yaml
+                  providers:
+                    type: array
+                    items:
+                      $ref: ../../components/schemas/LinkedProvider.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+delete:
+  operationId: logout
+  tags:
+    - auth
+  summary: Logout - invalidate current session
+  description: |
+    Deletes the session from the database and clears the session cookie.
+    Both steps are required: cookie deletion alone leaves a valid session in the DB,
+    and DB deletion alone leaves a cookie traveling on the wire.
+  responses:
+    '204':
+      description: Session invalidated
+      headers:
+        Set-Cookie:
+          description: Clear session cookie (Max-Age=0)
+          schema:
+            type: string
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

@@ -1,0 +1,18 @@
+delete:
+  operationId: unlinkProvider
+  tags:
+    - auth
+  summary: Unlink an OAuth provider from current account
+  parameters:
+    - name: provider
+      in: path
+      required: true
+      schema:
+        $ref: ../../components/schemas/OAuthProvider.yaml
+  responses:
+    '204':
+      description: Provider unlinked
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

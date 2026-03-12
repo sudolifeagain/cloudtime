@@ -1,0 +1,76 @@
+get:
+  operationId: oauthLinkCallback
+  tags:
+    - auth
+  summary: OAuth link callback - links provider to current account
+  description: |
+    Handles the OAuth callback for account linking. The user must be authenticated
+    (session cookie sent via SameSite=Lax on the cross-site redirect).
+
+    **Security checks:**
+    - Validates state and PKCE code_verifier (same as login callback).
+    - Verifies the provider's email is marked as verified before storing.
+    - If the provider account is already linked to a different user, returns 409 Conflict.
+
+    Uses `Referrer-Policy: no-referrer` and `Cache-Control: no-store` headers.
+  parameters:
+    - name: provider
+      in: path
+      required: true
+      schema:
+        $ref: ../../components/schemas/OAuthProvider.yaml
+    - name: code
+      in: query
+      required: true
+      schema:
+        type: string
+    - name: state
+      in: query
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Provider linked successfully
+      headers:
+        Referrer-Policy:
+          description: Set to `no-referrer` to prevent code leakage
+          schema:
+            type: string
+            enum:
+              - no-referrer
+        Cache-Control:
+          description: Set to `no-store` to prevent caching
+          schema:
+            type: string
+            enum:
+              - no-store
+        Pragma:
+          description: HTTP/1.0 backward compatibility
+          schema:
+            type: string
+            enum:
+              - no-cache
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: object
+                required:
+                  - provider
+                  - provider_username
+                properties:
+                  provider:
+                    $ref: ../../components/schemas/OAuthProvider.yaml
+                  provider_username:
+                    type: string
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '409':
+      $ref: ../../components/responses/Conflict.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml

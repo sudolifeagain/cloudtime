@@ -1,0 +1,18 @@
+type: object
+required:
+  - id
+  - value
+properties:
+  id:
+    type: string
+  value:
+    type: string
+    description: Machine hostname
+  ip:
+    type: string
+  last_seen_at:
+    type: string
+    format: date-time
+  created_at:
+    type: string
+    format: date-time

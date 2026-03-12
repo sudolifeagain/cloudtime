@@ -1,0 +1,26 @@
+type: object
+required:
+  - id
+  - value
+properties:
+  id:
+    type: string
+  value:
+    type: string
+    description: Full user agent string
+  editor:
+    type: string
+  version:
+    type: string
+  os:
+    type: string
+  is_browser_extension:
+    type: boolean
+  is_desktop_app:
+    type: boolean
+  last_seen_at:
+    type: string
+    format: date-time
+  created_at:
+    type: string
+    format: date-time

@@ -63,7 +63,7 @@ schemas/
 
 - Session tokens stored as SHA-256 hash, never plaintext
 - OAuth tokens encrypted with AES-256-GCM at rest
-- Cookies: `HttpOnly`, `Secure`, `SameSite=Strict`
+- Cookies: `HttpOnly`, `Secure`, `SameSite=Lax`, `__Host-` prefix in production
 - OAuth flows use PKCE + state parameter
 - Never expose API keys in responses except on creation/regeneration
 

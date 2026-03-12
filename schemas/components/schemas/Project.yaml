@@ -1,0 +1,37 @@
+type: object
+required:
+  - id
+  - name
+properties:
+  id:
+    type: string
+  name:
+    type: string
+  repository:
+    type: string
+    format: uri
+  badge:
+    type: string
+    format: uri
+  color:
+    type: string
+  has_public_url:
+    type: boolean
+  human_readable_last_heartbeat_at:
+    type: string
+  last_heartbeat_at:
+    type: string
+    format: date-time
+  human_readable_first_heartbeat_at:
+    type: string
+  first_heartbeat_at:
+    type: string
+    format: date-time
+  urlencoded_name:
+    type: string
+  url:
+    type: string
+    format: uri
+  created_at:
+    type: string
+    format: date-time
