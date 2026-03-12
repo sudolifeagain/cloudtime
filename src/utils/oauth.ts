@@ -4,6 +4,15 @@
 import * as jose from "jose";
 import type { Env } from "../types";
 
+// ─── Validation ──────────────────────────────────────────
+
+export class OAuthValidationError extends Error {
+  constructor(context: string) {
+    super(`OAuth validation failed: ${context}`);
+    this.name = "OAuthValidationError";
+  }
+}
+
 // ─── Types ───────────────────────────────────────────────
 
 export type OAuthProvider = "github" | "google" | "discord";
@@ -109,7 +118,7 @@ export function buildAuthorizeUrl(
   }
 }
 
-// ─── Token Exchange ──────────────────────────────────────
+// ─── Assertion Functions ─────────────────────────────────
 
 interface TokenResponse {
   access_token: string;
@@ -119,6 +128,138 @@ interface TokenResponse {
   id_token?: string;
   scope?: string;
 }
+
+function assertTokenResponse(
+  data: unknown,
+): asserts data is TokenResponse & { error?: string; error_description?: string } {
+  if (typeof data !== "object" || data === null) {
+    throw new OAuthValidationError("token response is not an object");
+  }
+  const obj = data as Record<string, unknown>;
+
+  // Check for provider error responses first (GitHub returns 200 with error field)
+  if (typeof obj.error === "string") return;
+
+  if (typeof obj.access_token !== "string" || obj.access_token === "") {
+    throw new OAuthValidationError("token response missing access_token");
+  }
+  if (typeof obj.token_type !== "string" || obj.token_type === "") {
+    throw new OAuthValidationError("token response missing token_type");
+  }
+  if (obj.refresh_token !== undefined && typeof obj.refresh_token !== "string") {
+    throw new OAuthValidationError("token response refresh_token is not a string");
+  }
+  if (obj.expires_in !== undefined && typeof obj.expires_in !== "number") {
+    throw new OAuthValidationError("token response expires_in is not a number");
+  }
+  if (obj.id_token !== undefined && typeof obj.id_token !== "string") {
+    throw new OAuthValidationError("token response id_token is not a string");
+  }
+  if (obj.scope !== undefined && typeof obj.scope !== "string") {
+    throw new OAuthValidationError("token response scope is not a string");
+  }
+}
+
+interface GitHubUser {
+  id: number;
+  login: string;
+}
+
+function assertGitHubUser(data: unknown): asserts data is GitHubUser {
+  if (typeof data !== "object" || data === null) {
+    throw new OAuthValidationError("GitHub /user response is not an object");
+  }
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.id !== "number") {
+    throw new OAuthValidationError("GitHub /user id is not a number");
+  }
+  if (typeof obj.login !== "string" || obj.login === "") {
+    throw new OAuthValidationError("GitHub /user login is not a string");
+  }
+}
+
+interface GitHubEmail {
+  email: string;
+  primary: boolean;
+  verified: boolean;
+}
+
+function assertGitHubEmails(data: unknown): asserts data is GitHubEmail[] {
+  if (!Array.isArray(data)) {
+    throw new OAuthValidationError("GitHub /user/emails response is not an array");
+  }
+  for (const item of data) {
+    if (typeof item !== "object" || item === null) {
+      throw new OAuthValidationError("GitHub /user/emails entry is not an object");
+    }
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.email !== "string") {
+      throw new OAuthValidationError("GitHub /user/emails entry missing email");
+    }
+    if (typeof entry.primary !== "boolean") {
+      throw new OAuthValidationError("GitHub /user/emails entry missing primary");
+    }
+    if (typeof entry.verified !== "boolean") {
+      throw new OAuthValidationError("GitHub /user/emails entry missing verified");
+    }
+  }
+}
+
+interface DiscordUser {
+  id: string;
+  username: string;
+  global_name: string | null;
+  email: string | null;
+  verified: boolean;
+}
+
+function assertDiscordUser(data: unknown): asserts data is DiscordUser {
+  if (typeof data !== "object" || data === null) {
+    throw new OAuthValidationError("Discord /users/@me response is not an object");
+  }
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.id !== "string" || obj.id === "") {
+    throw new OAuthValidationError("Discord /users/@me id is not a string");
+  }
+  if (typeof obj.username !== "string" || obj.username === "") {
+    throw new OAuthValidationError("Discord /users/@me username is not a string");
+  }
+  if (typeof obj.verified !== "boolean") {
+    throw new OAuthValidationError("Discord /users/@me verified is not a boolean");
+  }
+}
+
+// ─── Scope Verification ─────────────────────────────────
+
+const REQUIRED_SCOPES: Record<OAuthProvider, string[] | null> = {
+  github: ["read:user", "user:email"],
+  discord: ["identify", "email"],
+  google: null, // OpenID Connect: validated via id_token claims
+};
+
+function verifyGrantedScopes(provider: OAuthProvider, scopeField: string | undefined): void {
+  const required = REQUIRED_SCOPES[provider];
+  if (!required) return;
+
+  if (!scopeField) {
+    console.warn(`${provider} token response missing scope field`);
+    return; // downstream fetchUserInfo will detect insufficient permissions
+  }
+
+  // GitHub uses comma-separated, Discord uses space-separated — handle both
+  const granted = new Set(
+    scopeField.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean),
+  );
+  const missing = required.filter((s) => !granted.has(s));
+
+  if (missing.length > 0) {
+    throw new OAuthValidationError(
+      `${provider}: required scopes not granted: ${missing.join(", ")}`,
+    );
+  }
+}
+
+// ─── Token Exchange ──────────────────────────────────────
 
 export async function exchangeCode(
   provider: OAuthProvider,
@@ -149,11 +290,12 @@ export async function exchangeCode(
     ...PROVIDER_FETCH_OPTS,
   });
 
-  const data = (await res.json()) as TokenResponse & { error?: string; error_description?: string };
+  const raw: unknown = await res.json();
+  assertTokenResponse(raw);
 
   // GitHub returns 200 even on errors
-  if (data.error) {
-    console.error(`OAuth token exchange failed for ${provider}: ${data.error}`);
+  if (raw.error) {
+    console.error(`OAuth token exchange failed for ${provider}: ${raw.error}`);
     throw new Error("OAuth token exchange failed");
   }
 
@@ -161,11 +303,9 @@ export async function exchangeCode(
     throw new Error(`OAuth token exchange failed: HTTP ${res.status}`);
   }
 
-  if (!data.access_token || !data.token_type) {
-    throw new Error("OAuth token response missing required fields");
-  }
+  verifyGrantedScopes(provider, raw.scope);
 
-  return data;
+  return raw;
 }
 
 function getTokenEndpoint(
@@ -251,19 +391,11 @@ async function fetchGitHubUser(
   if (!userRes.ok) throw new Error(`GitHub /user failed: ${userRes.status}`);
   if (!emailsRes.ok) throw new Error(`GitHub /user/emails failed: ${emailsRes.status}`);
 
-  const user = (await userRes.json()) as { id: number; login: string };
-  if (!user.id || !user.login) {
-    throw new Error("GitHub API returned unexpected user data");
-  }
+  const user: unknown = await userRes.json();
+  assertGitHubUser(user);
 
-  const emails = (await emailsRes.json()) as Array<{
-    email: string;
-    primary: boolean;
-    verified: boolean;
-  }>;
-  if (!Array.isArray(emails)) {
-    throw new Error("GitHub API returned unexpected emails data");
-  }
+  const emails: unknown = await emailsRes.json();
+  assertGitHubEmails(emails);
 
   const primaryEmail = emails.find((e) => e.primary && e.verified);
 
@@ -302,8 +434,8 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
   const cached = await kv.get(kvKey);
   if (cached) {
     try {
-      const jwks = JSON.parse(cached) as jose.JSONWebKeySet;
-      cachedJWKS = jose.createLocalJWKSet(jwks);
+      const jwks: unknown = JSON.parse(cached);
+      cachedJWKS = jose.createLocalJWKSet(jwks as jose.JSONWebKeySet);
       jwksCachedAt = Date.now();
       return cachedJWKS;
     } catch {
@@ -326,11 +458,18 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
     try {
       const res = await fetch("https://www.googleapis.com/oauth2/v3/certs", PROVIDER_FETCH_OPTS);
       if (!res.ok) throw new Error(`Failed to fetch Google JWKS: ${res.status}`);
-      const jwks = (await res.json()) as jose.JSONWebKeySet;
+      const jwks: unknown = await res.json();
+
+      let keySet: jose.JWTVerifyGetKey;
+      try {
+        keySet = jose.createLocalJWKSet(jwks as jose.JSONWebKeySet);
+      } catch {
+        throw new OAuthValidationError("Google JWKS response is not a valid JWK Set");
+      }
 
       // Cache in KV (10 min TTL)
       await kv.put(kvKey, JSON.stringify(jwks), { expirationTtl: 600 });
-      cachedJWKS = jose.createLocalJWKSet(jwks);
+      cachedJWKS = keySet;
       jwksCachedAt = Date.now();
       return cachedJWKS;
     } catch (err) {
@@ -460,16 +599,8 @@ async function fetchDiscordUser(
 
   if (!res.ok) throw new Error(`Discord /users/@me failed: ${res.status}`);
 
-  const user = (await res.json()) as {
-    id: string;
-    username: string;
-    global_name: string | null;
-    email: string | null;
-    verified: boolean;
-  };
-  if (!user.id || !user.username) {
-    throw new Error("Discord API returned unexpected user data");
-  }
+  const user: unknown = await res.json();
+  assertDiscordUser(user);
 
   return {
     providerUserId: user.id,
