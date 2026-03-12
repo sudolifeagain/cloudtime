@@ -186,24 +186,6 @@ export async function invalidateOtherSessions(
   await Promise.all(deletes);
 }
 
-export async function invalidateAllUserSessions(
-  db: D1Database,
-  kv: KVNamespace,
-  userId: string,
-): Promise<void> {
-  const { results } = await db
-    .prepare("SELECT token_hash FROM sessions WHERE user_id = ?")
-    .bind(userId)
-    .all<{ token_hash: string }>();
-
-  const deletes: Promise<unknown>[] = results.map((r) => kv.delete(`session:${r.token_hash}`));
-  deletes.push(
-    db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run(),
-  );
-
-  await Promise.all(deletes);
-}
-
 // ─── Cookie Helpers ──────────────────────────────────────
 
 function isDev(env: Env): boolean {

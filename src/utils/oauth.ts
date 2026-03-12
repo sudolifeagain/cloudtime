@@ -414,10 +414,11 @@ export async function revokeProviderToken(
             console.error(`Discord ${hint} revocation failed: HTTP ${res.status}`);
           }
         };
-        await revokeDiscordToken(accessToken, "access_token");
+        const revocations: Promise<void>[] = [revokeDiscordToken(accessToken, "access_token")];
         if (refreshToken) {
-          await revokeDiscordToken(refreshToken, "refresh_token");
+          revocations.push(revokeDiscordToken(refreshToken, "refresh_token"));
         }
+        await Promise.all(revocations);
         break;
       }
     }

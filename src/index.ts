@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { Env } from "./types";
+import { matchOrigin } from "./utils/origin";
 import meta from "./routes/meta";
 import auth from "./routes/auth";
 import heartbeats from "./routes/heartbeats";
@@ -16,12 +17,7 @@ app.use("/*", secureHeaders());
 app.use(
   "/*",
   cors({
-    origin: (origin, c) => {
-      const appUrl = (c.env as Env).APP_URL?.replace(/\/+$/, "");
-      if (appUrl) return origin === appUrl ? origin : "";
-      // Development: reflect origin (allow all)
-      return origin;
-    },
+    origin: (origin, c) => matchOrigin(origin, (c.env as Env).APP_URL),
     credentials: true,
   }),
 );
@@ -61,10 +57,9 @@ export default {
           ).all<{ token_hash: string }>(),
         ]);
 
-        // Delete expired records from D1
+        // Delete expired records from D1 (same condition as SELECT to avoid orphaned KV entries)
         await env.DB.batch([
-          env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')"),
-          env.DB.prepare("DELETE FROM sessions WHERE last_active_at < datetime('now', '-1 day')"),
+          env.DB.prepare("DELETE FROM sessions WHERE expires_at < datetime('now') OR last_active_at < datetime('now', '-1 day')"),
           env.DB.prepare("DELETE FROM pending_links WHERE expires_at < datetime('now')"),
         ]);
 
