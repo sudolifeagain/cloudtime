@@ -251,11 +251,54 @@ heartbeats.delete("/heartbeats.bulk", async (c) => {
 
   try {
     const placeholders = body.ids.map(() => "?").join(", ");
+
+    // Step 1: Get distinct projects from heartbeats being deleted
+    const { results: affectedProjects } = await c.env.DB.prepare(
+      `SELECT DISTINCT project FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? AND id IN (${placeholders}) AND project IS NOT NULL`
+    )
+      .bind(userId, range.dayStart, range.dayEnd, ...body.ids)
+      .all<{ project: string }>();
+
+    // Step 2: Delete heartbeats
     await c.env.DB.prepare(
       `DELETE FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? AND id IN (${placeholders})`
     )
       .bind(userId, range.dayStart, range.dayEnd, ...body.ids)
       .run();
+
+    // Step 3: Update user_projects for affected projects
+    if (affectedProjects.length > 0) {
+      // Batch query remaining heartbeats for each affected project
+      const selectStmts = affectedProjects.map(({ project }) =>
+        c.env.DB.prepare(
+          "SELECT MIN(time) as first_hb, MAX(time) as last_hb FROM heartbeats WHERE user_id = ? AND project = ?"
+        ).bind(userId, project)
+      );
+      const selectResults = await c.env.DB.batch(selectStmts);
+
+      // Build update/delete statements based on results
+      const updateStmts: D1PreparedStatement[] = [];
+      for (let i = 0; i < affectedProjects.length; i++) {
+        const project = affectedProjects[i].project;
+        const row = selectResults[i].results?.[0] as { first_hb: number | null; last_hb: number | null } | undefined;
+        if (row?.first_hb != null && row?.last_hb != null) {
+          updateStmts.push(
+            c.env.DB.prepare(
+              "UPDATE user_projects SET first_heartbeat_at = ?, last_heartbeat_at = ? WHERE user_id = ? AND project = ?"
+            ).bind(row.first_hb, row.last_hb, userId, project)
+          );
+        } else {
+          updateStmts.push(
+            c.env.DB.prepare(
+              "DELETE FROM user_projects WHERE user_id = ? AND project = ?"
+            ).bind(userId, project)
+          );
+        }
+      }
+      if (updateStmts.length > 0) {
+        await c.env.DB.batch(updateStmts);
+      }
+    }
   } catch (err) {
     console.error("DELETE /heartbeats.bulk error:", err);
     return c.json({ error: "Internal server error" }, 500);

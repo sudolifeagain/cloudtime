@@ -2,6 +2,7 @@
  * OAuth provider configurations, token exchange, and user info fetching.
  */
 import * as jose from "jose";
+import { z } from "zod";
 import type { Env } from "../types";
 
 // ─── Types ───────────────────────────────────────────────
@@ -112,16 +113,68 @@ export function buildAuthorizeUrl(
   }
 }
 
-// ─── Token Exchange ──────────────────────────────────────
+// ─── Response Schemas (zod) ──────────────────────────────
 
-interface TokenResponse {
-  access_token: string;
-  token_type: string;
-  refresh_token?: string;
-  expires_in?: number;
-  id_token?: string;
-  scope?: string;
+const tokenResponseSchema = z.object({
+  access_token: z.string().min(1),
+  token_type: z.string().min(1),
+  refresh_token: z.string().optional(),
+  expires_in: z.number().optional(),
+  id_token: z.string().optional(),
+  scope: z.string().optional(),
+});
+
+const tokenErrorSchema = z.object({
+  error: z.string(),
+  error_description: z.string().optional(),
+});
+
+type TokenResponse = z.infer<typeof tokenResponseSchema>;
+
+const githubUserSchema = z.object({
+  id: z.number(),
+  login: z.string(),
+});
+
+const githubEmailSchema = z.array(z.object({
+  email: z.string(),
+  primary: z.boolean(),
+  verified: z.boolean(),
+}));
+
+const discordUserSchema = z.object({
+  id: z.string(),
+  username: z.string(),
+  global_name: z.string().nullable(),
+  email: z.string().nullable(),
+  verified: z.boolean().optional(),
+});
+
+// ─── Scope Verification ─────────────────────────────────
+
+/**
+ * Verify that the OAuth provider granted all required scopes.
+ * Google is skipped because its scopes are validated via JWT claims in verifyGoogleIdToken.
+ */
+function verifyGrantedScopes(provider: string, grantedScope?: string): void {
+  const required: Record<string, string[]> = {
+    github: ["read:user", "user:email"],
+    discord: ["identify", "email"],
+  };
+  const requiredScopes = required[provider];
+  if (!requiredScopes) return; // Google — JWT verification handles scope
+
+  if (!grantedScope) {
+    throw new Error(`${provider} did not return granted scopes`);
+  }
+  const granted = new Set(grantedScope.split(/[\s,]+/));
+  const missing = requiredScopes.filter((s) => !granted.has(s));
+  if (missing.length > 0) {
+    throw new Error(`${provider} denied required scopes: ${missing.join(", ")}`);
+  }
 }
+
+// ─── Token Exchange ──────────────────────────────────────
 
 export async function exchangeCode(
   provider: OAuthProvider,
@@ -152,11 +205,14 @@ export async function exchangeCode(
     ...PROVIDER_FETCH_OPTS,
   });
 
-  const data = (await res.json()) as TokenResponse & { error?: string; error_description?: string };
+  const json = await res.json().catch(() => {
+    throw new Error(`${provider} token endpoint returned non-JSON response (HTTP ${res.status})`);
+  });
 
-  // GitHub returns 200 even on errors
-  if (data.error) {
-    console.error(`OAuth token exchange failed for ${provider}: ${data.error}`);
+  // GitHub returns 200 even on errors — check error field first
+  const errorResult = tokenErrorSchema.safeParse(json);
+  if (errorResult.success && errorResult.data.error) {
+    console.error(`OAuth token exchange failed for ${provider}: ${errorResult.data.error}`);
     throw new Error("OAuth token exchange failed");
   }
 
@@ -164,11 +220,15 @@ export async function exchangeCode(
     throw new Error(`OAuth token exchange failed: HTTP ${res.status}`);
   }
 
-  if (!data.access_token || !data.token_type) {
-    throw new Error("OAuth token response missing required fields");
+  const result = tokenResponseSchema.safeParse(json);
+  if (!result.success) {
+    console.error(`${provider} token response validation failed:`, result.error.message);
+    throw new Error("OAuth token response has unexpected format");
   }
 
-  return data;
+  verifyGrantedScopes(provider, result.data.scope);
+
+  return result.data;
 }
 
 function getTokenEndpoint(
@@ -257,19 +317,25 @@ async function fetchGitHubUser(
   if (!userRes.ok) throw new Error(`GitHub /user failed: ${userRes.status}`);
   if (!emailsRes.ok) throw new Error(`GitHub /user/emails failed: ${emailsRes.status}`);
 
-  const user = (await userRes.json()) as { id: number; login: string };
-  if (!user.id || !user.login) {
-    throw new Error("GitHub API returned unexpected user data");
+  const userJson = await userRes.json().catch(() => {
+    throw new Error("GitHub /user returned non-JSON response");
+  });
+  const userResult = githubUserSchema.safeParse(userJson);
+  if (!userResult.success) {
+    console.error("GitHub /user response validation failed:", userResult.error.message);
+    throw new Error("Unexpected GitHub /user response format");
   }
+  const user = userResult.data;
 
-  const emails = (await emailsRes.json()) as Array<{
-    email: string;
-    primary: boolean;
-    verified: boolean;
-  }>;
-  if (!Array.isArray(emails)) {
-    throw new Error("GitHub API returned unexpected emails data");
+  const emailsJson = await emailsRes.json().catch(() => {
+    throw new Error("GitHub /user/emails returned non-JSON response");
+  });
+  const emailsResult = githubEmailSchema.safeParse(emailsJson);
+  if (!emailsResult.success) {
+    console.error("GitHub /user/emails response validation failed:", emailsResult.error.message);
+    throw new Error("Unexpected GitHub /user/emails response format");
   }
+  const emails = emailsResult.data;
 
   const primaryEmail = emails.find((e) => e.primary && e.verified);
 
@@ -550,22 +616,21 @@ async function fetchDiscordUser(
 
   if (!res.ok) throw new Error(`Discord /users/@me failed: ${res.status}`);
 
-  const user = (await res.json()) as {
-    id: string;
-    username: string;
-    global_name: string | null;
-    email: string | null;
-    verified: boolean;
-  };
-  if (!user.id || !user.username) {
-    throw new Error("Discord API returned unexpected user data");
+  const json = await res.json().catch(() => {
+    throw new Error("Discord /users/@me returned non-JSON response");
+  });
+  const result = discordUserSchema.safeParse(json);
+  if (!result.success) {
+    console.error("Discord /users/@me response validation failed:", result.error.message);
+    throw new Error("Unexpected Discord /users/@me response format");
   }
+  const user = result.data;
 
   return {
     providerUserId: user.id,
     providerUsername: user.global_name || user.username,
-    providerEmail: user.verified ? user.email : null,
-    emailVerified: user.verified && user.email !== null,
+    providerEmail: user.verified === true ? user.email : null,
+    emailVerified: user.verified === true && user.email !== null,
     accessToken,
     refreshToken,
     tokenExpiresAt,
