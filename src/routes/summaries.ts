@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, getUserTimezone } from "../middleware/auth";
 import { resolveDateRange, formatDigital, formatHumanReadable, isValidTimezone } from "../utils/time-format";
 import { buildSummary, type SummaryRow } from "../utils/summary-builder";
 
@@ -26,7 +26,7 @@ summaries.get("/summaries", async (c) => {
   if (tzParam && !isValidTimezone(tzParam)) {
     return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
   }
-  const tz = tzParam || c.get("userTimezone");
+  const tz = tzParam || await getUserTimezone(c);
 
   const resolved = resolveDateRange(range, start, end, tz);
   if (!resolved) {

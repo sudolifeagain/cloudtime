@@ -67,37 +67,58 @@ export function getToday(tz?: string): Date {
   return new Date(Date.UTC(y, m - 1, d));
 }
 
-/**
- * Get epoch boundaries (start inclusive, end exclusive) for a calendar date in a timezone.
- * Returns the UTC epoch seconds for midnight-to-midnight of the given date in the given timezone.
- */
-export function getEpochBoundsForDate(dateStr: string, tz?: string): { start: number; end: number } {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const utcMidnightSecs = Date.UTC(y, m - 1, d) / 1000;
+const epochFormatterCache = new Map<string, Intl.DateTimeFormat>();
 
-  if (!tz || tz === "UTC") {
-    return { start: utcMidnightSecs, end: utcMidnightSecs + 86400 };
-  }
-
-  const refDate = new Date(utcMidnightSecs * 1000);
-  const opts: Intl.DateTimeFormatOptions = {
+function getEpochFormatter(tz: string): Intl.DateTimeFormat {
+  const cached = epochFormatterCache.get(tz);
+  if (cached) return cached;
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
     year: "numeric", month: "numeric", day: "numeric",
     hour: "numeric", minute: "numeric", second: "numeric",
     hourCycle: "h23",
-  };
+  });
+  epochFormatterCache.set(tz, fmt);
+  return fmt;
+}
 
-  const utcParts = new Intl.DateTimeFormat("en-US", { ...opts, timeZone: "UTC" }).formatToParts(refDate);
-  const tzParts = new Intl.DateTimeFormat("en-US", { ...opts, timeZone: tz }).formatToParts(refDate);
+/**
+ * Compute the UTC epoch (seconds) of local midnight for a given YYYY-MM-DD in a timezone.
+ */
+function midnightEpoch(y: number, m: number, d: number, tz: string): number {
+  const utcMidnightMs = Date.UTC(y, m - 1, d);
+  const refDate = new Date(utcMidnightMs);
+
+  const utcFmt = getEpochFormatter("UTC");
+  const tzFmt = getEpochFormatter(tz);
 
   const toMs = (parts: Intl.DateTimeFormatPart[]) => {
     const g = (t: string) => parseInt(parts.find((p) => p.type === t)?.value ?? "0", 10);
     return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second"));
   };
 
-  const offsetSecs = (toMs(tzParts) - toMs(utcParts)) / 1000;
-  const startSecs = utcMidnightSecs - offsetSecs;
+  const offsetMs = toMs(tzFmt.formatToParts(refDate)) - toMs(utcFmt.formatToParts(refDate));
+  return (utcMidnightMs - offsetMs) / 1000;
+}
 
-  return { start: startSecs, end: startSecs + 86400 };
+/**
+ * Get epoch boundaries (start inclusive, end exclusive) for a calendar date in a timezone.
+ * Computes both boundaries independently so DST transitions (23h/25h days) are handled correctly.
+ */
+export function getEpochBoundsForDate(dateStr: string, tz?: string): { start: number; end: number } {
+  const [y, m, d] = dateStr.split("-").map(Number);
+
+  if (!tz || tz === "UTC") {
+    const utcMidnightSecs = Date.UTC(y, m - 1, d) / 1000;
+    return { start: utcMidnightSecs, end: utcMidnightSecs + 86400 };
+  }
+
+  const start = midnightEpoch(y, m, d, tz);
+  // Compute next day's midnight independently (handles DST transitions)
+  const nextDay = new Date(Date.UTC(y, m - 1, d + 1));
+  const end = midnightEpoch(nextDay.getUTCFullYear(), nextDay.getUTCMonth() + 1, nextDay.getUTCDate(), tz);
+
+  return { start, end };
 }
 
 /** Format seconds as digital clock: "2:30" */

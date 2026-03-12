@@ -28,7 +28,7 @@ export interface Env {
 // Hono environment with authenticated user context
 export type AuthEnv = {
   Bindings: Env;
-  Variables: { userId: string; userTimezone: string };
+  Variables: { userId: string; userTimezone?: string };
 };
 
 // Hono environment for session-authenticated routes

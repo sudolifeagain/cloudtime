@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, getUserTimezone } from "../middleware/auth";
 import { formatDigital, formatHumanReadable, getToday, formatDate, isValidTimezone, getEpochBoundsForDate } from "../utils/time-format";
 import { resolveStatsRange } from "../utils/stats-range";
 import { buildSummary, aggregateDimension, DIMENSIONS, DIMENSION_TO_KEY, type SummaryRow } from "../utils/summary-builder";
@@ -26,7 +26,7 @@ stats.get("/stats/:range", async (c) => {
   if (tzParam && !isValidTimezone(tzParam)) {
     return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
   }
-  const tz = tzParam || c.get("userTimezone");
+  const tz = tzParam || await getUserTimezone(c);
   const resolved = resolveStatsRange(rangeParam, tz);
   if (!resolved) {
     return c.json({ error: "Invalid range. Use: last_7_days, last_30_days, last_6_months, last_year, all_time, YYYY, or YYYY-MM" }, 400);
@@ -109,7 +109,7 @@ stats.get("/status_bar/today", async (c) => {
   if (tzParam && !isValidTimezone(tzParam)) {
     return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
   }
-  const tz = tzParam || c.get("userTimezone");
+  const tz = tzParam || await getUserTimezone(c);
   const today = formatDate(getToday(tz));
   const cacheKey = `statusbar:${userId}:${today}:${tz}`;
 
@@ -141,7 +141,7 @@ stats.get("/all_time_since_today", async (c) => {
   if (tzParam && !isValidTimezone(tzParam)) {
     return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
   }
-  const tz = tzParam || c.get("userTimezone");
+  const tz = tzParam || await getUserTimezone(c);
 
   let sql = "SELECT COALESCE(SUM(total_seconds), 0) as total_seconds, MIN(date) as first_date FROM summaries WHERE user_id = ?";
   const params: (string | number)[] = [userId];
@@ -206,7 +206,7 @@ stats.get("/durations", async (c) => {
   if (tzParam && !isValidTimezone(tzParam)) {
     return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
   }
-  const tz = tzParam || c.get("userTimezone");
+  const tz = tzParam || await getUserTimezone(c);
 
   // Convert date to UNIX epoch range in user's timezone
   const { start: dayStart, end: dayEnd } = getEpochBoundsForDate(date, tz);
