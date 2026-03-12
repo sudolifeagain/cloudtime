@@ -452,16 +452,12 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
   if (cached) {
     try {
       const jwks: unknown = JSON.parse(cached);
-      try {
-        cachedJWKS = jose.createLocalJWKSet(jwks as jose.JSONWebKeySet);
-      } catch {
-        throw new OAuthValidationError("Google JWKS (cached) is not a valid JWK Set");
-      }
+      // jose.createLocalJWKSet validates internally; cast is safe here
+      cachedJWKS = jose.createLocalJWKSet(jwks as jose.JSONWebKeySet);
       jwksCachedAt = Date.now();
       return cachedJWKS;
-    } catch (err) {
+    } catch {
       await kv.delete(kvKey);
-      if (err instanceof OAuthValidationError) throw err;
       // Fall through to fetch fresh JWKS
     }
   }
@@ -484,6 +480,7 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
 
       let keySet: jose.JWTVerifyGetKey;
       try {
+        // jose.createLocalJWKSet validates internally; cast is safe here
         keySet = jose.createLocalJWKSet(jwks as jose.JSONWebKeySet);
       } catch {
         throw new OAuthValidationError("Google JWKS response is not a valid JWK Set");
