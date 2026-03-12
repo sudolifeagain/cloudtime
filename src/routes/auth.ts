@@ -14,6 +14,7 @@ import {
   generateSessionToken,
   generateApiKey,
   encryptToken,
+  decryptToken,
   timingSafeEqual,
 } from "../utils/crypto";
 import {
@@ -21,6 +22,7 @@ import {
   buildAuthorizeUrl,
   exchangeCode,
   fetchUserInfo,
+  revokeProviderToken,
   type OAuthProvider,
 } from "../utils/oauth";
 import {
@@ -274,15 +276,18 @@ auth.delete("/providers/:provider", sessionMw, async (c) => {
 
     // Ensure user keeps at least one other auth method
     const [{ results: linked }, userRow] = await Promise.all([
-      c.env.DB.prepare("SELECT provider FROM oauth_accounts WHERE user_id = ?")
+      c.env.DB.prepare(
+        "SELECT provider, access_token_encrypted, refresh_token_encrypted FROM oauth_accounts WHERE user_id = ?",
+      )
         .bind(userId)
-        .all<{ provider: string }>(),
+        .all<{ provider: string; access_token_encrypted: string | null; refresh_token_encrypted: string | null }>(),
       c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
         .bind(userId)
         .first<{ api_key_hash: string | null }>(),
     ]);
 
     const hasApiKey = !!userRow?.api_key_hash;
+    const targetRow = linked.find((p) => p.provider === provider);
     const otherProviders = linked.filter((p) => p.provider !== provider).length;
     if (otherProviders === 0 && !hasApiKey) {
       return c.json({ error: "Cannot unlink the only authentication method" }, 400);
@@ -291,6 +296,31 @@ auth.delete("/providers/:provider", sessionMw, async (c) => {
     await c.env.DB.prepare("DELETE FROM oauth_accounts WHERE user_id = ? AND provider = ?")
       .bind(userId, provider)
       .run();
+
+    // Best-effort token revocation in the background
+    if (targetRow?.access_token_encrypted) {
+      const encCtx = `${userId}:${provider}`;
+      const encKey = c.env.ENCRYPTION_KEY;
+      const accessEnc = targetRow.access_token_encrypted;
+      const refreshEnc = targetRow.refresh_token_encrypted;
+
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            const accessToken = await decryptToken(accessEnc, encKey, encCtx);
+            const refreshToken = refreshEnc
+              ? await decryptToken(refreshEnc, encKey, encCtx)
+              : null;
+            await revokeProviderToken(provider, accessToken, refreshToken, c.env);
+          } catch (err) {
+            console.error(
+              `Token revocation failed for ${provider}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        })(),
+      );
+    }
 
     return c.body(null, 204);
   } catch (err) {

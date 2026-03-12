@@ -354,6 +354,81 @@ async function validateGoogleIdToken(
   };
 }
 
+// ─── Token Revocation ────────────────────────────────────
+
+export async function revokeProviderToken(
+  provider: OAuthProvider,
+  accessToken: string,
+  refreshToken: string | null,
+  env: Env,
+): Promise<void> {
+  try {
+    switch (provider) {
+      case "github": {
+        const res = await fetch(
+          `https://api.github.com/applications/${env.GITHUB_CLIENT_ID}/token`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Basic ${btoa(`${env.GITHUB_CLIENT_ID}:${env.GITHUB_CLIENT_SECRET}`)}`,
+              Accept: "application/vnd.github+json",
+              "Content-Type": "application/json",
+              "User-Agent": "CloudTime/1.0",
+            },
+            body: JSON.stringify({ access_token: accessToken }),
+          },
+        );
+        if (!res.ok && res.status !== 422) {
+          console.error(`GitHub token revocation failed: HTTP ${res.status}`);
+        }
+        break;
+      }
+      case "google": {
+        const token = refreshToken ?? accessToken;
+        const res = await fetch(
+          `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          },
+        );
+        if (!res.ok) {
+          console.error(`Google token revocation failed: HTTP ${res.status}`);
+        }
+        break;
+      }
+      case "discord": {
+        const revokeDiscordToken = async (token: string, hint: string) => {
+          const body = new URLSearchParams({
+            token,
+            token_type_hint: hint,
+            client_id: env.DISCORD_CLIENT_ID,
+            client_secret: env.DISCORD_CLIENT_SECRET,
+          });
+          const res = await fetch("https://discord.com/api/v10/oauth2/token/revoke", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: body.toString(),
+          });
+          if (!res.ok) {
+            console.error(`Discord ${hint} revocation failed: HTTP ${res.status}`);
+          }
+        };
+        await revokeDiscordToken(accessToken, "access_token");
+        if (refreshToken) {
+          await revokeDiscordToken(refreshToken, "refresh_token");
+        }
+        break;
+      }
+    }
+  } catch (err) {
+    console.error(
+      `Token revocation error for ${provider}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 // ─── Discord ─────────────────────────────────────────────
 
 async function fetchDiscordUser(
