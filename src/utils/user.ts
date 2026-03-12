@@ -16,6 +16,7 @@ export type UserRow = {
   city: string | null;
   timezone: string;
   timeout: number;
+  email_verified: number;
   is_hireable: number;
   github_username: string | null;
   twitter_username: string | null;
@@ -24,7 +25,7 @@ export type UserRow = {
   modified_at: string;
 };
 
-export const USER_COLUMNS = `id, username, display_name, email, photo, bio, city, timezone, timeout, is_hireable, github_username, twitter_username, website, created_at, modified_at`;
+export const USER_COLUMNS = `id, username, display_name, email, email_verified, photo, bio, city, timezone, timeout, is_hireable, github_username, twitter_username, website, created_at, modified_at`;
 
 export function normalizeDateTime(dt: string): string {
   return dt.includes("T") ? dt : dt.replace(" ", "T") + "Z";
@@ -44,6 +45,7 @@ export function rowToUser(
     username: row.username,
     display_name: row.display_name ?? undefined,
     email: row.email ?? undefined,
+    email_verified: row.email_verified === 1,
     photo: row.photo ?? undefined,
     bio: row.bio ?? undefined,
     city: row.city ?? undefined,

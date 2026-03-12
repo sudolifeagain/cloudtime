@@ -88,8 +88,8 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
 
     const oauthId = crypto.randomUUID();
 
-    // Create oauth_account + delete pending_link in batch
-    await c.env.DB.batch([
+    // Create oauth_account + delete pending_link + optionally set email_verified
+    const batchStmts = [
       c.env.DB.prepare(
         `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -113,7 +113,18 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
         pending.token_expires_at,
       ),
       c.env.DB.prepare("DELETE FROM pending_links WHERE id = ?").bind(pendingLinkId),
-    ]);
+    ];
+
+    // FR-006: Propagate email_verified from approved provider to user account
+    if (pending.email_verified === 1) {
+      batchStmts.push(
+        c.env.DB.prepare(
+          `UPDATE users SET email_verified = 1, modified_at = datetime('now') WHERE id = ? AND email_verified = 0`,
+        ).bind(userId),
+      );
+    }
+
+    await c.env.DB.batch(batchStmts);
 
     const userRow = await c.env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
       .bind(userId)
