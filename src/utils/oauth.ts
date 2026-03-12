@@ -145,7 +145,12 @@ function assertTokenExchangeResult(
   const obj = data as Record<string, unknown>;
 
   // Check for provider error responses first (GitHub returns 200 with error field)
-  if (typeof obj.error === "string") return;
+  if (typeof obj.error === "string") {
+    if (obj.error_description !== undefined && typeof obj.error_description !== "string") {
+      throw new OAuthValidationError("token error response error_description is not a string");
+    }
+    return;
+  }
 
   if (typeof obj.access_token !== "string" || obj.access_token === "") {
     throw new OAuthValidationError("token response missing access_token");
@@ -312,7 +317,8 @@ export async function exchangeCode(
 
   // GitHub returns 200 even on errors
   if (isTokenError(raw)) {
-    console.error(`OAuth token exchange failed for ${provider}: ${raw.error}`);
+    const desc = raw.error_description ? `: ${raw.error_description}` : "";
+    console.error(`OAuth token exchange failed for ${provider}: ${raw.error}${desc}`);
     throw new Error("OAuth token exchange failed");
   }
 
@@ -482,8 +488,10 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
       try {
         // jose.createLocalJWKSet validates internally; cast is safe here
         keySet = jose.createLocalJWKSet(jwks as jose.JSONWebKeySet);
-      } catch {
-        throw new OAuthValidationError("Google JWKS response is not a valid JWK Set");
+      } catch (jwksErr) {
+        throw new OAuthValidationError(
+          `Google JWKS response is not a valid JWK Set: ${jwksErr instanceof Error ? jwksErr.message : jwksErr}`,
+        );
       }
 
       // Cache in KV (10 min TTL)
