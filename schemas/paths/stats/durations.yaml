@@ -28,6 +28,10 @@ get:
         type: boolean
     - name: timezone
       in: query
+      description: >-
+        IANA timezone (e.g. Asia/Tokyo). Determines epoch boundaries for the
+        given date. Defaults to the authenticated user's profile timezone when
+        omitted.
       schema:
         type: string
     - name: slice_by

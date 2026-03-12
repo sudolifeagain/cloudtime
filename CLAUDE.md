@@ -36,3 +36,10 @@
 - **PR1 (Spec + Design)**: SpecKit artifacts (`specs/`), OpenAPI spec (`schemas/`), generated types (`src/types/generated.ts`). No implementation code.
 - **PR2 (Implementation)**: Route handlers and business logic. Only after PR1 is merged.
 - Never mix spec changes and implementation in the same PR
+
+## Active Technologies
+- TypeScript (ES2022 target, Cloudflare Workers runtime) + Hono >= 4.9.7, openapi-typescript (065-timezone-bucketing)
+- Cloudflare D1 (SQLite) for summaries/heartbeats, KV for caching (065-timezone-bucketing)
+
+## Recent Changes
+- 065-timezone-bucketing: Added TypeScript (ES2022 target, Cloudflare Workers runtime) + Hono >= 4.9.7, openapi-typescript
