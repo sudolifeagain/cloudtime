@@ -449,6 +449,90 @@ async function validateGoogleIdToken(
   };
 }
 
+// ─── Token Revocation ────────────────────────────────────
+
+export async function revokeProviderToken(
+  provider: OAuthProvider,
+  accessToken: string,
+  refreshToken: string | null,
+  env: Env,
+): Promise<void> {
+  switch (provider) {
+    case "github": {
+      const res = await fetch(
+        `https://api.github.com/applications/${env.GITHUB_CLIENT_ID}/token`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Basic ${btoa(`${env.GITHUB_CLIENT_ID}:${env.GITHUB_CLIENT_SECRET}`)}`,
+            Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "User-Agent": "CloudTime/1.0",
+          },
+          body: JSON.stringify({ access_token: accessToken }),
+          ...PROVIDER_FETCH_OPTS,
+        },
+      );
+      // 422 = already revoked, treat as success
+      if (!res.ok && res.status !== 422) {
+        console.error(`GitHub token revocation failed: HTTP ${res.status}`);
+      }
+      break;
+    }
+    case "google": {
+      // Prefer refresh token (revoking it cascades to the access token)
+      const token = refreshToken ?? accessToken;
+      const res = await fetch("https://oauth2.googleapis.com/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token }).toString(),
+        ...PROVIDER_FETCH_OPTS,
+      });
+      if (!res.ok) {
+        console.error(`Google token revocation failed: HTTP ${res.status}`);
+        // If refresh token revocation failed, also try revoking the access token directly
+        if (refreshToken) {
+          const fallback = await fetch("https://oauth2.googleapis.com/revoke", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ token: accessToken }).toString(),
+            ...PROVIDER_FETCH_OPTS,
+          });
+          if (!fallback.ok) {
+            console.error(`Google access token revocation also failed: HTTP ${fallback.status}`);
+          }
+        }
+      }
+      break;
+    }
+    case "discord": {
+      const revokeOne = async (token: string, hint: string) => {
+        const body = new URLSearchParams({
+          token,
+          token_type_hint: hint,
+          client_id: env.DISCORD_CLIENT_ID,
+          client_secret: env.DISCORD_CLIENT_SECRET,
+        });
+        const res = await fetch("https://discord.com/api/v10/oauth2/token/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+          ...PROVIDER_FETCH_OPTS,
+        });
+        if (!res.ok) {
+          console.error(`Discord ${hint} revocation failed: HTTP ${res.status}`);
+        }
+      };
+      const tasks: Promise<void>[] = [revokeOne(accessToken, "access_token")];
+      if (refreshToken) {
+        tasks.push(revokeOne(refreshToken, "refresh_token"));
+      }
+      await Promise.all(tasks);
+      break;
+    }
+  }
+}
+
 // ─── Discord ─────────────────────────────────────────────
 
 async function fetchDiscordUser(

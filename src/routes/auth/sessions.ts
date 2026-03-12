@@ -5,8 +5,8 @@
  */
 import { Hono } from "hono";
 import type { SessionAuthEnv } from "../../types";
-import { generateApiKey } from "../../utils/crypto";
-import { isValidProvider, type OAuthProvider } from "../../utils/oauth";
+import { generateApiKey, decryptToken } from "../../utils/crypto";
+import { isValidProvider, revokeProviderToken, type OAuthProvider } from "../../utils/oauth";
 import {
   invalidateSession,
   invalidateOtherSessions,
@@ -205,7 +205,7 @@ sessions.get("/providers", async (c) => {
   }
 });
 
-// DELETE /providers/:provider (unlink)
+// DELETE /providers/:provider (unlink + revoke tokens)
 sessions.delete("/providers/:provider", async (c) => {
   try {
     const userId = c.get("userId");
@@ -215,13 +215,20 @@ sessions.delete("/providers/:provider", async (c) => {
       return c.json({ error: "Invalid provider" }, 400);
     }
 
-    const [{ results: linked }, userRow] = await Promise.all([
+    // Fetch auth guard data and encrypted tokens in parallel.
+    // Only load tokens for the target provider (avoid loading all providers' secrets).
+    const [{ results: linked }, userRow, targetRow] = await Promise.all([
       c.env.DB.prepare("SELECT provider FROM oauth_accounts WHERE user_id = ?")
         .bind(userId)
         .all<{ provider: string }>(),
       c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
         .bind(userId)
         .first<{ api_key_hash: string }>(),
+      c.env.DB.prepare(
+        "SELECT access_token_encrypted, refresh_token_encrypted FROM oauth_accounts WHERE user_id = ? AND provider = ?",
+      )
+        .bind(userId, provider)
+        .first<{ access_token_encrypted: string | null; refresh_token_encrypted: string | null }>(),
     ]);
 
     // api_key_hash is NOT NULL, so hasApiKey is always true — guard is defensive
@@ -234,6 +241,31 @@ sessions.delete("/providers/:provider", async (c) => {
     await c.env.DB.prepare("DELETE FROM oauth_accounts WHERE user_id = ? AND provider = ?")
       .bind(userId, provider)
       .run();
+
+    // Best-effort token revocation in the background (non-blocking)
+    if (targetRow?.access_token_encrypted) {
+      const encCtx = `${userId}:${provider}`;
+      const encKey = c.env.ENCRYPTION_KEY;
+      const accessEnc = targetRow.access_token_encrypted;
+      const refreshEnc = targetRow.refresh_token_encrypted;
+
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            const accessToken = await decryptToken(accessEnc, encKey, encCtx);
+            const refreshToken = refreshEnc
+              ? await decryptToken(refreshEnc, encKey, encCtx)
+              : null;
+            await revokeProviderToken(provider, accessToken, refreshToken, c.env);
+          } catch (err) {
+            console.error(
+              `Token revocation failed for ${provider}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        })(),
+      );
+    }
 
     return c.body(null, 204);
   } catch (err) {
