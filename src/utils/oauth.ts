@@ -129,9 +129,16 @@ interface TokenResponse {
   scope?: string;
 }
 
-function assertTokenResponse(
+interface TokenErrorResponse {
+  error: string;
+  error_description?: string;
+}
+
+type TokenExchangeResult = TokenResponse | TokenErrorResponse;
+
+function assertTokenExchangeResult(
   data: unknown,
-): asserts data is TokenResponse & { error?: string; error_description?: string } {
+): asserts data is TokenExchangeResult {
   if (typeof data !== "object" || data === null) {
     throw new OAuthValidationError("token response is not an object");
   }
@@ -158,6 +165,10 @@ function assertTokenResponse(
   if (obj.scope !== undefined && typeof obj.scope !== "string") {
     throw new OAuthValidationError("token response scope is not a string");
   }
+}
+
+function isTokenError(result: TokenExchangeResult): result is TokenErrorResponse {
+  return "error" in result;
 }
 
 interface GitHubUser {
@@ -227,6 +238,12 @@ function assertDiscordUser(data: unknown): asserts data is DiscordUser {
   if (typeof obj.verified !== "boolean") {
     throw new OAuthValidationError("Discord /users/@me verified is not a boolean");
   }
+  if (obj.global_name !== null && typeof obj.global_name !== "string") {
+    throw new OAuthValidationError("Discord /users/@me global_name is not a string or null");
+  }
+  if (obj.email !== null && typeof obj.email !== "string") {
+    throw new OAuthValidationError("Discord /users/@me email is not a string or null");
+  }
 }
 
 // ─── Scope Verification ─────────────────────────────────
@@ -291,10 +308,10 @@ export async function exchangeCode(
   });
 
   const raw: unknown = await res.json();
-  assertTokenResponse(raw);
+  assertTokenExchangeResult(raw);
 
   // GitHub returns 200 even on errors
-  if (raw.error) {
+  if (isTokenError(raw)) {
     console.error(`OAuth token exchange failed for ${provider}: ${raw.error}`);
     throw new Error("OAuth token exchange failed");
   }
@@ -435,11 +452,16 @@ async function getGoogleJWKS(kv: KVNamespace): Promise<jose.JWTVerifyGetKey> {
   if (cached) {
     try {
       const jwks: unknown = JSON.parse(cached);
-      cachedJWKS = jose.createLocalJWKSet(jwks as jose.JSONWebKeySet);
+      try {
+        cachedJWKS = jose.createLocalJWKSet(jwks as jose.JSONWebKeySet);
+      } catch {
+        throw new OAuthValidationError("Google JWKS (cached) is not a valid JWK Set");
+      }
       jwksCachedAt = Date.now();
       return cachedJWKS;
-    } catch {
+    } catch (err) {
       await kv.delete(kvKey);
+      if (err instanceof OAuthValidationError) throw err;
       // Fall through to fetch fresh JWKS
     }
   }
