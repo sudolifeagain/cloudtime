@@ -137,7 +137,7 @@ const githubUserSchema = z.object({
 });
 
 const githubEmailSchema = z.array(z.object({
-  email: z.string(),
+  email: z.string().email(),
   primary: z.boolean(),
   verified: z.boolean(),
 }));
@@ -146,7 +146,7 @@ const discordUserSchema = z.object({
   id: z.string(),
   username: z.string(),
   global_name: z.string().nullable(),
-  email: z.string().nullable(),
+  email: z.string().email().nullable(),
   verified: z.boolean().optional(),
 });
 
@@ -209,7 +209,7 @@ export async function exchangeCode(
     throw new Error(`${provider} token endpoint returned non-JSON response (HTTP ${res.status})`);
   });
 
-  // GitHub returns 200 even on errors — check error field first
+  // GitHub returns 200 even on errors — try parsing as error response first
   const errorResult = tokenErrorSchema.safeParse(json);
   if (errorResult.success && errorResult.data.error) {
     console.error(`OAuth token exchange failed for ${provider}: ${errorResult.data.error}`);

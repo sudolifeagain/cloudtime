@@ -267,6 +267,10 @@ heartbeats.delete("/heartbeats.bulk", async (c) => {
       .run();
 
     // Step 3: Update user_projects for affected projects
+    // Note: Steps 1-3 are separate D1 transactions (D1 has no cross-statement
+    // transactions). A concurrent insert between step 2 and 3 is benign — the
+    // recalculated timestamps will include the new heartbeat, and the next
+    // insert's UPSERT will correct any remaining drift.
     if (affectedProjects.length > 0) {
       // Batch query remaining heartbeats for each affected project
       const selectStmts = affectedProjects.map(({ project }) =>
@@ -280,12 +284,14 @@ heartbeats.delete("/heartbeats.bulk", async (c) => {
       const updateStmts: D1PreparedStatement[] = [];
       for (let i = 0; i < affectedProjects.length; i++) {
         const project = affectedProjects[i].project;
-        const row = selectResults[i].results?.[0] as { first_hb: number | null; last_hb: number | null } | undefined;
-        if (row?.first_hb != null && row?.last_hb != null) {
+        const raw = selectResults[i].results?.[0] as Record<string, unknown> | undefined;
+        const firstHb = typeof raw?.first_hb === "number" ? raw.first_hb : null;
+        const lastHb = typeof raw?.last_hb === "number" ? raw.last_hb : null;
+        if (firstHb != null && lastHb != null) {
           updateStmts.push(
             c.env.DB.prepare(
               "UPDATE user_projects SET first_heartbeat_at = ?, last_heartbeat_at = ? WHERE user_id = ? AND project = ?"
-            ).bind(row.first_hb, row.last_hb, userId, project)
+            ).bind(firstHb, lastHb, userId, project)
           );
         } else {
           updateStmts.push(
