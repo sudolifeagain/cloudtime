@@ -10,8 +10,6 @@
  * once set to true, it is never downgraded back to false.
  */
 
-import type { Env } from "../types";
-
 /**
  * Build the SQL column list and values for inserting a new user,
  * including the email_verified field.
@@ -86,7 +84,7 @@ export async function findVerifiedUserForPendingLink(
   // Use ORDER BY created_at ASC LIMIT 1 for deterministic selection if duplicates exist
   const existingUser = await db
     .prepare(
-      "SELECT id, email_verified FROM users WHERE email = ? ORDER BY created_at ASC LIMIT 1",
+      "SELECT id, email_verified FROM users WHERE email = ? COLLATE NOCASE ORDER BY created_at ASC LIMIT 1",
     )
     .bind(email)
     .first<{ id: string; email_verified: number }>();
