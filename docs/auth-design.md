@@ -79,16 +79,25 @@ Controlled by `INSTANCE_MODE` environment variable:
 
 **Multi-user mode only:**
 ```
-1. User registered via GitHub (email: alice@example.com)
+1. User registered via GitHub (email: alice@example.com, email_verified: true)
 2. Tries to login with Google (same email: alice@example.com)
-3. System detects email match → creates PendingLink (TTL: 1 hour)
-4. Returns pending_link with existing_username
-5. User calls POST /api/v1/auth/link/approve/{pending_link_id}
-6. OAuth account is linked to existing user
-7. User is logged in as existing account
+3. System checks DUAL email verification:
+   a) Existing user's email_verified must be true
+   b) Incoming provider must report email as verified
+4. If BOTH verified → creates PendingLink (TTL: 1 hour)
+   If EITHER unverified → creates new user account instead (no PendingLink)
+5. Returns pending_link with existing_username
+6. User calls POST /api/v1/auth/link/approve/{pending_link_id}
+7. OAuth account is linked to existing user
+8. User is logged in as existing account
 ```
 
-**Single-user mode:** Same-email detection still applies, but since there's only one user, the new provider is linked directly without approval. The `pending_links` table is not used.
+**email_verified behavior:**
+- Set on user creation based on the OAuth provider's report.
+- Updated on each login: uses a **high-water mark** approach — once verified (`true`), never downgraded back to `false`. Only upgrades (false → true) are applied. This follows industry best practices (Auth0, Firebase, Clerk).
+- Provider-specific extraction: GitHub requires `GET /user/emails` (primary email's `verified` field), Google returns `email_verified` or `verified_email` depending on endpoint, Discord returns `verified` (absent without `email` scope, treated as `false`).
+
+**Single-user mode:** Same-email detection still applies, but since there's only one user, the new provider is linked directly without approval. The `pending_links` table is not used. The `email_verified` field is still recorded accurately regardless of instance mode.
 
 ## Session Security
 

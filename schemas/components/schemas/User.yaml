@@ -13,6 +13,9 @@ properties:
   email:
     type: string
     format: email
+  email_verified:
+    type: boolean
+    description: Whether the user's email has been verified by an OAuth provider
   photo:
     type: string
     format: uri

@@ -953,6 +953,8 @@ export interface components {
             display_name?: string;
             /** Format: email */
             email?: string;
+            /** @description Whether the user's email has been verified by an OAuth provider */
+            email_verified?: boolean;
             /** Format: uri */
             photo?: string;
             bio?: string;
