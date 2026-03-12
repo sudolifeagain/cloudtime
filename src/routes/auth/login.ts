@@ -163,92 +163,114 @@ login.get("/:provider/callback", async (c) => {
     }
 
     // No existing OAuth link — check if email matches an existing user
+    let unverifiedUserId: string | null = null;
     if (userInfo.providerEmail) {
-      const emailMatch = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?")
+      const emailMatch = await c.env.DB.prepare("SELECT id, email_verified FROM users WHERE email = ?")
         .bind(userInfo.providerEmail)
-        .first<{ id: string }>();
+        .first<{ id: string; email_verified: number }>();
 
       if (emailMatch) {
-        // Limit active pending links per user
-        const activeLinkCount = await c.env.DB.prepare(
-          "SELECT COUNT(*) as count FROM pending_links WHERE existing_user_id = ? AND expires_at > datetime('now')",
-        )
-          .bind(emailMatch.id)
-          .first<{ count: number }>();
-        if (activeLinkCount && activeLinkCount.count >= 3) {
-          return c.json({ error: "Too many pending link requests" }, 429, {
-            ...noCacheHeaders(),
-            "Retry-After": "3600",
-          });
-        }
-
-        // Encrypt tokens with AAD context
-        const encCtx = `${emailMatch.id}:${provider}`;
-        const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
-        const refreshTokenEnc = userInfo.refreshToken
-          ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
-          : null;
-
-        // Create pending link for manual approval
-        const pendingId = crypto.randomUUID();
-        const pendingExpiry = new Date(Date.now() + 3600_000) // 1 hour
-          .toISOString()
-          .replace("T", " ")
-          .replace("Z", "");
-
-        const linkResult = await c.env.DB.prepare(
-          `INSERT INTO pending_links (id, existing_user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at, expires_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(existing_user_id, provider, provider_user_id) DO UPDATE SET
-             provider_username = excluded.provider_username,
-             provider_email = excluded.provider_email,
-             email_verified = excluded.email_verified,
-             access_token_encrypted = excluded.access_token_encrypted,
-             refresh_token_encrypted = excluded.refresh_token_encrypted,
-             token_expires_at = excluded.token_expires_at,
-             expires_at = excluded.expires_at
-           RETURNING id`,
-        )
-          .bind(
-            pendingId,
-            emailMatch.id,
-            provider,
-            userInfo.providerUserId,
-            userInfo.providerUsername,
-            userInfo.providerEmail,
-            userInfo.emailVerified ? 1 : 0,
-            accessTokenEnc,
-            refreshTokenEnc,
-            userInfo.tokenExpiresAt,
-            pendingExpiry,
+        if (emailMatch.email_verified === 1) {
+          // Existing user's email is verified — proceed with PendingLink creation
+          // Limit active pending links per user
+          const activeLinkCount = await c.env.DB.prepare(
+            "SELECT COUNT(*) as count FROM pending_links WHERE existing_user_id = ? AND expires_at > datetime('now')",
           )
-          .first<{ id: string }>();
+            .bind(emailMatch.id)
+            .first<{ count: number }>();
+          if (activeLinkCount && activeLinkCount.count >= 3) {
+            return c.json({ error: "Too many pending link requests" }, 429, {
+              ...noCacheHeaders(),
+              "Retry-After": "3600",
+            });
+          }
 
-        if (!linkResult) {
-          return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
-        }
+          // Encrypt tokens with AAD context
+          const encCtx = `${emailMatch.id}:${provider}`;
+          const accessTokenEnc = await encryptToken(userInfo.accessToken, c.env.ENCRYPTION_KEY, encCtx);
+          const refreshTokenEnc = userInfo.refreshToken
+            ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
+            : null;
 
-        // Return minimal pending link info (no full user profile — unauthenticated response)
-        return c.json(
-          {
-            data: {
-              pending_link: {
-                id: linkResult.id,
-                provider: provider as OAuthProvider,
-                provider_username: userInfo.providerUsername,
-                provider_email: userInfo.providerEmail as string,
-                expires_at: normalizeDateTime(pendingExpiry),
+          // Create pending link for manual approval
+          const pendingId = crypto.randomUUID();
+          const pendingExpiry = new Date(Date.now() + 3600_000) // 1 hour
+            .toISOString()
+            .replace("T", " ")
+            .replace("Z", "");
+
+          const linkResult = await c.env.DB.prepare(
+            `INSERT INTO pending_links (id, existing_user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(existing_user_id, provider, provider_user_id) DO UPDATE SET
+               provider_username = excluded.provider_username,
+               provider_email = excluded.provider_email,
+               email_verified = excluded.email_verified,
+               access_token_encrypted = excluded.access_token_encrypted,
+               refresh_token_encrypted = excluded.refresh_token_encrypted,
+               token_expires_at = excluded.token_expires_at,
+               expires_at = excluded.expires_at
+             RETURNING id`,
+          )
+            .bind(
+              pendingId,
+              emailMatch.id,
+              provider,
+              userInfo.providerUserId,
+              userInfo.providerUsername,
+              userInfo.providerEmail,
+              userInfo.emailVerified ? 1 : 0,
+              accessTokenEnc,
+              refreshTokenEnc,
+              userInfo.tokenExpiresAt,
+              pendingExpiry,
+            )
+            .first<{ id: string }>();
+
+          if (!linkResult) {
+            return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
+          }
+
+          // Return minimal pending link info (no full user profile — unauthenticated response)
+          return c.json(
+            {
+              data: {
+                pending_link: {
+                  id: linkResult.id,
+                  provider: provider as OAuthProvider,
+                  provider_username: userInfo.providerUsername,
+                  provider_email: userInfo.providerEmail as string,
+                  expires_at: normalizeDateTime(pendingExpiry),
+                },
               },
             },
-          },
-          200,
-          noCacheHeaders(),
-        );
+            200,
+            noCacheHeaders(),
+          );
+        } else {
+          // Existing user's email is NOT verified — skip PendingLink, clear email, fall through to new user creation
+          // FR-008: Security event — PendingLink skipped
+          console.error(`Security: skipping PendingLink — existing user ${emailMatch.id} email unverified for provider ${provider}`);
+          // FR-009: Security event — clearing unverified email
+          console.error(`Security: clearing unverified email ${userInfo.providerEmail} from user ${emailMatch.id}`);
+          unverifiedUserId = emailMatch.id;
+        }
       }
     }
 
     // No existing account — new user creation
     const isSingleUser = c.env.INSTANCE_MODE !== "multi";
+
+    // Single-user guard: don't clear email if we can't create a new user to take it
+    if (isSingleUser && unverifiedUserId) {
+      console.error(`Security: skipping email cleanup in single-user mode — cannot create replacement user for ${unverifiedUserId}`);
+      return c.json(
+        { error: "Registration closed. This instance only allows one user." },
+        403,
+        noCacheHeaders(),
+      );
+    }
+
     const userId = crypto.randomUUID();
     const { hash: apiKeyHash } = await generateApiKey();
 
@@ -265,12 +287,19 @@ login.get("/:provider/callback", async (c) => {
 
     const oauthAccountId = crypto.randomUUID();
 
+    // Email cleanup statement for unverified users (prepended to batch for atomicity)
+    const emailCleanupStmt = unverifiedUserId
+      ? c.env.DB.prepare(
+          `UPDATE users SET email = NULL, modified_at = datetime('now') WHERE id = ?`,
+        ).bind(unverifiedUserId)
+      : null;
+
     if (isSingleUser) {
       // Atomic: create user only if no users exist (prevents TOCTOU race)
       const batchResult = await c.env.DB.batch([
         c.env.DB.prepare(
-          `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
-           SELECT ?, ?, ?, ?, datetime('now'), datetime('now')
+          `INSERT INTO users (id, username, email, email_verified, api_key_hash, created_at, modified_at)
+           SELECT ?, ?, ?, 1, ?, datetime('now'), datetime('now')
            WHERE (SELECT COUNT(*) FROM users) = 0`,
         ).bind(userId, username, userInfo.providerEmail, apiKeyHash),
         c.env.DB.prepare(
@@ -302,10 +331,10 @@ login.get("/:provider/callback", async (c) => {
     } else {
       // Multi-user mode: unconditional insert
       try {
-        await c.env.DB.batch([
+        const multiUserStmts = [
           c.env.DB.prepare(
-            `INSERT INTO users (id, username, email, api_key_hash, created_at, modified_at)
-             VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
+            `INSERT INTO users (id, username, email, email_verified, api_key_hash, created_at, modified_at)
+             VALUES (?, ?, ?, 1, ?, datetime('now'), datetime('now'))`,
           ).bind(userId, username, userInfo.providerEmail, apiKeyHash),
           c.env.DB.prepare(
             `INSERT INTO oauth_accounts (id, user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at)
@@ -322,7 +351,9 @@ login.get("/:provider/callback", async (c) => {
             refreshTokenEnc,
             userInfo.tokenExpiresAt,
           ),
-        ]);
+        ];
+        if (emailCleanupStmt) multiUserStmts.unshift(emailCleanupStmt);
+        await c.env.DB.batch(multiUserStmts);
       } catch (insertErr) {
         // UNIQUE constraint violation on email — concurrent signup with same email
         const msg = insertErr instanceof Error ? insertErr.message : "";
