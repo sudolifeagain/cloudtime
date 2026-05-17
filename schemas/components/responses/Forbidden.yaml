@@ -1,0 +1,14 @@
+description: |
+  The authenticated principal is recognized but not authorized for this resource.
+  Common reasons:
+  - Single-user mode: registration closed (`/auth/:provider/callback`).
+  - Google hosted domain restriction: the Google account's domain does not match
+    `GOOGLE_HOSTED_DOMAIN` (`/auth/google/callback`).
+content:
+  application/json:
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Account domain not allowed
