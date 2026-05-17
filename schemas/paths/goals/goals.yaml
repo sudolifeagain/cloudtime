@@ -10,6 +10,27 @@ get:
     endpoint — clients that need per-period progress must request each goal
     individually via
     `GET /users/current/goals/{goal_id}`.
+
+    Optional `enabled` and `snoozed` query parameters filter on
+    `is_enabled` / `is_snoozed` respectively. Omitting a filter returns
+    goals regardless of that flag. When both are provided they are AND'd.
+  parameters:
+    - name: enabled
+      in: query
+      required: false
+      schema:
+        type: boolean
+      description: |
+        When `true`, return only enabled goals. When `false`, only disabled
+        goals. Omit to include both.
+    - name: snoozed
+      in: query
+      required: false
+      schema:
+        type: boolean
+      description: |
+        When `true`, return only snoozed goals. When `false`, only
+        non-snoozed goals. Omit to include both.
   responses:
     '200':
       description: List of goals

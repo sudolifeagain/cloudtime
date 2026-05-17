@@ -613,6 +613,10 @@ export interface paths {
          *     endpoint — clients that need per-period progress must request each goal
          *     individually via
          *     `GET /users/current/goals/{goal_id}`.
+         *
+         *     Optional `enabled` and `snoozed` query parameters filter on
+         *     `is_enabled` / `is_snoozed` respectively. Omitting a filter returns
+         *     goals regardless of that flag. When both are provided they are AND'd.
          */
         get: operations["getGoals"];
         put?: never;
@@ -2563,7 +2567,18 @@ export interface operations {
     };
     getGoals: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description When `true`, return only enabled goals. When `false`, only disabled
+                 *     goals. Omit to include both.
+                 */
+                enabled?: boolean;
+                /**
+                 * @description When `true`, return only snoozed goals. When `false`, only
+                 *     non-snoozed goals. Omit to include both.
+                 */
+                snoozed?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
