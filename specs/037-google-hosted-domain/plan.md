@@ -104,7 +104,7 @@ GOOGLE_HOSTED_DOMAIN?: string;
    }
    ```
 
-3. Introduce `class HostedDomainError extends Error` (module-local) so the callback handler in `src/routes/auth/login.ts` can distinguish this from generic OAuth errors and emit a `403` instead of `500`. Place the `instanceof HostedDomainError` check in the existing callback try/catch.
+3. Introduce `class HostedDomainError extends Error` (module-local) so the callback handler in `src/routes/auth/login.ts` can distinguish this from generic OAuth errors and emit a `403` instead of `500`. Place the `instanceof HostedDomainError` check as the first statement in the existing callback catch block, before the generic `console.error`, so hosted-domain rejections emit only the structured warning required by FR-006.
 
 ### OpenAPI diff
 

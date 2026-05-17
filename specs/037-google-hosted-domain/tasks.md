@@ -12,10 +12,10 @@
 - [x] **T-004**: Author `quickstart.md` with scenarios A–F.
 - [x] **T-005**: Author `contracts/openapi-diff.md` summarizing schema changes.
 - [x] **T-006**: Author `checklists/requirements.md` (acceptance gates for PR1, PR2, and post-deploy).
-- [ ] **T-007**: Update `schemas/paths/auth/provider-callback.yaml` — add `'403'` response for domain mismatch.
-- [ ] **T-008**: Update `schemas/paths/auth/provider.yaml` — mention `GOOGLE_HOSTED_DOMAIN` in operation description (one line).
-- [ ] **T-009**: Run `npm run generate` and verify `src/types/generated.ts` diff is description-only / type-shape additive (new 403 response type is acceptable).
-- [ ] **T-010**: Commit PR1 (`spec:` prefix), push, open PR against `develop`.
+- [x] **T-007**: Update `schemas/paths/auth/provider-callback.yaml` — add `'403'` response for domain mismatch.
+- [x] **T-008**: Update `schemas/paths/auth/provider.yaml` — mention `GOOGLE_HOSTED_DOMAIN` in operation description (one line).
+- [x] **T-009**: Run `npm run generate` and verify `src/types/generated.ts` diff is description-only / type-shape additive (new 403 response type is acceptable).
+- [x] **T-010**: Commit PR1 (`spec:` prefix), push, open PR against `develop`.
 
 ## PR2 — Implementation (after PR1 merges)
 
@@ -45,7 +45,7 @@
 
 ### Callback handler change (`src/routes/auth/login.ts`)
 
-- [ ] **T-105**: In the outer `try/catch` of `GET /:provider/callback`, before the generic `Internal server error` branch, add:
+- [ ] **T-105**: In the outer `try/catch` of `GET /:provider/callback`, handle `HostedDomainError` as the first statement in the `catch`, before the generic `console.error` / `Internal server error` branch. This preserves FR-006's "exactly one structured warning log per rejection" requirement:
   ```ts
   if (err instanceof HostedDomainError) {
     return c.json({ error: "Account domain not allowed" }, 403, noCacheHeaders());
