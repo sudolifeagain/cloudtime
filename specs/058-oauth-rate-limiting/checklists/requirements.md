@@ -9,7 +9,7 @@ This checklist enforces the gate between PR1 (spec) and PR2 (implementation), an
 - [ ] `research.md` documents the binding choice, IP truncation, and fail-open behavior with rationale.
 - [ ] `tasks.md` distinguishes PR1 from PR2 tasks and identifies dependencies.
 - [ ] `contracts/openapi-diff.md` shows only description-level changes.
-- [ ] `schemas/components/responses/TooManyRequests.yaml` description is updated to "Enforced" language with the chosen values (10/60s, 5/60s).
+- [ ] `schemas/components/responses/TooManyRequests.yaml` remains generic, and `schemas/paths/auth/provider*.yaml` operation descriptions document the enforced OAuth values (10/60s, 5/60s).
 - [ ] `npm run generate` runs cleanly. `git diff src/types/generated.ts` shows no type-shape changes (description/JSDoc-only diff is acceptable).
 - [ ] PR1 contains no changes under `src/middleware/`, `src/routes/`, or `wrangler.toml`.
 - [ ] PR1 description references Issue #58 and the SpecKit 2-PR workflow rule.
@@ -17,7 +17,7 @@ This checklist enforces the gate between PR1 (spec) and PR2 (implementation), an
 ## PR2 (Implementation) gate — must be ✅ before merging
 
 ### Code
-- [ ] `wrangler.toml` declares two `[[unsafe.bindings]]` entries (`RATE_LIMIT_OAUTH_INITIATE`, `RATE_LIMIT_OAUTH_CALLBACK`) with the configured limits.
+- [ ] `wrangler.toml` declares two `[[ratelimits]]` entries (`RATE_LIMIT_OAUTH_INITIATE`, `RATE_LIMIT_OAUTH_CALLBACK`) with the configured limits.
 - [ ] `src/types.ts` exposes the bindings as optional fields on `Env`.
 - [ ] `src/middleware/rate-limit.ts` implements `rateLimitMiddleware(getBinding, ruleName)` per `plan.md` § Design Outputs.
 - [ ] Both OAuth routes in `src/routes/auth/login.ts` are wrapped by the middleware.
@@ -32,7 +32,7 @@ This checklist enforces the gate between PR1 (spec) and PR2 (implementation), an
 - [ ] Scenario E: 429 logs contain truncated IP only; no OAuth state, code, or cookie values appear in logs.
 
 ### Documentation
-- [ ] `docs/cloudflare-constraints.md` mentions the new bindings and the rate-limiter free-tier quota.
+- [ ] `docs/cloudflare-constraints.md` mentions the new bindings and tells operators to verify current Cloudflare plan limits before production deployment.
 - [ ] PR2 description links back to PR1, references Issue #58, and includes scenario results from `quickstart.md`.
 
 ## Post-deployment (production) gate

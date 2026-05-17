@@ -1,14 +1,10 @@
 description: |
-  Rate limit exceeded. Limits enforced by this implementation:
-  - OAuth initiate (`GET /auth/:provider`): 10 req/min per IP (truncated /24 for IPv4, /48 for IPv6).
-  - OAuth callback (`GET /auth/:provider/callback`): 5 req/min per IP (same key derivation).
+  Rate limit exceeded. The exact threshold depends on the endpoint.
+  OAuth login endpoints enforce Cloudflare Workers native Rate Limiting
+  bindings, keyed by truncated client IP. Authenticated endpoints may use
+  separate application-level controls, such as pending-link limits.
 
-  Other endpoints listed in earlier drafts (API key regeneration, account linking,
-  session management) are NOT yet rate-limited at the edge; they retain their
-  application-level controls (for example, 3 active pending links per user).
-
-  Implementation: Cloudflare Workers native Rate Limiting binding (see
-  `specs/058-oauth-rate-limiting/`).
+  See the operation description for endpoint-specific limits.
 headers:
   Retry-After:
     description: Seconds until the rate limit resets

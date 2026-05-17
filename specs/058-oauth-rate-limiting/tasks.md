@@ -14,8 +14,8 @@ These tasks cover both PRs of the SpecKit 2-PR workflow. PR1 contains specs/sche
 - [x] **T-004**: Author `quickstart.md` with scenarios A–E for manual verification.
 - [x] **T-005**: Author `contracts/openapi-diff.md` summarizing description-only changes.
 - [x] **T-006**: Author `checklists/requirements.md` (acceptance gate).
-- [x] **T-007**: Tighten `schemas/components/responses/TooManyRequests.yaml` description from "Recommended" to enforced values (10/60s, 5/60s) for the OAuth start/callback rows.
-- [x] **T-008**: Tighten 429 description blocks in `schemas/paths/auth/provider.yaml` and `schemas/paths/auth/provider-callback.yaml` to state the enforced limit.
+- [x] **T-007**: Update `schemas/components/responses/TooManyRequests.yaml` to generic endpoint-dependent language so non-OAuth endpoints do not inherit OAuth-specific thresholds.
+- [x] **T-008**: Add endpoint-specific rate-limit language in `schemas/paths/auth/provider.yaml` and `schemas/paths/auth/provider-callback.yaml` to state the enforced limits.
 - [x] **T-009**: Run `npm run generate` to regenerate `src/types/generated.ts`. Verify the diff is description-only (no shape changes).
 - [x] **T-010**: Commit PR1 (`spec:`/`docs:` prefix), push, open PR against `develop`.
 
@@ -23,9 +23,9 @@ These tasks cover both PRs of the SpecKit 2-PR workflow. PR1 contains specs/sche
 
 ### Binding registration
 
-- [ ] **T-101**: Add two `[[unsafe.bindings]]` entries to `wrangler.toml`:
-  - `RATE_LIMIT_OAUTH_INITIATE` (`namespace_id = "1001"`, `simple = { limit = 10, period = 60 }`)
-  - `RATE_LIMIT_OAUTH_CALLBACK` (`namespace_id = "1002"`, `simple = { limit = 5, period = 60 }`)
+- [ ] **T-101**: Add two `[[ratelimits]]` entries to `wrangler.toml`:
+  - `RATE_LIMIT_OAUTH_INITIATE` (`namespace_id = "1001"`, `[ratelimits.simple] limit = 10, period = 60`)
+  - `RATE_LIMIT_OAUTH_CALLBACK` (`namespace_id = "1002"`, `[ratelimits.simple] limit = 5, period = 60`)
 - [ ] **T-102**: Extend the `Env` type in `src/types.ts` to declare the two optional bindings (`?: RateLimit`). Use the `@cloudflare/workers-types` `RateLimit` type if exported; otherwise declare a minimal local interface matching `{ limit(opts: { key: string }): Promise<{ success: boolean }> }`.
 
 ### Middleware
@@ -63,7 +63,7 @@ These tasks cover both PRs of the SpecKit 2-PR workflow. PR1 contains specs/sche
 
 ### Documentation
 
-- [ ] **T-110**: Update `docs/cloudflare-constraints.md` to mention the new rate-limiter bindings and the daily-request budget on the free plan.
+- [ ] **T-110**: Update `docs/cloudflare-constraints.md` to mention the new rate-limiter bindings and instruct operators to verify current Cloudflare plan limits before production deployment.
 
 ### PR2 submission
 

@@ -5,7 +5,7 @@ This guide walks through manually verifying the rate-limit behavior introduced b
 ## Prerequisites
 
 - `wrangler` CLI authenticated against the target account.
-- `wrangler.toml` contains the two `[[unsafe.bindings]]` entries (`RATE_LIMIT_OAUTH_INITIATE`, `RATE_LIMIT_OAUTH_CALLBACK`).
+- `wrangler.toml` contains the two `[[ratelimits]]` entries (`RATE_LIMIT_OAUTH_INITIATE`, `RATE_LIMIT_OAUTH_CALLBACK`).
 - The worker is deployed (or running via `wrangler dev` with `--remote` so the rate-limiter binding is real, not stubbed).
 - A test provider OAuth app is configured (the request never needs to complete OAuth — we just need a real provider parameter such as `github`).
 
@@ -16,7 +16,7 @@ WORKER_URL="https://cloudtime.example.dev"
 
 # Send 12 requests as fast as the network allows; capture status only.
 for i in $(seq 1 12); do
-  curl -s -o /dev/null -w "%{http_code} " "$WORKER_URL/auth/github"
+  curl -s -o /dev/null -w "%{http_code} " "$WORKER_URL/api/v1/auth/github"
 done
 echo
 ```
@@ -26,7 +26,7 @@ echo
 Verification points:
 1. The first 10 responses are 302 redirects to GitHub.
 2. The 11th and 12th responses are 429.
-3. `curl -i $WORKER_URL/auth/github` after the limit hits returns:
+3. `curl -i $WORKER_URL/api/v1/auth/github` after the limit hits returns:
    - `HTTP/2 429`
    - `retry-after: 60`
    - `cache-control: no-store`
@@ -39,7 +39,7 @@ Verification points:
 WORKER_URL="https://cloudtime.example.dev"
 
 for i in $(seq 1 7); do
-  curl -s -o /dev/null -w "%{http_code} " "$WORKER_URL/auth/github/callback?state=x&code=y"
+  curl -s -o /dev/null -w "%{http_code} " "$WORKER_URL/api/v1/auth/github/callback?state=x&code=y"
 done
 echo
 ```
@@ -59,7 +59,7 @@ wrangler dev --local
 
 # In another terminal:
 for i in $(seq 1 30); do
-  curl -s -o /dev/null -w "%{http_code} " http://localhost:8787/auth/github
+  curl -s -o /dev/null -w "%{http_code} " http://localhost:8787/api/v1/auth/github
 done
 echo
 ```
@@ -77,7 +77,7 @@ Requires a client with a known IPv6 prefix. Using `curl --interface` from a `/48
 
 ```bash
 # IPv6 source: 2001:db8:abcd:1234::1
-curl -6 "$WORKER_URL/auth/github" # ×10 from the same /48
+curl -6 "$WORKER_URL/api/v1/auth/github" # ×10 from the same /48
 ```
 
 Verification points:
@@ -108,7 +108,7 @@ Verification points:
 To disable rate limiting without redeploying code:
 
 ```bash
-# Comment out the [[unsafe.bindings]] entries in wrangler.toml, then:
+# Comment out the [[ratelimits]] entries in wrangler.toml, then:
 wrangler deploy
 ```
 
@@ -119,11 +119,12 @@ The middleware will fail-open (Scenario C behavior) and emit the one-time warnin
 To change limits without code changes, edit the `simple` rule in `wrangler.toml`:
 
 ```toml
-[[unsafe.bindings]]
+[[ratelimits]]
 name = "RATE_LIMIT_OAUTH_INITIATE"
-type = "ratelimit"
 namespace_id = "1001"
-simple = { limit = 20, period = 60 } # was 10 — bumped to 20
+  [ratelimits.simple]
+  limit = 20 # was 10 — bumped to 20
+  period = 60
 ```
 
 Then redeploy. No code change required.

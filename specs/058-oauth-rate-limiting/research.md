@@ -2,13 +2,13 @@
 
 ## Decision 1: Use Cloudflare Workers Rate Limiting binding (native), not custom KV counters
 
-**Decision**: Bind the Workers Rate Limiting API via `[[unsafe.bindings]]` in `wrangler.toml`.
+**Decision**: Bind the Workers Rate Limiting API via `[[ratelimits]]` in `wrangler.toml`.
 
 **Rationale**:
 - The Rate Limiting binding lives in Cloudflare's edge data plane. It performs the counter increment + check inline with the request, without consuming Worker CPU for the storage round-trip. Latency is single-digit milliseconds at the edge.
 - Custom KV-based counters cost two KV operations per request (one read, one write), each counted against the free-tier 1,000/day write budget — defeating the original goal of protecting the KV write budget from abuse.
 - D1-backed counters would block the request on a SQL round-trip and conflict with the 10ms CPU budget on Workers free tier.
-- The `TooManyRequests.yaml` component already specifies "Implementation: Use Cloudflare Workers native Rate Limiting binding." — the Constitution-style direction is set.
+- The OpenAPI and SpecKit artifacts specify Cloudflare Workers native Rate Limiting; the shared `TooManyRequests.yaml` response stays generic because multiple endpoint classes reference it.
 
 **Alternatives considered**:
 1. **KV INCR pattern**: rejected — counts against the KV write budget that we are trying to protect.
@@ -17,18 +17,18 @@
 
 ---
 
-## Decision 2: `[[unsafe.bindings]]` syntax with `simple` rule type
+## Decision 2: `[[ratelimits]]` syntax with `simple` rule type
 
-**Decision**: Use the `[[unsafe.bindings]]` table with `type = "ratelimit"` and a `simple` rule configuration.
+**Decision**: Use the Wrangler `[[ratelimits]]` table with a `simple` rule configuration.
 
 **Rationale**:
-- As of compatibility_date 2025-03-09 (the current pin in `wrangler.toml`), the Rate Limiting binding is exposed under `unsafe.bindings`. Cloudflare uses the `unsafe` prefix for bindings that are stable in production but whose configuration shape may still evolve.
-- The `simple` rule provides a fixed window with `limit` (requests) and `period` (seconds). This matches FR-001/FR-002 (10/60 and 5/60).
-- `namespace_id` must be a unique integer per binding within the account. We pick `1001` (initiate) and `1002` (callback) to leave room for future bindings.
+- The current Cloudflare Workers Rate Limiting binding documentation uses `[[ratelimits]]` for Wrangler 4.36.0 and later. This repository currently locks Wrangler 4.71.0, so PR2 should use the stable documented configuration shape instead of the older experimental `unsafe.bindings` form.
+- The `simple` rule provides a fixed window with `limit` (requests) and `period` (seconds). This matches FR-001/FR-002 (10/60 and 5/60) when the requirements are phrased as Cloudflare-configured windows rather than sliding windows.
+- `namespace_id` must be a positive integer string unique per binding within the account. We pick `"1001"` (initiate) and `"1002"` (callback) to leave room for future bindings.
 
 **Alternatives considered**:
 1. **Single binding with composite key**: rejected — Cloudflare's rate-limit API is keyed inside the binding, so two separate bindings give cleaner observability and let us tune limits independently without redeploying both.
-2. **Wait for a stable (non-`unsafe`) binding name**: rejected — would block the feature for an unbounded time; the API surface is documented and stable for production use.
+2. **Older `[[unsafe.bindings]]` form**: rejected — it is experimental in Wrangler 4.71.0 and no longer matches current Cloudflare documentation for Rate Limiting bindings.
 
 ---
 
@@ -52,7 +52,7 @@
 
 ## Decision 4: Fail-open when binding is undefined
 
-**Decision**: If the rate-limit binding is missing at runtime (e.g., `RATE_LIMIT_OAUTH_INITIATE` is `undefined` because the dev environment has no `unsafe.bindings` configured), the middleware allows the request and emits a single warning log on first occurrence.
+**Decision**: If the rate-limit binding is missing at runtime (e.g., `RATE_LIMIT_OAUTH_INITIATE` is `undefined` because the dev environment has no `[[ratelimits]]` binding configured), the middleware allows the request and emits a single warning log on first occurrence.
 
 **Rationale**:
 - Local development should not require Cloudflare account setup. Fail-closed (returning 500/503 when the binding is missing) would force every contributor to configure rate-limit bindings just to run `wrangler dev`.
@@ -97,9 +97,10 @@
 
 ## Decision 7: OpenAPI schema change is description-only
 
-**Decision**: Tighten the `description` on the `429` block in `provider.yaml` and `provider-callback.yaml` from "Recommended" to "Enforced", and tighten the description on `TooManyRequests.yaml` to match the implemented values.
+**Decision**: Keep `TooManyRequests.yaml` generic and add endpoint-specific enforced limit text to the `provider.yaml` and `provider-callback.yaml` operation descriptions.
 
 **Rationale**:
 - The 429 response and `Retry-After` header are already declared in the schema; the implementation makes the documented behavior real.
-- No new response codes, no new headers, no new schemas. `npm run generate` produces a no-op or near-no-op for `src/types/generated.ts`.
+- The shared `TooManyRequests.yaml` component is also referenced by non-login endpoints such as API key regeneration and account-linking paths, so OAuth-specific thresholds do not belong in the shared response description.
+- No new response codes, no new headers, no new schemas. `npm run generate` produces JSDoc-only changes in `src/types/generated.ts`.
 - Keeping the OpenAPI change description-only respects the SDD principle that schema changes precede implementation, while not introducing real type churn.
