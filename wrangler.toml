@@ -32,3 +32,19 @@ INSTANCE_MODE = "single"
 # DISCORD_CLIENT_ID
 # DISCORD_CLIENT_SECRET
 # ENCRYPTION_KEY          - AES-256 key (64 hex chars) for encrypting OAuth tokens at rest
+
+# OAuth rate limits — see specs/058-oauth-rate-limiting/
+# Operators must verify current Cloudflare plan limits before production deployment.
+[[ratelimits]]
+name = "RATE_LIMIT_OAUTH_INITIATE"
+namespace_id = "1001"
+  [ratelimits.simple]
+  limit = 10
+  period = 60
+
+[[ratelimits]]
+name = "RATE_LIMIT_OAUTH_CALLBACK"
+namespace_id = "1002"
+  [ratelimits.simple]
+  limit = 5
+  period = 60
