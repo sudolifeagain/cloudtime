@@ -1501,12 +1501,16 @@ export interface components {
             };
         };
         /**
-         * @description Rate limit exceeded. Recommended limits:
-         *     - OAuth start/callback: 10 req/min per IP
-         *     - API key regeneration: 3 req/min per user
-         *     - Account linking: 5 req/min per user
-         *     - Session management: 30 req/min per user
-         *     Implementation: Use Cloudflare Workers native Rate Limiting binding.
+         * @description Rate limit exceeded. Limits enforced by this implementation:
+         *     - OAuth initiate (`GET /auth/:provider`): 10 req/min per IP (truncated /24 for IPv4, /48 for IPv6).
+         *     - OAuth callback (`GET /auth/:provider/callback`): 5 req/min per IP (same key derivation).
+         *
+         *     Other endpoints listed in earlier drafts (API key regeneration, account linking,
+         *     session management) are NOT yet rate-limited at the edge; they retain their
+         *     application-level controls (for example, 3 active pending links per user).
+         *
+         *     Implementation: Cloudflare Workers native Rate Limiting binding (see
+         *     `specs/058-oauth-rate-limiting/`).
          */
         TooManyRequests: {
             headers: {
