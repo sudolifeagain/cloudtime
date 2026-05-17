@@ -24,6 +24,13 @@ export interface Env {
   // If unset, derived from request Host header (safe behind Cloudflare, risky with custom proxies)
   APP_URL?: string;
 
+  // Optional Google Workspace hosted domain restriction. When set, the
+  // authorization URL includes `hd=<domain>` as a UX hint and the callback
+  // enforces the matching `hd` claim on the validated id_token. Tokens with
+  // no `hd` claim (personal Google accounts) or a non-matching `hd` are
+  // rejected with 403. See specs/037-google-hosted-domain/.
+  GOOGLE_HOSTED_DOMAIN?: string;
+
   // Rate-limit bindings (optional — middleware fails open when undefined)
   RATE_LIMIT_OAUTH_INITIATE?: RateLimit;
   RATE_LIMIT_OAUTH_CALLBACK?: RateLimit;

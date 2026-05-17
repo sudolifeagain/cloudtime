@@ -7,6 +7,13 @@ import type { Env } from "../types";
 
 // ─── Types ───────────────────────────────────────────────
 
+export class HostedDomainError extends Error {
+  constructor(message = "Google account domain not allowed") {
+    super(message);
+    this.name = "HostedDomainError";
+  }
+}
+
 export type OAuthProvider = "github" | "google" | "discord";
 
 const VALID_PROVIDERS = new Set<string>(["github", "google", "discord"]);
@@ -97,6 +104,7 @@ export function buildAuthorizeUrl(
       url.searchParams.set("code_challenge", codeChallenge);
       url.searchParams.set("code_challenge_method", "S256");
       if (nonce) url.searchParams.set("nonce", nonce);
+      if (env.GOOGLE_HOSTED_DOMAIN) url.searchParams.set("hd", env.GOOGLE_HOSTED_DOMAIN);
       return url.toString();
     }
     case "discord": {
@@ -492,6 +500,23 @@ async function validateGoogleIdToken(
     const expected = btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     if (expected !== payload.at_hash) {
       throw new Error("Google id_token at_hash mismatch");
+    }
+  }
+
+  // Optional hosted-domain restriction (Issue #37). The `hd` claim is signed
+  // and trustworthy at this point. Empty/absent claim is treated as mismatch
+  // when the env var is set so personal accounts cannot satisfy a Workspace
+  // restriction.
+  const requiredHd = env.GOOGLE_HOSTED_DOMAIN?.trim().toLowerCase();
+  if (requiredHd) {
+    const tokenHd =
+      typeof payload.hd === "string" ? payload.hd.trim().toLowerCase() : "";
+    if (tokenHd !== requiredHd) {
+      const reason = tokenHd ? "hd-mismatch" : "hd-missing";
+      console.warn(
+        `[google-hosted-domain] rejected rule=google-hosted-domain reason=${reason} expected=${requiredHd}`,
+      );
+      throw new HostedDomainError();
     }
   }
 

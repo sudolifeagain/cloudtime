@@ -22,6 +22,7 @@ import {
   buildAuthorizeUrl,
   exchangeCode,
   fetchUserInfo,
+  HostedDomainError,
   type OAuthProvider,
 } from "../../utils/oauth";
 import {
@@ -401,6 +402,9 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
       noCacheHeaders(),
     );
   } catch (err) {
+    if (err instanceof HostedDomainError) {
+      return c.json({ error: "Account domain not allowed" }, 403, noCacheHeaders());
+    }
     console.error("OAuth callback error:", err instanceof Error ? err.message : "Unknown error");
     return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }

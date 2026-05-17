@@ -141,6 +141,11 @@ OAuth access_tokens and refresh_tokens are encrypted before storage:
 ### Google
 - Scopes: `openid`, `email`, `profile`
 - User info endpoint: `GET https://www.googleapis.com/oauth2/v2/userinfo`
+- **Optional hosted domain restriction**: if `GOOGLE_HOSTED_DOMAIN` is set, the
+  authorization URL includes `hd=<domain>` as a UX hint and the callback
+  enforces the matching `hd` claim on the validated id_token. Tokens with no
+  `hd` claim (personal Google accounts) or a non-matching `hd` are rejected
+  with 403. See `specs/037-google-hosted-domain/`.
 
 ### Discord
 - Scopes: `identify`, `email`
@@ -158,4 +163,5 @@ GOOGLE_CLIENT_SECRET
 DISCORD_CLIENT_ID
 DISCORD_CLIENT_SECRET
 ENCRYPTION_KEY          # 64 hex chars (256 bits), AES-256 key for token encryption
+GOOGLE_HOSTED_DOMAIN    # Optional. Google Workspace primary domain to restrict logins to.
 ```
