@@ -13,9 +13,9 @@
 - [x] **T-005**: Author `quickstart.md` (scenarios A–J).
 - [x] **T-006**: Author `contracts/openapi-diff.md` (minor description clarifications).
 - [x] **T-007**: Author `checklists/requirements.md`.
-- [ ] **T-008**: Optionally tighten `schemas/components/schemas/Goal.yaml` to note that `chart_data` and `status` are only populated by the single-goal endpoint, not the list endpoint.
-- [ ] **T-009**: Run `npm run generate`. Verify `src/types/generated.ts` diff is description-only.
-- [ ] **T-010**: Commit PR1, push, open PR against `develop`.
+- [x] **T-008**: Split the OpenAPI response contract so `Goal` contains only persisted fields and `GoalWithChart` requires `chart_data` and `status` for the single-goal endpoint.
+- [x] **T-009**: Run `npm run generate`. Verify `src/types/generated.ts` reflects the `Goal` / `GoalWithChart` response split.
+- [x] **T-010**: Commit PR1, push, open PR against `develop`.
 
 ## PR2 — Implementation (after PR1 merges)
 
@@ -32,7 +32,7 @@
 
 - [ ] **T-103**: Create `src/routes/goals.ts` exporting a Hono sub-app with:
   - `GET /goals` listing the user's goals (no chart_data).
-  - `GET /goals/:id` returning `{ data: Goal }` with chart_data + status.
+  - `GET /goals/:id` returning `{ data: GoalWithChart }` with chart_data + status.
   - Both behind `authMiddleware`.
 - [ ] **T-104**: Decode `languages` / `editors` / `projects` JSON columns defensively; treat invalid JSON as `[]` with a `console.warn` containing the goal id but not the raw value.
 - [ ] **T-105**: Implement the summary-totals SQL with parameterised `IN (?, ?, ...)` for filtered goal types. Guard against zero-length filter arrays (the query degenerates to "no rows" by intent).

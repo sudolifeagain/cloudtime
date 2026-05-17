@@ -1,98 +1,61 @@
 # OpenAPI Diff
 
 The Goals read surface already exists in `schemas/openapi.yaml` and the
-referenced path files. PR1 makes only **description-level** tightening to
-make the two endpoints' response shape contract precise.
+referenced path files. PR1 tightens the response contract so the list and
+single-goal endpoints expose distinct generated types.
 
 ## Files touched
 
-1. `schemas/paths/goals/goals.yaml` — list endpoint description.
-2. `schemas/paths/goals/goal.yaml` — single-goal endpoint description.
-3. `schemas/components/schemas/Goal.yaml` — clarifies which fields are
-   populated where.
+1. `schemas/paths/goals/goals.yaml` — list endpoint description and response
+   remains `Goal`.
+2. `schemas/paths/goals/goal.yaml` — single-goal response now references
+   `GoalWithChart`.
+3. `schemas/components/schemas/Goal.yaml` — persisted goal fields only.
+4. `schemas/components/schemas/GoalWithChart.yaml` — new schema requiring
+   `chart_data` and `status`.
 
-## Diff 1 — `goals.yaml`
+## Contract shape
 
-Add a `description` block stating the list endpoint omits `chart_data` and
-`status` (matches FR-002).
+### `GET /users/current/goals`
 
-```diff
- get:
-   operationId: getGoals
-   tags:
-     - goals
-   summary: List user's goals
-+  description: |
-+    Returns the authenticated user's goals ordered by `created_at` ascending.
-+    Each entry includes only the persisted Goal fields. `chart_data` and
-+    `status` are NOT computed for the list endpoint — clients that need
-+    per-period progress must request each goal individually via
-+    `GET /users/current/goals/{goal_id}`.
-   responses:
-     '200':
-       description: List of goals
-```
+Returns `{"data": Goal[]}`. `Goal` contains only persisted columns:
 
-## Diff 2 — `goal.yaml`
+- `id`, `title`, `type`, `delta`, `target_seconds`
+- `is_enabled`, `is_snoozed`, `is_inverse`
+- `languages`, `editors`, `projects`
+- `created_at`, `modified_at`
 
-Add a `description` block explaining the chart's 7-period window and the
-timezone source.
+The list response does not define `chart_data` or `status`.
 
-```diff
- get:
-   operationId: getGoal
-   tags:
-     - goals
-   summary: Get a single goal with chart data
-+  description: |
-+    Returns a single goal owned by the authenticated user, augmented with
-+    `chart_data` (the most recent 7 periods of actual vs target activity)
-+    and top-level `status` (the most recently completed period's outcome,
-+    forced to `pending` if the goal is snoozed).
-+
-+    Period boundaries use the user's profile timezone (`users.timezone`).
-+    Day periods span local calendar days. Week periods span ISO 8601
-+    Monday-Sunday weeks in the user's timezone.
-+
-+    Requests for a goal owned by a different user return 404 (not 403) to
-+    avoid leaking goal-id existence.
-```
+### `GET /users/current/goals/{goal_id}`
 
-## Diff 3 — `Goal.yaml`
+Returns `{"data": GoalWithChart}`. `GoalWithChart` is `Goal` plus required:
 
-Annotate `chart_data` and `status` as "populated only by `GET /goals/{id}`".
+- `chart_data`: exactly 7 entries in chronological order.
+- `status`: `success`, `fail`, or `pending`.
 
-```diff
-   chart_data:
-     type: array
-+    description: |
-+      Populated only by `GET /users/current/goals/{goal_id}`. Always 7 entries
-+      in chronological order; the last entry is always `range_status: pending`.
-     items:
-       …
-   status:
-     type: string
-+    description: |
-+      Populated only by `GET /users/current/goals/{goal_id}`. Mirrors the
-+      `range_status` of the most recently completed period unless the goal
-+      is snoozed, in which case it is forced to `pending`.
-     enum:
-       - success
-       - fail
-       - pending
-```
+Each chart entry requires:
+
+- `actual_seconds`
+- `goal_seconds`
+- `range`
+- `range_status`
 
 ## Generated-types impact
 
-`npm run generate` emits JSDoc-only changes in `src/types/generated.ts`:
-- Two operation descriptions and three field descriptions.
-- No new types, no removed types, no type shape changes.
+`npm run generate` updates `src/types/generated.ts` with a real response-type
+split:
 
-The diff must remain JSDoc-only; if `tsc` flags any type-shape change, the
-description text was probably mis-edited and PR1 is blocked until the change
-is narrowed.
+- `components["schemas"]["Goal"]` no longer includes `chart_data` or `status`.
+- `components["schemas"]["GoalWithChart"]` requires `chart_data` and `status`.
+- `operations["getGoals"]` returns `Goal[]`.
+- `operations["getGoal"]` returns `GoalWithChart`.
+
+This is intentional. The diff is no longer JSDoc-only because the OpenAPI
+contract now encodes the list-vs-single response shape instead of relying on
+description text alone.
 
 ## SDD compliance note
 
-Per CLAUDE.md: PR1 lands SpecKit + schema (description only). PR2 lands
-the route handlers and the chart helper. No runtime code in PR1.
+Per repository rules: PR1 lands SpecKit + schema + generated types. PR2 lands
+the route handlers and chart helper. No runtime code in PR1.

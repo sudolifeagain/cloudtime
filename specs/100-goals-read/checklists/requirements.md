@@ -2,19 +2,21 @@
 
 ## PR1 (Spec) gate — must be ✅ before merging
 
-- [ ] `spec.md` covers FR-001..FR-012 with no `[NEEDS CLARIFICATION]` markers.
-- [ ] `plan.md` Constitution Check has all five principles marked PASS.
-- [ ] `research.md` documents the 9 design decisions.
-- [ ] `data-model.md` confirms no schema change is required.
-- [ ] `quickstart.md` enumerates scenarios A–J.
-- [ ] `tasks.md` separates PR1 from PR2 with dependency arrows.
-- [ ] `contracts/openapi-diff.md` documents only description-level YAML changes.
-- [ ] `schemas/paths/goals/goals.yaml`, `schemas/paths/goals/goal.yaml`, and
-      `schemas/components/schemas/Goal.yaml` carry the clarifying description text.
-- [ ] `npm run generate` produces a JSDoc-only diff in `src/types/generated.ts`.
-- [ ] PR1 contains no changes under `src/routes/goals.ts`, `src/utils/goal-chart.ts`,
+- [x] `spec.md` covers FR-001..FR-012 with no `[NEEDS CLARIFICATION]` markers.
+- [x] `plan.md` Constitution Check has all five principles marked PASS.
+- [x] `research.md` documents the 9 design decisions.
+- [x] `data-model.md` confirms no schema change is required.
+- [x] `quickstart.md` enumerates scenarios A–J.
+- [x] `tasks.md` separates PR1 from PR2 with dependency arrows.
+- [x] `contracts/openapi-diff.md` documents the list/single response schema split.
+- [x] `schemas/paths/goals/goals.yaml`, `schemas/paths/goals/goal.yaml`,
+      `schemas/components/schemas/Goal.yaml`, and
+      `schemas/components/schemas/GoalWithChart.yaml` encode the response shapes.
+- [x] `npm run generate` produces generated types where `getGoals` returns
+      `Goal[]` and `getGoal` returns `GoalWithChart`.
+- [x] PR1 contains no changes under `src/routes/goals.ts`, `src/utils/goal-chart.ts`,
       or `src/index.ts`.
-- [ ] PR1 references this feature folder and explicitly notes that CRUD is out of scope.
+- [x] PR1 references this feature folder and explicitly notes that CRUD is out of scope.
 
 ## PR2 (Implementation) gate — must be ✅ before merging
 
@@ -24,7 +26,7 @@
 - [ ] `src/routes/goals.ts` exports a Hono sub-app with both endpoints
       behind `authMiddleware`.
 - [ ] Cross-user request returns 404 (verified by integration test).
-- [ ] List endpoint omits `chart_data` and `status` from each Goal in the response.
+- [ ] List endpoint omits `chart_data` and `status` from each `Goal` in the response.
 - [ ] `npx tsc --noEmit` passes with zero errors.
 - [ ] No diff in `src/routes/heartbeats.ts`, `src/routes/summaries.ts`,
       `src/routes/stats.ts`, or any auth-flow file.

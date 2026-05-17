@@ -36,7 +36,7 @@
 
 **Rationale**:
 - The user is pausing *interpretation*, not data collection. They still want to see what their activity looks like.
-- Reflects WakaTime's behaviour and what most users intuitively expect.
+- Reflects common goal-tracking behaviour and what most users intuitively expect.
 - Keeps the per-period status pure (a function of actuals and target) so callers who want raw data can ignore the top-level field.
 
 **Alternative considered**:
@@ -75,7 +75,7 @@
 **Decision**: `chart_data` always returns 7 entries: today plus the six days before (or this-week plus the six weeks before).
 
 **Rationale**:
-- WakaTime returns roughly the same; matching the convention reduces client surprises.
+- Compatible clients generally expect a compact recent-history window; matching that convention reduces client surprises.
 - Seven is enough for users to see a recent trend without paging.
 - Pre-aggregated; bounded read cost.
 

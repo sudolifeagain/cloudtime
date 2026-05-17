@@ -41,38 +41,6 @@ properties:
     type: array
     items:
       type: string
-  chart_data:
-    type: array
-    description: |
-      Populated only by `GET /users/current/goals/{goal_id}`. Always 7 entries
-      in chronological order; the last entry is always `range_status: pending`.
-    items:
-      type: object
-      properties:
-        actual_seconds:
-          type: number
-          format: double
-        goal_seconds:
-          type: number
-          format: double
-        range:
-          $ref: ./TimeRange.yaml
-        range_status:
-          type: string
-          enum:
-            - success
-            - fail
-            - pending
-  status:
-    type: string
-    description: |
-      Populated only by `GET /users/current/goals/{goal_id}`. Mirrors the
-      `range_status` of the most recently completed period unless the goal
-      is snoozed, in which case it is forced to `pending`.
-    enum:
-      - success
-      - fail
-      - pending
   created_at:
     type: string
     format: date-time

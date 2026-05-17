@@ -88,10 +88,12 @@ For a `delta=week` goal, the same query but the WHERE clause spans the last 7 IS
 ### Period count vs query count
 
 The single-goal endpoint issues two D1 queries:
-1. `SELECT … FROM goals WHERE id = ? AND user_id = ?`
+1. `SELECT … FROM goals JOIN users ON users.id = goals.user_id WHERE goals.id = ? AND goals.user_id = ?`
 2. The summary aggregation query above.
 
-No N+1. No per-period query.
+The joined goal query returns `users.timezone` with the goal row, so the
+handler does not need a separate profile-timezone lookup. No N+1. No
+per-period query.
 
 ## Domain types (TypeScript, not in D1)
 
@@ -101,15 +103,18 @@ type TimeRange = { date: DateString; start: string; end: string };
 
 interface ChartEntry {
   actual_seconds: number;
-  goal_seconds: number;          // always === goal.target_seconds (denormalised per WakaTime convention)
+  goal_seconds: number;          // always === goal.target_seconds (denormalised for client compatibility)
   range: TimeRange;
   range_status: "success" | "fail" | "pending";
 }
 
-interface GoalForRead {
+interface GoalListItem {
   // ...all of the existing Goal columns decoded to their TS types
-  chart_data?: ChartEntry[];     // present only on single-goal endpoint
-  status?: "success" | "fail" | "pending"; // present only on single-goal endpoint
+}
+
+interface GoalWithChart extends GoalListItem {
+  chart_data: ChartEntry[];      // exactly 7 entries
+  status: "success" | "fail" | "pending";
 }
 ```
 

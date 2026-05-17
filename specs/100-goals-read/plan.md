@@ -17,7 +17,7 @@ No DB migration, no new env var, no new dependency. OpenAPI already declares the
 **Testing**: Vitest + workers pool; new unit tests for the chart-computation helper, integration tests for both endpoints against a seeded D1
 **Target Platform**: Cloudflare Workers (edge compute)
 **Project Type**: Web service (REST API)
-**Performance Goals**: <10ms CPU per single-goal request (one SELECT against the goal row, one SELECT against summaries clamped to a 7-period window)
+**Performance Goals**: <10ms CPU per single-goal request (one joined SELECT against the goal row plus user timezone, one SELECT against summaries clamped to a 7-period window)
 **Constraints**: D1 binding parameter limit (we stay well under), Workers free-tier CPU budget
 
 ## Constitution Check
@@ -26,7 +26,7 @@ No DB migration, no new env var, no new dependency. OpenAPI already declares the
 |-----------|--------|-------|
 | I. SDD | PASS | OpenAPI already declares the operations. PR1 is spec-only; PR2 lands the handlers. `npm run generate` produces no type-shape change. |
 | II. Cloudflare-Native | PASS | Pure D1 reads + existing `time-format` helpers. No new bindings or services. |
-| III. Type Safety | PASS | Handlers use `components["schemas"]["Goal"]` from `src/types/generated.ts`. No hand-edited types. |
+| III. Type Safety | PASS | Handlers use `components["schemas"]["Goal"]` and `components["schemas"]["GoalWithChart"]` from `src/types/generated.ts`. No hand-edited types. |
 | IV. Legal/Trademark | PASS | "WakaTime-compatible" only in docs context. No source/asset borrowing. |
 | V. Simplicity First | PASS | ≤200 LoC new code in `src/routes/goals.ts`; the chart helper is a single function over already-aggregated data. |
 
@@ -91,12 +91,13 @@ goals.get("/goals/:id", authMiddleware, async (c) => {
   const userId = c.get("userId");
   const id = c.req.param("id");
   const row = await c.env.DB.prepare(
-    `SELECT ... FROM goals WHERE id = ? AND user_id = ?`,
+    `SELECT g..., u.timezone
+       FROM goals g JOIN users u ON u.id = g.user_id
+      WHERE g.id = ? AND g.user_id = ?`,
   ).bind(id, userId).first<GoalRow>();
   if (!row) return c.json({ error: "Not found" }, 404);
 
-  const userTz = await getUserTimezone(c);  // already used by other endpoints
-  const { ranges, summarySumQuery } = planChart(row, userTz);
+  const { ranges, summarySumQuery } = planChart(row, row.timezone);
   const totals = await c.env.DB.prepare(summarySumQuery).all<TotalsRow>();
   const goal = await assembleGoal(row, ranges, totals);
   return c.json({ data: goal });
@@ -123,7 +124,10 @@ export function topStatus(entries: ChartEntry[], isSnoozed: boolean): "success" 
 
 ### OpenAPI surface
 
-Already declared. PR1 verifies the existing yaml files still describe the response correctly; no shape change anticipated. PR1 may add a minor `description` clarification noting which fields are populated on list vs single — see [contracts/openapi-diff.md](./contracts/openapi-diff.md).
+Already declared. PR1 tightens the response contract by keeping `Goal` as
+the persisted-field list shape and adding `GoalWithChart` for the single-goal
+response, where `chart_data` and `status` are required — see
+[contracts/openapi-diff.md](./contracts/openapi-diff.md).
 
 ## Phase 2 — Implementation Tasks
 

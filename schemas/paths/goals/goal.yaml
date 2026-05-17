@@ -32,7 +32,7 @@ get:
               - data
             properties:
               data:
-                $ref: ../../components/schemas/Goal.yaml
+                $ref: ../../components/schemas/GoalWithChart.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
     '404':

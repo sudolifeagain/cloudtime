@@ -17,7 +17,7 @@ This spec covers the **read path only**. Create / update / delete endpoints are 
 
 As an authenticated user, I want to see the goals I've configured so that I can confirm my current commitments and choose one to inspect.
 
-**Why this priority**: Lists are the entry point to every WakaTime UI surface that consumes goals. Without it the single-goal endpoint is unreachable through any normal client flow.
+**Why this priority**: Lists are the entry point to every compatible goals UI surface. Without it the single-goal endpoint is unreachable through any normal client flow.
 
 **Independent Test**: Authenticate as a user with three `goals` rows seeded (different types) and call `GET /api/v1/users/current/goals`. Verify the response contains all three goals with their static fields, ordered deterministically, and that `chart_data` is **omitted** (list view is intentionally lightweight).
 
@@ -87,7 +87,7 @@ As a user located outside UTC, I want the "today" period in my goal chart to ref
 
 - **FR-001**: `GET /api/v1/users/current/goals` MUST return all goal rows owned by the authenticated user, in `created_at` ascending order, as `{"data": [Goal, ...]}`.
 - **FR-002**: The list endpoint MUST NOT include `chart_data` on returned goals (lightweight response).
-- **FR-003**: `GET /api/v1/users/current/goals/{goal_id}` MUST return a single goal owned by the user, augmented with `chart_data` and top-level `status`, as `{"data": Goal}`.
+- **FR-003**: `GET /api/v1/users/current/goals/{goal_id}` MUST return a single goal owned by the user, augmented with required `chart_data` and top-level `status`, as `{"data": GoalWithChart}`.
 - **FR-004**: A request for a goal not owned by the user MUST return 404 (not 403 — do not leak existence).
 - **FR-005**: `chart_data` MUST contain exactly 7 entries: the current period plus the 6 immediately preceding periods, in chronological order (oldest first).
 - **FR-006**: For `delta=day`, each entry spans one local-calendar day in the user's profile timezone. For `delta=week`, each entry spans Monday 00:00 through Sunday 23:59 in the user's profile timezone.
@@ -104,9 +104,9 @@ As a user located outside UTC, I want the "today" period in my goal chart to ref
 
 ### Non-Functional Requirements
 
-- **NFR-001**: A single `GET /goals/{id}` request MUST complete within the Workers 10ms CPU budget on the free tier. The chart computation reads at most ~7 days of pre-aggregated `summaries` rows; no heartbeat scan.
+- **NFR-001**: A single `GET /goals/{id}` request MUST complete within the Workers 10ms CPU budget on the free tier. The chart computation reads at most the 7-period date window from pre-aggregated `summaries` rows (7 days for daily goals, 49 daily buckets for weekly goals); no heartbeat scan.
 - **NFR-002**: The list endpoint MUST issue at most one D1 query (single SELECT against `goals`).
-- **NFR-003**: The single-goal endpoint MUST issue at most two D1 queries: one for the goal row, one batched read of the 7-period summary aggregates.
+- **NFR-003**: The single-goal endpoint MUST issue at most two D1 queries: one joined read for the goal row plus the user's timezone, and one batched read of the 7-period summary aggregates.
 
 ### Key Entities *(no schema change)*
 
