@@ -54,7 +54,13 @@ export interface RateLimit {
 // Hono environment with authenticated user context
 export type AuthEnv = {
   Bindings: Env;
-  Variables: { userId: string; userTimezone?: string };
+  Variables: {
+    userId: string;
+    userTimezone?: string;
+    // users.timeout in MINUTES (matches the DB column). Cron aggregator and
+    // heartbeat handlers convert to seconds at the comparison site.
+    userTimeout?: number;
+  };
 };
 
 // Hono environment for session-authenticated routes

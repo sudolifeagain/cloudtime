@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, getUserTimeout, getUserTimezone } from "../middleware/auth";
+import { getEpochBoundsForDate, isValidTimezone } from "../utils/time-format";
+import { parseUserAgent, resolveUserAgentId } from "../utils/user-agent";
 
 type HeartbeatInput = components["schemas"]["HeartbeatInput"];
 type Heartbeat = components["schemas"]["Heartbeat"];
@@ -21,21 +23,18 @@ const VALID_CATEGORIES = new Set([
   "designing", "ai coding", "advising", "meeting", "planning",
   "supporting", "translating",
 ]);
-// TODO: Read from users.timeout column for per-user configuration
-const SESSION_TIMEOUT_SECONDS = 900; // 15 minutes
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function parseDateRange(date: string): { dayStart: number; dayEnd: number } | null {
-  if (!DATE_RE.test(date)) return null;
+function parseDateString(date: string): boolean {
+  if (!DATE_RE.test(date)) return false;
   const [y, m, d] = date.split("-").map(Number);
-  const ms = Date.UTC(y, m - 1, d);
-  const parsed = new Date(ms);
+  const utc = new Date(Date.UTC(y, m - 1, d));
   // Reject dates that normalize to a different day (e.g. Feb 31 → Mar 3)
-  if (parsed.getUTCFullYear() !== y || parsed.getUTCMonth() !== m - 1 || parsed.getUTCDate() !== d) {
-    return null;
-  }
-  const dayStart = ms / 1000;
-  return { dayStart, dayEnd: dayStart + 86400 };
+  return (
+    utc.getUTCFullYear() === y &&
+    utc.getUTCMonth() === m - 1 &&
+    utc.getUTCDate() === d
+  );
 }
 
 const INSERT_HEARTBEAT_SQL = `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
@@ -53,7 +52,7 @@ function bindHeartbeatParams(
   userId: string,
   input: HeartbeatInput,
   machine: string | undefined,
-  userAgent: string | undefined,
+  userAgentId: string | null,
   now: string
 ): D1PreparedStatement {
   return stmt.bind(
@@ -64,7 +63,7 @@ function bindHeartbeatParams(
     input.lineno ?? null, input.cursorpos ?? null, input.is_write ? 1 : 0,
     input.editor ?? null, input.operating_system ?? null,
     machine ?? null,
-    userAgent ?? null,
+    userAgentId,
     now
   );
 }
@@ -75,17 +74,30 @@ heartbeats.use("/heartbeats", authMiddleware);
 heartbeats.use("/heartbeats/*", authMiddleware);
 heartbeats.use("/heartbeats.bulk", authMiddleware);
 
-// GET /heartbeats?date=YYYY-MM-DD
+// GET /heartbeats?date=YYYY-MM-DD&timezone=...
+// `date` is interpreted in the user's profile timezone (matches WakaTime:
+// "Heartbeats will be returned from 12am until 11:59pm in user's timezone").
+// `timezone` query param overrides the profile timezone for one request,
+// mirroring the parity offered by /summaries and /stats.
 heartbeats.get("/heartbeats", async (c) => {
   const date = c.req.query("date");
   if (!date) {
     return c.json({ error: "date query parameter is required" }, 400);
   }
-  // TODO: Apply user's timezone setting (users.timezone) instead of UTC
-  const range = parseDateRange(date);
-  if (!range) {
+  if (!parseDateString(date)) {
     return c.json({ error: "Invalid date" }, 400);
   }
+
+  const tzParam = c.req.query("timezone");
+  if (tzParam && !isValidTimezone(tzParam)) {
+    return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
+  }
+  const tz = tzParam || (await getUserTimezone(c));
+  const { start, end } = getEpochBoundsForDate(date, tz);
+
+  // users.timeout is stored in minutes; convert to seconds for time-delta math.
+  const timeoutMinutes = await getUserTimeout(c);
+  const sessionTimeoutSeconds = timeoutMinutes * 60;
 
   const userId = c.get("userId");
 
@@ -93,18 +105,18 @@ heartbeats.get("/heartbeats", async (c) => {
     const { results } = await c.env.DB.prepare(
       "SELECT * FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? ORDER BY time ASC"
     )
-      .bind(userId, range.dayStart, range.dayEnd)
+      .bind(userId, start, end)
       .all<HeartbeatRow>();
 
     const heartbeats = results.map(rowToHeartbeat);
     // Enrich with start/end/timezone (computed at query time)
     const enriched = heartbeats.map((hb, i) => {
-      const start = hb.time;
+      const startTime = hb.time;
       const nextTime = i < heartbeats.length - 1 ? heartbeats[i + 1].time : undefined;
-      const end = (nextTime !== undefined && nextTime - start <= SESSION_TIMEOUT_SECONDS)
+      const endTime = (nextTime !== undefined && nextTime - startTime <= sessionTimeoutSeconds)
         ? nextTime
-        : start;
-      return { ...hb, start, end, timezone: "UTC" };
+        : startTime;
+      return { ...hb, start: startTime, end: endTime, timezone: tz };
     });
     return c.json({ data: enriched });
   } catch (err) {
@@ -169,6 +181,17 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
   const ids = inputs.map(() => crypto.randomUUID());
   const validCount = validationErrors.filter((e) => e === null).length;
 
+  // Resolve every distinct User-Agent value once before the heartbeat batch,
+  // so a 25-item bulk POST issues at most a handful of upserts instead of one
+  // per heartbeat (Issue #99).
+  const userAgentCache = new Map<string, string>();
+  const userAgentIds: (string | null)[] = new Array(inputs.length).fill(null);
+  for (let i = 0; i < inputs.length; i++) {
+    if (validationErrors[i]) continue;
+    const ua = inputs[i].user_agent ?? headerUserAgent;
+    userAgentIds[i] = await resolveUserAgentId(c.env.DB, userId, ua ?? null, userAgentCache);
+  }
+
   // Build insert statements only for valid heartbeats
   const stmts: D1PreparedStatement[] = [];
   const projectTimes = new Map<string, { min: number; max: number }>();
@@ -177,9 +200,8 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
     if (validationErrors[i]) continue; // skip invalid
     const input = inputs[i];
     const machine = input.machine ?? headerMachine;
-    const userAgent = input.user_agent ?? headerUserAgent;
     stmts.push(
-      bindHeartbeatParams(c.env.DB.prepare(INSERT_HEARTBEAT_SQL), ids[i], userId, input, machine, userAgent, now)
+      bindHeartbeatParams(c.env.DB.prepare(INSERT_HEARTBEAT_SQL), ids[i], userId, input, machine, userAgentIds[i], now)
     );
     if (input.project) {
       const existing = projectTimes.get(input.project);
@@ -244,10 +266,15 @@ heartbeats.delete("/heartbeats.bulk", async (c) => {
       return c.json({ error: "ids must be an array of non-empty strings" }, 400);
     }
   }
-  const range = parseDateRange(body.date);
-  if (!range) {
+  if (!parseDateString(body.date)) {
     return c.json({ error: "Invalid date" }, 400);
   }
+
+  // The `date` filter must match the GET endpoint's timezone semantics: a
+  // heartbeat returned by GET /heartbeats?date=YYYY-MM-DD must also be
+  // deletable by the same date string. Both use the user's profile timezone.
+  const tz = await getUserTimezone(c);
+  const { start: dayStart, end: dayEnd } = getEpochBoundsForDate(body.date, tz);
 
   try {
     const placeholders = body.ids.map(() => "?").join(", ");
@@ -256,14 +283,14 @@ heartbeats.delete("/heartbeats.bulk", async (c) => {
     const { results: affectedProjects } = await c.env.DB.prepare(
       `SELECT DISTINCT project FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? AND id IN (${placeholders}) AND project IS NOT NULL`
     )
-      .bind(userId, range.dayStart, range.dayEnd, ...body.ids)
+      .bind(userId, dayStart, dayEnd, ...body.ids)
       .all<{ project: string }>();
 
     // Step 2: Delete heartbeats
     await c.env.DB.prepare(
       `DELETE FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? AND id IN (${placeholders})`
     )
-      .bind(userId, range.dayStart, range.dayEnd, ...body.ids)
+      .bind(userId, dayStart, dayEnd, ...body.ids)
       .run();
 
     // Step 3: Update user_projects for affected projects
@@ -358,13 +385,19 @@ async function insertHeartbeat(
   db: D1Database,
   userId: string,
   input: HeartbeatInput,
-  machine?: string,
-  userAgent?: string
+  machine: string | undefined,
+  userAgent: string | undefined,
 ): Promise<Heartbeat> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const stmts = [bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, userAgent, now)];
+  // Resolve User-Agent string to a user_agents.id (Issue #99).
+  // The upsert runs as a standalone statement (not inside the batch) because
+  // D1.batch() does not propagate RETURNING values across statements; we need
+  // the id before binding the heartbeat insert.
+  const userAgentId = await resolveUserAgentId(db, userId, userAgent ?? null);
+
+  const stmts = [bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, userAgentId, now)];
   if (input.project) {
     stmts.push(db.prepare(UPSERT_PROJECT_SQL).bind(userId, input.project, input.time, input.time));
   }
@@ -376,8 +409,7 @@ async function insertHeartbeat(
     ...input,
     is_write: input.is_write ?? false,
     machine,
-    // TODO: Resolve user_agent string to user_agents table ID instead of storing raw string
-    user_agent_id: userAgent,
+    user_agent_id: userAgentId ?? undefined,
     created_at: now,
   };
 }
