@@ -85,15 +85,50 @@ const goals = new Hono<AuthEnv>();
 goals.use("/goals", authMiddleware);
 goals.use("/goals/*", authMiddleware);
 
+/**
+ * Parse a boolean-ish query parameter. Accepts common truthy/falsy aliases.
+ * Returns `undefined` when the param is absent and `null` when the value is
+ * unrecognised so the caller can reject with 400.
+ */
+function parseBoolQuery(raw: string | undefined): boolean | null | undefined {
+  if (raw === undefined) return undefined;
+  const v = raw.toLowerCase();
+  if (v === "true" || v === "1") return true;
+  if (v === "false" || v === "0") return false;
+  return null;
+}
+
 goals.get("/goals", async (c) => {
   const userId = c.get("userId");
+
+  // Issue #111: optional filters on the persisted boolean columns.
+  const enabledFilter = parseBoolQuery(c.req.query("enabled"));
+  const snoozedFilter = parseBoolQuery(c.req.query("snoozed"));
+  if (enabledFilter === null) {
+    return c.json({ error: "Invalid enabled query parameter; expected true|false" }, 400);
+  }
+  if (snoozedFilter === null) {
+    return c.json({ error: "Invalid snoozed query parameter; expected true|false" }, 400);
+  }
+
+  const conditions: string[] = ["user_id = ?"];
+  const binds: (string | number)[] = [userId];
+  if (enabledFilter !== undefined) {
+    conditions.push("is_enabled = ?");
+    binds.push(enabledFilter ? 1 : 0);
+  }
+  if (snoozedFilter !== undefined) {
+    conditions.push("is_snoozed = ?");
+    binds.push(snoozedFilter ? 1 : 0);
+  }
+
   try {
     const { results } = await c.env.DB.prepare(
       `SELECT ${GOAL_COLUMNS} FROM goals
-        WHERE user_id = ?
+        WHERE ${conditions.join(" AND ")}
         ORDER BY created_at ASC`,
     )
-      .bind(userId)
+      .bind(...binds)
       .all<GoalRow>();
     return c.json({ data: results.map(rowToGoal) });
   } catch (err) {
