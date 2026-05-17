@@ -69,32 +69,6 @@ describe("Issue #97: GET /heartbeats applies user's profile timezone", () => {
     expect(body.data[0].timezone).toBe("Asia/Tokyo");
   });
 
-  it("honours the explicit ?timezone= override (used by clients in another zone)", async () => {
-    // Same setup: the may17.ts row sits at 14:00 UTC, which is inside the
-    // UTC calendar day 2026-05-17 but outside 2026-05-18 in JST.
-    await env.DB.prepare(
-      "INSERT INTO heartbeats (id, user_id, entity, type, time, is_write) VALUES (?, ?, ?, 'file', ?, 0)",
-    )
-      .bind(crypto.randomUUID(), user.userId, "utc-row.ts", JST_2026_05_17_23_00)
-      .run();
-
-    const res = await call(
-      "/api/v1/users/current/heartbeats?date=2026-05-17&timezone=UTC",
-      { headers: auth(user.apiKey) },
-    );
-
-    const body = (await res.json()) as { data: Array<{ entity: string; timezone: string }> };
-    expect(body.data.map((hb) => hb.entity)).toContain("utc-row.ts");
-    expect(body.data[0].timezone).toBe("UTC");
-  });
-
-  it("rejects an invalid ?timezone=", async () => {
-    const res = await call(
-      "/api/v1/users/current/heartbeats?date=2026-05-18&timezone=Mars/Olympus",
-      { headers: auth(user.apiKey) },
-    );
-    expect(res.status).toBe(400);
-  });
 });
 
 describe("Issue #98: GET /heartbeats end calc uses users.timeout (in minutes)", () => {

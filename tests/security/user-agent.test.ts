@@ -39,8 +39,8 @@ describe("parseUserAgent (wakatime-cli format)", () => {
 
   it("returns all-null parse for an unrecognised shape", () => {
     expect(parseUserAgent("Mozilla/5.0 totally-not-wakatime")).toEqual({
-      editor: "Mozilla",
-      version: "5.0",
+      editor: null,
+      version: null,
       os: null,
     });
   });

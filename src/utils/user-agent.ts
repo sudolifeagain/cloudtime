@@ -32,6 +32,12 @@ export function parseUserAgent(value: string): ParsedUserAgent {
   let version: string | null = null;
   let os: string | null = null;
 
+  const tokens = value.split(/\s+/).filter((t) => t.length > 0);
+  const firstToken = tokens[0]?.toLowerCase();
+  if (!firstToken?.startsWith("wakatime/")) {
+    return { editor, version, os };
+  }
+
   // OS: first segment inside the parenthesised triple. wakatime-cli emits
   //   (os-core-platform)
   // where os is "linux" / "darwin" / "windows" / etc.
@@ -48,7 +54,6 @@ export function parseUserAgent(value: string): ParsedUserAgent {
   // Editor + version: the last `<name>/<version>` token. wakatime-cli always
   // appends the plugin identifier at the tail, so this is the most reliable
   // anchor for the editor field.
-  const tokens = value.split(/\s+/).filter((t) => t.length > 0);
   for (let i = tokens.length - 1; i >= 0; i--) {
     const slashIdx = tokens[i].lastIndexOf("/");
     if (slashIdx <= 0 || slashIdx === tokens[i].length - 1) continue;

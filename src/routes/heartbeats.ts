@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
 import { authMiddleware, getUserTimeout, getUserTimezone } from "../middleware/auth";
-import { getEpochBoundsForDate, isValidTimezone } from "../utils/time-format";
-import { parseUserAgent, resolveUserAgentId } from "../utils/user-agent";
+import { getEpochBoundsForDate } from "../utils/time-format";
+import { resolveUserAgentId } from "../utils/user-agent";
 
 type HeartbeatInput = components["schemas"]["HeartbeatInput"];
 type Heartbeat = components["schemas"]["Heartbeat"];
@@ -74,11 +74,9 @@ heartbeats.use("/heartbeats", authMiddleware);
 heartbeats.use("/heartbeats/*", authMiddleware);
 heartbeats.use("/heartbeats.bulk", authMiddleware);
 
-// GET /heartbeats?date=YYYY-MM-DD&timezone=...
+// GET /heartbeats?date=YYYY-MM-DD
 // `date` is interpreted in the user's profile timezone (matches WakaTime:
 // "Heartbeats will be returned from 12am until 11:59pm in user's timezone").
-// `timezone` query param overrides the profile timezone for one request,
-// mirroring the parity offered by /summaries and /stats.
 heartbeats.get("/heartbeats", async (c) => {
   const date = c.req.query("date");
   if (!date) {
@@ -88,11 +86,7 @@ heartbeats.get("/heartbeats", async (c) => {
     return c.json({ error: "Invalid date" }, 400);
   }
 
-  const tzParam = c.req.query("timezone");
-  if (tzParam && !isValidTimezone(tzParam)) {
-    return c.json({ error: "Invalid timezone. Use IANA format (e.g. Asia/Tokyo)" }, 400);
-  }
-  const tz = tzParam || (await getUserTimezone(c));
+  const tz = await getUserTimezone(c);
   const { start, end } = getEpochBoundsForDate(date, tz);
 
   // users.timeout is stored in minutes; convert to seconds for time-delta math.
