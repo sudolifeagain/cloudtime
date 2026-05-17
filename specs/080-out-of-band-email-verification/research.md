@@ -54,8 +54,9 @@
 
 **Rationale**:
 - Email clients open links via GET. Forcing POST would require an intermediate "click here to verify" form, which adds friction and is hostile to mobile clients.
-- Token consumption is implemented via `UPDATE pending_links SET email_verified_at = datetime('now') WHERE email_verification_token_hash = ? AND email_verified_at IS NULL` returning `meta.changes`. If `changes == 0`, the row either does not exist or was already verified — both 410 cases.
+- Token consumption is implemented by hashing the URL token once, then running `UPDATE pending_links SET email_verified_at = datetime('now') WHERE email_verification_token_hash = ? AND email_verified_at IS NULL` against the indexed hash column. If `changes == 0`, the row either does not exist or was already verified — both 410 cases.
 - The endpoint is CSRF-safe by construction: it is purely state-change-on-GET, but the state change is gated on the unforgeable token itself.
+- Non-GET requests to the same path still need explicit method handling before global CSRF can reject form-like requests as 403; PR2 must preserve the documented 405 response.
 
 **Pre-fetch caveat**: Some mobile email clients pre-fetch links. The first pre-fetch consumes the token; the user's later click sees 410. This is an industry-wide constraint and is documented in the operator runbook. We accept it because the alternative (requiring user-initiated POST) breaks mobile email entirely.
 
@@ -67,7 +68,7 @@
 
 ## Decision 5: TTL aligned with PendingLink expiry (1 hour default)
 
-**Decision**: Token TTL equals the PendingLink's `expires_at` (default 1 hour). The token cannot outlive the row.
+**Decision**: Token TTL equals the PendingLink's `expires_at` (default 1 hour). The token cannot outlive the row and does not have an independent TTL configuration in PR2.
 
 **Rationale**:
 - Single TTL source of truth: when the PendingLink expires, the token also expires. Cleanup is automatic.
@@ -76,7 +77,7 @@
 
 **Alternatives considered**:
 1. **Independent token TTL**: rejected — doubles the lifecycle bookkeeping.
-2. **Configurable per-deployment TTL**: rejected for PR1 — `pending_links.expires_at` already encodes the lifetime; a separate env var would invite drift.
+2. **Configurable per-deployment token TTL**: rejected for PR2 — `pending_links.expires_at` already encodes the lifetime; a separate env var would invite drift.
 
 ---
 

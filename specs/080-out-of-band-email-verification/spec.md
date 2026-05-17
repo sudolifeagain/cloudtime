@@ -28,7 +28,7 @@ As Alice (existing user, registered with `alice@example.com` via GitHub), I rece
 1. **Given** a PendingLink is created and the email provider succeeds, **When** the email is sent and Alice clicks the verify link within the token TTL, **Then** the PendingLink's `email_verified_at` is set and Alice's subsequent `POST /auth/link/approve/:pending_link_id` returns 200.
 2. **Given** a PendingLink with `email_verified_at` not yet set, **When** Alice calls `POST /auth/link/approve/:pending_link_id`, **Then** the server returns 403 with body `{"error": "Email verification required"}` and the merge is **not** completed.
 3. **Given** a verification token is consumed once successfully, **When** the same token URL is opened again, **Then** the server returns 410 Gone with body `{"error": "Token already used"}`.
-4. **Given** a verification token has expired (configurable TTL, default 1 hour), **When** the link is opened, **Then** the server returns 410 Gone with body `{"error": "Token expired"}`.
+4. **Given** a verification token has expired with its PendingLink row (default 1 hour), **When** the link is opened, **Then** the server returns 410 Gone with body `{"error": "Token expired"}`.
 5. **Given** a PendingLink is itself expired, **When** the verify endpoint is opened, **Then** the server returns 410 Gone (verification cannot resurrect an expired PendingLink).
 
 ---
@@ -59,13 +59,13 @@ As Alice opening the verification email on a mobile inbox, I see a tappable link
 **Acceptance Scenarios**:
 
 1. **Given** a verification email is opened on a mobile client that pre-fetches links, **When** the pre-fetch hits the verify endpoint, **Then** the token is consumed (first hit wins) and the user sees a "Verified — please return to CloudTime to approve" confirmation page. (Limitation acknowledged; documented in operator runbook.)
-2. **Given** the verify endpoint, **When** any request method other than GET is used, **Then** the server returns 405 Method Not Allowed.
+2. **Given** the verify endpoint, **When** any request method other than GET is used, **Then** the server returns 405 Method Not Allowed before CSRF can turn the same request into 403.
 
 ---
 
 ### Edge Cases
 
-- **Single-user mode**: PendingLink is not used. The verify endpoint exists but never has rows to operate on; calls to `/auth/link/verify/:token` always return 410 Gone.
+- **Single-user mode**: PendingLink is not used. PR2 must move the `INSTANCE_MODE` check ahead of same-email PendingLink creation so default single-user mode never sends email, never writes `pending_links`, and keeps the existing direct/owner-only linking semantics. The verify endpoint exists but never has rows to operate on; calls to `/auth/link/verify/:token` always return 410 Gone.
 - **Operator changes provider mid-deployment**: Outstanding tokens issued by the previous provider still resolve normally (the verification is server-state-driven, not provider-state-driven). No data migration needed.
 - **Email arrives after PendingLink expires**: Token resolves to a PendingLink row whose `expires_at` has passed. Server returns 410 Gone. Operator can re-trigger the merge by repeating OAuth login.
 - **Same email triggers multiple PendingLinks**: Existing application limit (3 active pending links per user) already bounds the worst case. Each new PendingLink gets its own token and email; older tokens remain valid until expiry.
@@ -84,21 +84,21 @@ As Alice opening the verification email on a mobile inbox, I see a tappable link
 - **FR-002**: The system MUST store only a SHA-256 hash of the token in `pending_links.email_verification_token_hash`. The plaintext appears only in the email body and is never logged or persisted.
 - **FR-003**: The system MUST expose `GET /api/v1/auth/link/verify/:token` as an unauthenticated public endpoint. On a successful first hit within TTL, it MUST set `pending_links.email_verified_at` to the current timestamp and return a confirmation response (HTML page or 200 JSON, per operator deployment).
 - **FR-004**: `POST /api/v1/auth/link/approve/:pending_link_id` MUST require `email_verified_at` to be non-null. If null, it MUST return `403 Forbidden` with body `{"error": "Email verification required"}` and not perform the merge.
-- **FR-005**: The verification token MUST expire after a configurable TTL (default 3600 seconds). Expired tokens MUST return `410 Gone` with body `{"error": "Token expired"}`.
+- **FR-005**: The verification token MUST expire with `pending_links.expires_at` (default 3600 seconds). There is no independent verification-token TTL in PR2. Expired tokens MUST return `410 Gone` with body `{"error": "Token expired"}`.
 - **FR-006**: Tokens MUST be one-time. After successful verification, subsequent GETs of the same token MUST return `410 Gone` with body `{"error": "Token already used"}`. The replay check uses the existing `email_verified_at` field (non-null ⇒ already verified).
 - **FR-007**: Email send failures MUST roll back the PendingLink creation (transactional). The OAuth callback that triggered the merge MUST return `502 Bad Gateway` with a non-leaky error message.
 - **FR-008**: When `EMAIL_PROVIDER` is unset or empty, the system MUST fail closed: PendingLink creation returns `503 Service Unavailable` with body `{"error": "Email delivery not configured"}` and the row is not written.
 - **FR-009**: The system MUST support at least one provider in the initial PR: **Resend** via REST API (env: `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `EMAIL_FROM`).
 - **FR-010**: The provider layer MUST be abstracted behind a single interface (`sendEmail(to, subject, html, text) → Promise<void>`) so additional adapters can be added without touching call sites.
 - **FR-011**: The system MUST emit one structured log line per send attempt containing: provider name, recipient domain (not local part), pending link ID (UUID), and success/failure. The log MUST NOT contain the recipient's full email, the token plaintext, or the email body.
-- **FR-012**: Single-user mode (`INSTANCE_MODE=single`) is unaffected; no emails are sent because no PendingLink is created. The verify endpoint MUST still exist but MUST always 410 in single-user mode.
+- **FR-012**: Single-user mode (`INSTANCE_MODE=single`) is unaffected; PR2 MUST ensure no PendingLink branch is entered, no emails are sent, and no `pending_links` rows are written in single-user mode. The verify endpoint MUST still exist but MUST always 410 in single-user mode.
 
 ### Non-Functional Requirements
 
 - **NFR-001**: Email send must not block the OAuth callback for more than 2 seconds total. If the provider exceeds this budget, the send fails and the PendingLink is rolled back.
 - **NFR-002**: The verification endpoint MUST be safe to call from email pre-fetchers (it is idempotent: first call wins, subsequent calls 410, no side effects from rejected calls).
-- **NFR-003**: Token comparison MUST use constant-time equality against the stored hash. Hash lookup uses SHA-256 of the URL token.
-- **NFR-004**: The verify endpoint MUST be exempt from CSRF (it is `GET` and never a state-changing form). State change (`email_verified_at` update) is acceptable on GET because the token itself is the proof.
+- **NFR-003**: Token plaintext MUST NOT be persisted or compared directly. The server hashes the URL token with SHA-256 and performs an indexed equality lookup on `pending_links.email_verification_token_hash`; constant-time string comparison is not applicable because the stored secret is never loaded and compared in application code.
+- **NFR-004**: The verify endpoint MUST be exempt from CSRF routing side effects. `GET` performs the token-gated state change, and non-GET methods on the same path MUST return 405 rather than being intercepted by global CSRF as 403.
 
 ### Key Entities *(D1 schema change)*
 

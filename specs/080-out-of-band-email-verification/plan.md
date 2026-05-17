@@ -9,7 +9,7 @@ Adds a verification-by-email layer on top of the existing PendingLink merge flow
 
 Email delivery is abstracted behind a single `sendEmail(...)` function with a provider selector keyed on `EMAIL_PROVIDER`. The initial PR ships only the **Resend** adapter; Cloudflare Email Service (binding-based) and AWS SES (REST + SigV4) are designed-for but deferred to follow-up PRs.
 
-In single-user mode (default), PendingLinks are never created, so this feature is inert. The verify endpoint exists unconditionally and returns 410 Gone for tokens that resolve to no row.
+In single-user mode (default), PendingLinks must never be created, so this feature is inert. PR2 explicitly moves the instance-mode decision before same-email PendingLink creation to preserve that behavior. The verify endpoint exists unconditionally and returns 410 Gone for tokens that resolve to no row.
 
 ## Technical Context
 
@@ -63,8 +63,8 @@ src/
 │   ├── types.ts                        # EmailMessage / EmailProvider interface
 │   └── resend.ts                       # Resend adapter (POST https://api.resend.com/emails)
 ├── routes/auth/
-│   ├── link.ts                         # On approve: enforce email_verified_at; new verify GET
-│   └── login.ts                        # On PendingLink creation: generate token + send email
+│   ├── link.ts                         # On approve: enforce email_verified_at; verify GET + 405 method handling
+│   └── login.ts                        # Instance-mode gate; on PendingLink creation: generate token + send email
 └── db/schema.sql                       # ALTER TABLE pending_links — two columns
 
 migrations/
@@ -84,9 +84,9 @@ schemas/components/responses/
 See [research.md](./research.md). Key decisions:
 1. **Resend as default adapter** — best Workers DX, free tier covers expected volume (PendingLink emails are rare events even in multi-user mode).
 2. **Fail closed when provider misconfigured or send fails** — PendingLink row is not committed; OAuth callback returns 502/503. Better to refuse the merge than silently downgrade security.
-3. **Verify endpoint accepts GET, single-use** — first hit consumes the token; pre-fetch by mobile clients is acceptable collateral (documented in operator runbook).
-4. **Token stored as SHA-256 hash** — same pattern as session tokens and API keys.
-5. **Single-user mode unaffected** — the existing PendingLink-skipping branch in `src/routes/auth/login.ts` remains the gate; the verify endpoint is unconditionally mounted but inert.
+3. **Verify endpoint accepts GET, single-use** — first hit consumes the token; pre-fetch by mobile clients is acceptable collateral (documented in operator runbook). Non-GET methods on the verify path return 405 before global CSRF can convert them to 403.
+4. **Token stored as SHA-256 hash** — same pattern as session tokens and API keys; lookup is an indexed SQL equality match on the hash, not an application-level plaintext comparison.
+5. **Single-user mode unaffected** — PR2 moves/introduces the instance-mode gate before same-email PendingLink creation so the verify-email branch is never entered in default single-user mode; the verify endpoint is unconditionally mounted but inert.
 
 ## Phase 1 — Design Outputs
 
@@ -140,7 +140,7 @@ Existing rows have NULL in both columns. Backfill is intentionally **not** perfo
 ### OpenAPI surface change
 
 New path `schemas/paths/auth/link-verify-token.yaml`:
-- `GET /auth/link/verify/{token}` — `security: []` (public), 200/410/405 responses.
+- `GET /auth/link/verify/{token}` — `security: []` (public), 200/410/405 responses. PR2 must implement explicit non-GET method handling so the documented 405 survives the global CSRF middleware.
 
 New shared response component `schemas/components/responses/Gone.yaml`.
 

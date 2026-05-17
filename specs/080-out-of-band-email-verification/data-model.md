@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_pending_links_token_hash
 
 ### Index rationale
 
-The verify endpoint performs a single point lookup on the hash:
+The verify endpoint hashes the URL token once and performs a single point lookup on the stored hash:
 
 ```sql
 UPDATE pending_links
@@ -58,6 +58,8 @@ RETURNING id
 ```
 
 Without the index the lookup is O(n) over all open PendingLinks. Volume is small (3 active per user), but the index is cheap and aligns with project precedent (`idx_pending_links_expires`).
+
+The application does not load `email_verification_token_hash` and compare it to user input in TypeScript. The token is unguessable, the plaintext is never stored, and D1 performs an indexed equality match on the SHA-256 hash.
 
 ## Migration
 

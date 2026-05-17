@@ -53,7 +53,7 @@ In Scenario A, after step 6, open the same verify URL a second time.
 
 ## Scenario D — Token expiry
 
-Trigger a PendingLink as in Scenario A. Wait 60+ minutes. Open the verify URL.
+Trigger a PendingLink as in Scenario A. Wait until the row's `expires_at` has passed (default 60+ minutes). Open the verify URL.
 
 **Expected**:
 - 410 Gone, body `{"error": "Token expired"}` (the underlying row's `expires_at` has passed, so the token cannot be honoured).
@@ -82,7 +82,7 @@ Unset `EMAIL_PROVIDER`. Trigger a Google OAuth login for an email that matches a
 Switch the instance to `INSTANCE_MODE=single`. Confirm OAuth login flows still work for the owner. Visit `${APP_URL}/api/v1/auth/link/verify/anything`.
 
 **Expected**:
-- OAuth login: completes normally for the existing owner; no PendingLink is created.
+- OAuth login / provider-linking preserves the existing single-user semantics; no PendingLink is created, no email is sent, and no email-provider configuration is required for this branch.
 - Verify endpoint: 410 Gone, body `{"error": "Token not found"}`. No emails are sent.
 
 ## Scenario H — Method other than GET
@@ -91,7 +91,7 @@ Switch the instance to `INSTANCE_MODE=single`. Confirm OAuth login flows still w
 curl -X POST ${APP_URL}/api/v1/auth/link/verify/anything
 ```
 
-**Expected**: 405 Method Not Allowed.
+**Expected**: 405 Method Not Allowed, including when the request has no `Origin` header.
 
 ## Tuning operator runbook checks
 

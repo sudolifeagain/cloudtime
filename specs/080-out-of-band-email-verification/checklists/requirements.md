@@ -28,8 +28,10 @@ This checklist enforces the gates between PR1 / PR2 / production deployment.
 - [ ] `src/utils/email/types.ts` exports `EmailMessage`, `EmailProvider`, `EmailNotConfiguredError`, `EmailSendError`.
 - [ ] `src/utils/email/resend.ts` posts to `https://api.resend.com/emails` with bearer auth and a 2-second `AbortSignal.timeout(2000)`.
 - [ ] `src/utils/email/index.ts` selects provider by `env.EMAIL_PROVIDER` and exposes a single `sendEmail(env, msg)` entry point.
+- [ ] `src/routes/auth/login.ts` checks `INSTANCE_MODE` before same-email PendingLink creation so single-user mode never sends email or writes `pending_links`.
 - [ ] `src/routes/auth/login.ts` sends the email **before** the PendingLink INSERT. Failure path rolls back (no row written).
 - [ ] `src/routes/auth/link.ts` has a new `GET /link/verify/:token` handler implemented via UPDATE-with-RETURNING.
+- [ ] `src/routes/auth/link.ts` or the top-level router returns 405 for non-GET `/link/verify/:token` before global CSRF can return 403.
 - [ ] `src/routes/auth/link.ts` `POST /link/approve/:pending_link_id` returns 403 when `email_verified_at` is NULL.
 - [ ] `src/utils/crypto.ts` exposes `generateVerificationToken()` returning `{plaintext, hash}`.
 - [ ] `npx tsc --noEmit` passes with zero errors.
@@ -44,8 +46,8 @@ This checklist enforces the gates between PR1 / PR2 / production deployment.
 - [ ] Scenario D: expired token returns 410 Gone.
 - [ ] Scenario E: invalid provider key rolls back the PendingLink and surfaces 502.
 - [ ] Scenario F: missing `EMAIL_PROVIDER` surfaces 503 and emits a single warning per isolate.
-- [ ] Scenario G: single-user mode behaviour is unchanged (no emails, verify endpoint always 410).
-- [ ] Scenario H: non-GET methods return 405.
+- [ ] Scenario G: single-user mode behaviour is unchanged (no PendingLink rows, no emails, no email-provider requirement, verify endpoint always 410).
+- [ ] Scenario H: non-GET methods return 405 even without an `Origin` header.
 
 ### Documentation
 

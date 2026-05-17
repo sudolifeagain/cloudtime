@@ -34,26 +34,30 @@
 
 - [ ] **T-105**: Add helper `generateVerificationToken()` in `src/utils/crypto.ts` returning `{ plaintext, hash }` (32 random bytes, base64url, SHA-256).
 - [ ] **T-106**: Update `src/routes/auth/login.ts` PendingLink branch to:
-  1. Generate token before INSERT.
-  2. Build the email body (plain text + minimal HTML) including the verify link.
-  3. Call `sendEmail(env, msg)` BEFORE the D1 INSERT.
-  4. Only INSERT when the send resolves; store `email_verification_token_hash`.
-  5. On `EmailSendError`, return 502; on `EmailNotConfiguredError`, return 503. No partial state.
+  1. Move/introduce the `INSTANCE_MODE` check before same-email PendingLink creation so single-user mode never sends email and never writes `pending_links`.
+  2. Generate token before INSERT.
+  3. Build the email body (plain text + minimal HTML) including the verify link.
+  4. Call `sendEmail(env, msg)` BEFORE the D1 INSERT.
+  5. Only INSERT when the send resolves; store `email_verification_token_hash`.
+  6. On `EmailSendError`, return 502; on `EmailNotConfiguredError`, return 503. No partial state.
 
 ### Verify endpoint
 
-- [ ] **T-107**: Add `link.get("/link/verify/:token", ...)` in `src/routes/auth/link.ts` (public, no session middleware, no rate-limit middleware in PR2 — follow-up).
+- [ ] **T-107**: Add `link.get("/link/verify/:token", ...)` in `src/routes/auth/link.ts` (public, no session middleware, no rate-limit middleware in PR2 — follow-up). Add an explicit non-GET handler for the same path (for example `link.all("/link/verify/:token", ...)` after the GET route) returning 405.
 - [ ] **T-108**: Implement the lookup as a single UPDATE-with-RETURNING:
   ```sql
   UPDATE pending_links
   SET email_verified_at = datetime('now')
-  WHERE email_verification_token_hash = ?
+  WHERE email_verification_token_hash = ? -- SHA-256(url token), indexed equality lookup
     AND email_verified_at IS NULL
     AND expires_at > datetime('now')
   RETURNING id
   ```
   - `meta.changes === 1`: success ⇒ return HTML confirmation page.
   - `meta.changes === 0`: distinguish "not found / already verified / expired" via a follow-up SELECT, return 410 with the appropriate body.
+  - Do not load the stored hash for application-level token comparison; the URL token is hashed once and matched by indexed SQL equality.
+
+- [ ] **T-108a**: Ensure global CSRF middleware cannot convert non-GET verify requests into 403. Either exempt `/api/v1/auth/link/verify/*` before CSRF runs or mount the verify method-dispatch before CSRF; Scenario H must return 405 for a plain `curl -X POST` with no `Origin`.
 
 ### Approve endpoint gate
 
@@ -73,6 +77,8 @@
   - Replay: second GET returns 410.
   - Expired row: pre-aged `expires_at`, returns 410.
   - Approve before verify: 403.
+  - Non-GET verify request returns 405 even without `Origin` headers.
+  - Single-user same-email OAuth regression: no PendingLink row is created and no email send is attempted.
 
 ### Verification
 
@@ -93,7 +99,7 @@ T-102 → T-103 → T-104  (provider stack)
 T-104 → T-106 (call site needs the surface)
 T-105 → T-106 (token helper before use)
 T-106 → T-107 (DB column must exist before verify endpoint reads it)
-T-107 → T-109 (approve gate piggybacks on verify-set column)
+T-107 → T-108a → T-109 (method handling and approve gate piggyback on verify-set column)
 T-103/T-104 → T-112/T-113  (tests follow code)
 T-106/T-107/T-109 → T-114  (integration test needs all three branches)
 T-115/T-116 → T-117 → T-118
