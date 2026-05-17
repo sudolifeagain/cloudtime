@@ -11,6 +11,7 @@ import summaries from "./routes/summaries";
 import stats from "./routes/stats";
 import users from "./routes/users";
 import goals from "./routes/goals";
+import userAgents from "./routes/user-agents";
 import { aggregateHeartbeats } from "./cron/aggregate";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -122,6 +123,9 @@ app.route("/api/v1/users/current", users);
 
 // Goals routes (mounted at /users/current, sub-app defines /goals, /goals/:goal_id)
 app.route("/api/v1/users/current", goals);
+
+// User agents routes (mounted at /users/current, sub-app defines /user_agents)
+app.route("/api/v1/users/current", userAgents);
 
 // Cron trigger handler for periodic aggregation + session cleanup
 export default {
