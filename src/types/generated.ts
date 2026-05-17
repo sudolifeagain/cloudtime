@@ -43,6 +43,12 @@ export interface paths {
          *     - Google: `openid email profile`
          *     - Discord: `identify email`
          *
+         *     **Optional per-deployment restrictions:**
+         *     - Google: if the operator sets `GOOGLE_HOSTED_DOMAIN`, the authorization URL
+         *       includes `hd=<domain>` as a UX hint and the callback enforces the matching
+         *       `hd` claim on the validated id_token. Tokens with no `hd` claim (personal
+         *       Google accounts) or a non-matching `hd` are rejected with 403.
+         *
          *     **Rate limiting:** Enforced at the Cloudflare edge with a native Rate
          *     Limiting binding. Limit: 10 requests per configured 60-second window, keyed
          *     by client IP truncated to /24 for IPv4 or /48 for IPv6.
@@ -1530,6 +1536,24 @@ export interface components {
                 };
             };
         };
+        /**
+         * @description The authenticated principal is recognized but not authorized for this resource.
+         *     Common reasons:
+         *     - Single-user mode: registration closed (`/auth/:provider/callback`).
+         *     - Google hosted domain restriction: the Google account's domain does not match
+         *       `GOOGLE_HOSTED_DOMAIN` (`/auth/google/callback`).
+         */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @example Account domain not allowed */
+                    error?: string;
+                };
+            };
+        };
         /** @description Authentication required or invalid credentials */
         Unauthorized: {
             headers: {
@@ -1662,6 +1686,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
             429: components["responses"]["TooManyRequests"];
         };
     };

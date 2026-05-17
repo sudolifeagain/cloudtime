@@ -135,5 +135,7 @@ get:
                       after authenticating with their existing account. Expires in 1 hour.
     '400':
       $ref: ../../components/responses/BadRequest.yaml
+    '403':
+      $ref: ../../components/responses/Forbidden.yaml
     '429':
       $ref: ../../components/responses/TooManyRequests.yaml
