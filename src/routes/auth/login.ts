@@ -41,10 +41,12 @@ const login = new Hono<{ Bindings: Env }>();
 const oauthInitiateRateLimit = rateLimitMiddleware(
   (env) => env.RATE_LIMIT_OAUTH_INITIATE,
   "oauth-initiate",
+  "RATE_LIMIT_OAUTH_INITIATE",
 );
 const oauthCallbackRateLimit = rateLimitMiddleware(
   (env) => env.RATE_LIMIT_OAUTH_CALLBACK,
   "oauth-callback",
+  "RATE_LIMIT_OAUTH_CALLBACK",
 );
 
 // GET /:provider (initiate OAuth login)

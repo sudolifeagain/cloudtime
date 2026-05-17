@@ -3,12 +3,46 @@ import type { Env, RateLimit } from "../types";
 
 const warned = new WeakSet<object>();
 
+function stripIpDecoration(ip: string): string {
+  const trimmed = ip.trim();
+  if (trimmed.startsWith("[") && trimmed.includes("]")) {
+    return trimmed.slice(1, trimmed.indexOf("]"));
+  }
+  return trimmed;
+}
+
+function normalizeHextet(group: string): string | undefined {
+  if (!/^[0-9a-fA-F]{1,4}$/.test(group)) return undefined;
+  return parseInt(group, 16).toString(16);
+}
+
+function truncateIpv6(ip: string): string | undefined {
+  const withoutZone = stripIpDecoration(ip).split("%", 1)[0].toLowerCase();
+  const compressed = withoutZone.split("::");
+  if (compressed.length > 2) return undefined;
+
+  const head = compressed[0] ? compressed[0].split(":") : [];
+  const prefix: string[] = [];
+
+  for (const group of head.slice(0, 3)) {
+    const normalized = normalizeHextet(group);
+    if (!normalized) return undefined;
+    prefix.push(normalized);
+  }
+
+  if (prefix.length < 3 && compressed.length === 2) {
+    while (prefix.length < 3) prefix.push("0");
+  }
+
+  if (prefix.length !== 3) return undefined;
+  return `${prefix.join(":")}::/48`;
+}
+
 function truncateIp(ip: string): string {
   if (ip.includes(":")) {
-    const groups = ip.split(":");
-    return `${groups.slice(0, 3).join(":")}::/48`;
+    return truncateIpv6(ip) ?? ip;
   }
-  const parts = ip.split(".");
+  const parts = stripIpDecoration(ip).split(".");
   if (parts.length !== 4) return ip;
   return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
 }
@@ -28,6 +62,7 @@ function getClientIp(headers: Headers): string {
 
 export function rateLimitMiddleware(
   getBinding: (env: Env) => RateLimit | undefined,
+  endpointName: string,
   ruleName: string,
 ) {
   return createMiddleware<{ Bindings: Env }>(async (c, next) => {
@@ -36,7 +71,7 @@ export function rateLimitMiddleware(
     if (!binding) {
       if (!warned.has(c.env as object)) {
         warned.add(c.env as object);
-        console.warn(`[rate-limit] binding for ${ruleName} is undefined; failing open for this isolate`);
+        console.warn(`[rate-limit] binding ${ruleName} is undefined; failing open for this isolate`);
       }
       return next();
     }
@@ -46,7 +81,7 @@ export function rateLimitMiddleware(
 
     if (success) return next();
 
-    console.warn(`[rate-limit] rejected endpoint=${ruleName} key=${key}`);
+    console.warn(`[rate-limit] rejected endpoint=${endpointName} rule=${ruleName} key=${key}`);
     return c.json({ error: "Too many requests" }, 429, {
       "Retry-After": "60",
       "Cache-Control": "no-store",
