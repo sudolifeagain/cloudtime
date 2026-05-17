@@ -43,6 +43,9 @@ properties:
       type: string
   chart_data:
     type: array
+    description: |
+      Populated only by `GET /users/current/goals/{goal_id}`. Always 7 entries
+      in chronological order; the last entry is always `range_status: pending`.
     items:
       type: object
       properties:
@@ -62,6 +65,10 @@ properties:
             - pending
   status:
     type: string
+    description: |
+      Populated only by `GET /users/current/goals/{goal_id}`. Mirrors the
+      `range_status` of the most recently completed period unless the goal
+      is snoozed, in which case it is forced to `pending`.
     enum:
       - success
       - fail

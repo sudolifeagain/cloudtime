@@ -3,6 +3,18 @@ get:
   tags:
     - goals
   summary: Get a single goal with chart data
+  description: |
+    Returns a single goal owned by the authenticated user, augmented with
+    `chart_data` (the most recent 7 periods of actual vs target activity)
+    and top-level `status` (the most recently completed period's outcome,
+    forced to `pending` if the goal is snoozed).
+
+    Period boundaries use the user's profile timezone (`users.timezone`).
+    Day periods span local calendar days. Week periods span ISO 8601
+    Monday-Sunday weeks in the user's timezone.
+
+    Requests for a goal owned by a different user return 404 (not 403) to
+    avoid leaking goal-id existence.
   parameters:
     - name: goal_id
       in: path
