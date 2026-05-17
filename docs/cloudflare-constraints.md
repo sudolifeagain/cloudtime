@@ -124,6 +124,30 @@ Queues are paid-only ($0.40/million messages) but provide reliable async process
 | Caching | KV for auth + status bar | KV for auth + status bar + heartbeat buffer |
 | CPU budget | Keep per-request under 10ms | 30s budget, more room |
 
+## Rate Limiting on OAuth Endpoints
+
+Cloudflare Workers' native Rate Limiting binding protects the OAuth login surface
+from abuse (KV exhaustion, CPU floods). Two bindings are declared in `wrangler.toml`:
+
+| Binding | Endpoint | Limit | Window | Key |
+|---|---|---|---|---|
+| `RATE_LIMIT_OAUTH_INITIATE` | `GET /api/v1/auth/:provider` | 10 | 60s | client IP truncated to /24 (IPv4) or /48 (IPv6) |
+| `RATE_LIMIT_OAUTH_CALLBACK` | `GET /api/v1/auth/:provider/callback` | 5 | 60s | same key derivation |
+
+The middleware (`src/middleware/rate-limit.ts`) reads `CF-Connecting-IP`,
+falls back to `X-Forwarded-For` first hop, and finally to `"unknown"`. When the
+binding is unconfigured (typical for `wrangler dev --local`), the middleware
+fails open and emits a single warning per isolate.
+
+**Operator action before production deploy**: confirm the current Cloudflare
+plan supports the configured Rate Limiting bindings. The free tier includes
+a usage-capped allowance for the Workers Rate Limiting API; commercial
+deployments may need a paid plan. Adjust `limit`/`period` in `wrangler.toml`
+without code changes.
+
+See `specs/058-oauth-rate-limiting/` for the full spec, design, and
+verification scenarios.
+
 ## Implementation Notes
 
 - Start with the simplest approach (direct D1 batch insert, simple Cron aggregation)

@@ -23,6 +23,18 @@ export interface Env {
   // Public origin for OAuth redirect URIs (e.g., "https://time.example.com")
   // If unset, derived from request Host header (safe behind Cloudflare, risky with custom proxies)
   APP_URL?: string;
+
+  // Rate-limit bindings (optional — middleware fails open when undefined)
+  RATE_LIMIT_OAUTH_INITIATE?: RateLimit;
+  RATE_LIMIT_OAUTH_CALLBACK?: RateLimit;
+}
+
+// Minimal shape of Cloudflare Workers Rate Limiting binding. The official
+// `@cloudflare/workers-types` v4 does not export this name yet (still under
+// the unsafe namespace at compatibility_date 2025-03-09), so we declare the
+// surface we actually call.
+export interface RateLimit {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
 }
 
 // Hono environment with authenticated user context

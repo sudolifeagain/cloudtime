@@ -5,6 +5,7 @@
  */
 import { Hono } from "hono";
 import type { Env } from "../../types";
+import { rateLimitMiddleware } from "../../middleware/rate-limit";
 import {
   sha256Hex,
   generateCodeVerifier,
@@ -37,8 +38,17 @@ import { getRedirectUri, noCacheHeaders } from "./helpers";
 
 const login = new Hono<{ Bindings: Env }>();
 
+const oauthInitiateRateLimit = rateLimitMiddleware(
+  (env) => env.RATE_LIMIT_OAUTH_INITIATE,
+  "oauth-initiate",
+);
+const oauthCallbackRateLimit = rateLimitMiddleware(
+  (env) => env.RATE_LIMIT_OAUTH_CALLBACK,
+  "oauth-callback",
+);
+
 // GET /:provider (initiate OAuth login)
-login.get("/:provider", async (c) => {
+login.get("/:provider", oauthInitiateRateLimit, async (c) => {
   const provider = c.req.param("provider");
   if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, noCacheHeaders());
 
@@ -62,7 +72,7 @@ login.get("/:provider", async (c) => {
 });
 
 // GET /:provider/callback (OAuth callback — most complex)
-login.get("/:provider/callback", async (c) => {
+login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
   const provider = c.req.param("provider");
   if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, noCacheHeaders());
 
