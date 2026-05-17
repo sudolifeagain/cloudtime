@@ -34,6 +34,13 @@ export interface Env {
   // Rate-limit bindings (optional — middleware fails open when undefined)
   RATE_LIMIT_OAUTH_INITIATE?: RateLimit;
   RATE_LIMIT_OAUTH_CALLBACK?: RateLimit;
+
+  // Email delivery (Issue #80). Required in multi-user mode for the
+  // out-of-band PendingLink verification flow. Single-user mode does not
+  // create PendingLinks and therefore does not send email.
+  EMAIL_PROVIDER?: string; // currently supports "resend"
+  EMAIL_FROM?: string; // e.g. "noreply@cloudtime.example.com"
+  RESEND_API_KEY?: string;
 }
 
 // Minimal shape of Cloudflare Workers Rate Limiting binding. The official

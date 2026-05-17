@@ -35,6 +35,10 @@ INSTANCE_MODE = "single"
 # GOOGLE_HOSTED_DOMAIN    - Optional. Google Workspace primary domain (e.g. "example.com").
 #                           When set, Google logins are restricted to accounts whose id_token
 #                           `hd` claim matches this value. See specs/037-google-hosted-domain/.
+# EMAIL_PROVIDER          - Required in multi-user mode. Currently supports "resend".
+#                           See docs/email-setup.md.
+# EMAIL_FROM              - Required in multi-user mode. From address on a domain you control.
+# RESEND_API_KEY          - Required when EMAIL_PROVIDER=resend. Bearer token from resend.com.
 
 # OAuth rate limits — see specs/058-oauth-rate-limiting/
 # Operators must verify current Cloudflare plan limits before production deployment.
