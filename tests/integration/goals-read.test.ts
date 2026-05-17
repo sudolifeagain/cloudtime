@@ -132,6 +132,7 @@ describe("GET /api/v1/users/current/goals (list)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     expect(body.data.map((g) => g.title)).toEqual(["first", "second", "third"]);
+    expect(body.data[0].created_at).toBe("2026-05-01T10:00:00Z");
     for (const g of body.data) {
       expect(g).not.toHaveProperty("chart_data");
       expect(g).not.toHaveProperty("status");
@@ -182,6 +183,23 @@ describe("GET /api/v1/users/current/goals/:goal_id (single)", () => {
       headers: auth(user.apiKey),
     });
     expect(res.status).toBe(404);
+  });
+
+  it("falls back to UTC when the stored user timezone is invalid", async () => {
+    await env.DB.prepare("UPDATE users SET timezone = 'Invalid/Zone' WHERE id = ?")
+      .bind(user.userId)
+      .run();
+    const goalId = await seedGoal({ ownerId: user.userId });
+
+    const res = await call(`/api/v1/users/current/goals/${goalId}`, {
+      headers: auth(user.apiKey),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { chart_data: Array<{ range: { timezone: string } }> };
+    };
+    expect(body.data.chart_data.every((entry) => entry.range.timezone === "UTC")).toBe(true);
   });
 
   it("returns 404 when the goal belongs to another user (no 403 / no leak)", async () => {

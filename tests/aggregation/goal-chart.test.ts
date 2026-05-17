@@ -46,6 +46,22 @@ describe("buildDayRanges", () => {
     expect(current.date).toBe("2026-03-08");
     expect((endMs - startMs) / 3_600_000).toBeCloseTo(23, 5);
   });
+
+  it("does not skip the spring-forward day just after local midnight", () => {
+    // 2026-03-09 04:30 UTC == 2026-03-09 00:30 America/New_York.
+    const justAfterSpringForwardMidnight = Date.UTC(2026, 2, 9, 4, 30, 0);
+    const ranges = buildDayRanges(justAfterSpringForwardMidnight, "America/New_York");
+
+    expect(ranges.map((r) => r.date)).toEqual([
+      "2026-03-03",
+      "2026-03-04",
+      "2026-03-05",
+      "2026-03-06",
+      "2026-03-07",
+      "2026-03-08",
+      "2026-03-09",
+    ]);
+  });
 });
 
 describe("buildWeekRanges (ISO Mon-Sun)", () => {

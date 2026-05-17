@@ -46,19 +46,11 @@ export function buildDayRanges(
   count = CHART_LENGTH,
 ): ChartRange[] {
   const ranges: ChartRange[] = [];
-  // Walk backwards from today by subtracting 86_400s from "today's epoch noon"
-  // and converting to the user's local date each step — this is robust across
-  // DST transitions because we resolve the local date via Intl, not naive math.
   const todayLocal = getDateForTimestamp(nowMs / 1000, tz);
-  // Seed the loop with the local "today" string then walk back by computing
-  // bounds and stepping the loop pointer 24h earlier in epoch terms.
-  const dates: string[] = [todayLocal];
-  let cursorEpoch = Math.floor(nowMs / 1000);
-  while (dates.length < count) {
-    cursorEpoch -= 86_400;
-    dates.push(getDateForTimestamp(cursorEpoch, tz));
+  const dates: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    dates.push(addDaysLocal(todayLocal, -i));
   }
-  dates.reverse(); // oldest first
   for (const date of dates) {
     const bounds = getEpochBoundsForDate(date, tz);
     ranges.push({

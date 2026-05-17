@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
 import { authMiddleware } from "../middleware/auth";
+import { isValidTimezone } from "../utils/time-format";
+import { normalizeDateTime } from "../utils/user";
 import {
   buildChart,
   buildDayRanges,
@@ -69,8 +71,8 @@ function rowToGoal(row: GoalRow): Goal {
     languages: parseFilterArray(row.languages, row.id, "languages"),
     editors: parseFilterArray(row.editors, row.id, "editors"),
     projects: parseFilterArray(row.projects, row.id, "projects"),
-    created_at: row.created_at,
-    modified_at: row.modified_at,
+    created_at: normalizeDateTime(row.created_at),
+    modified_at: normalizeDateTime(row.modified_at),
   };
 }
 
@@ -120,7 +122,8 @@ goals.get("/goals/:goal_id", async (c) => {
     }
 
     const goal = rowToGoal(row);
-    const tz = row.timezone || "UTC";
+    const candidateTz = row.timezone || "UTC";
+    const tz = isValidTimezone(candidateTz) ? candidateTz : "UTC";
 
     // Pull the relevant filter array given goal type.
     let filterValues: string[] = [];
