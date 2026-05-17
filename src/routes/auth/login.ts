@@ -221,7 +221,7 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
           // it in the email; only persist after the send succeeds (fail-closed).
           const { plaintext: verifyToken, hash: verifyTokenHash } =
             await generateVerificationToken();
-          const verifyOrigin = c.env.APP_URL ?? new URL(c.req.url).origin;
+          const verifyOrigin = (c.env.APP_URL ?? new URL(c.req.url).origin).replace(/\/+$/, "");
           const verifyUrl = `${verifyOrigin}/api/v1/auth/link/verify/${verifyToken}`;
           const recipientDomain = userInfo.providerEmail.includes("@")
             ? userInfo.providerEmail.slice(userInfo.providerEmail.indexOf("@") + 1)

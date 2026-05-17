@@ -46,7 +46,17 @@ const link = new Hono<SessionAuthEnv>();
 // The token in the URL is the only proof; first hit consumes it via UPDATE-
 // with-RETURNING. CSRF middleware is bypassed for this path (see src/index.ts)
 // so non-GET methods reach the route layer and receive a clean 405.
-link.get("/link/verify/:token", async (c) => {
+link.all("/link/verify/:token", async (c) => {
+  if (c.req.method !== "GET") {
+    return c.json({ error: "Method Not Allowed" }, 405, {
+      Allow: "GET",
+      "Cache-Control": "no-store",
+    });
+  }
+  if (c.env.INSTANCE_MODE !== "multi") {
+    return c.json({ error: "Token not found" }, 410, noCacheHeaders());
+  }
+
   const token = c.req.param("token");
   if (!token) {
     return c.json({ error: "Token not found" }, 410, noCacheHeaders());
@@ -97,15 +107,6 @@ link.get("/link/verify/:token", async (c) => {
   }
   return c.json({ error: "Token expired" }, 410, noCacheHeaders());
 });
-
-// Non-GET methods on the verify path receive 405 (CSRF middleware is
-// bypassed for this path in src/index.ts so this handler is reachable).
-link.on(["POST", "PUT", "PATCH", "DELETE"], "/link/verify/:token", (c) =>
-  c.json({ error: "Method Not Allowed" }, 405, {
-    Allow: "GET",
-    "Cache-Control": "no-store",
-  }),
-);
 
 // POST /link/approve/:pending_link_id (session required)
 link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {

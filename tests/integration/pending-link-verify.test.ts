@@ -43,9 +43,11 @@ afterEach(async () => {
 async function call(
   path: string,
   init: RequestInit = {},
+  envOverrides: Partial<Cloudflare.Env> = {},
 ): Promise<Response> {
   const ctx = createExecutionContext();
-  const res = await worker.fetch(new Request(`${BASE}${path}`, init), env, ctx);
+  const testEnv = { ...env, INSTANCE_MODE: "multi", ...envOverrides };
+  const res = await worker.fetch(new Request(`${BASE}${path}`, init), testEnv, ctx);
   await waitOnExecutionContext(ctx);
   return res;
 }
@@ -137,6 +139,40 @@ describe("GET /api/v1/auth/link/verify/:token", () => {
     const res = await call("/api/v1/auth/link/verify/anything", { method: "POST" });
     expect(res.status).toBe(405);
     expect(res.headers.get("Allow")).toBe("GET");
+  });
+
+  it("returns 405 for HEAD without consuming the token", async () => {
+    const { pendingLinkId, token } = await seedPendingLink({ ownerId: owner.userId });
+
+    const res = await call(`/api/v1/auth/link/verify/${token}`, { method: "HEAD" });
+
+    expect(res.status).toBe(405);
+    expect(res.headers.get("Allow")).toBe("GET");
+    const row = await env.DB.prepare(
+      "SELECT email_verified_at FROM pending_links WHERE id = ?",
+    )
+      .bind(pendingLinkId)
+      .first<{ email_verified_at: string | null }>();
+    expect(row?.email_verified_at).toBeNull();
+  });
+
+  it("always returns 410 in single-user mode", async () => {
+    const { pendingLinkId, token } = await seedPendingLink({ ownerId: owner.userId });
+
+    const res = await call(
+      `/api/v1/auth/link/verify/${token}`,
+      {},
+      { INSTANCE_MODE: "single" },
+    );
+
+    expect(res.status).toBe(410);
+    expect(await res.json()).toEqual({ error: "Token not found" });
+    const row = await env.DB.prepare(
+      "SELECT email_verified_at FROM pending_links WHERE id = ?",
+    )
+      .bind(pendingLinkId)
+      .first<{ email_verified_at: string | null }>();
+    expect(row?.email_verified_at).toBeNull();
   });
 });
 
