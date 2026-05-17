@@ -36,3 +36,13 @@
 - **PR1 (Spec + Design)**: SpecKit artifacts (`specs/`), OpenAPI spec (`schemas/`), generated types (`src/types/generated.ts`). No implementation code.
 - **PR2 (Implementation)**: Route handlers and business logic. Only after PR1 is merged.
 - Never mix spec changes and implementation in the same PR
+
+## Testing
+- `npm test` runs Vitest inside the Workers runtime via `@cloudflare/vitest-pool-workers`.
+- `npm run typecheck` runs `tsc --noEmit` for project + tests.
+- Unit-style tests live next to the area they cover under `tests/`:
+  - `tests/security/` — pure logic (crypto, rate-limit IP keying, OAuth utilities).
+  - `tests/aggregation/` — timezone bucketing, summary/duration builders.
+  - `tests/integration/` — endpoint tests with real in-memory D1 (`SELF` / `worker.fetch`).
+- The Workers test pool runs `tests/setup.ts` once per file to load `src/db/schema.sql`. Helpers in `tests/helpers/fixtures.ts` mint users + API keys without going through OAuth.
+- CI runs both `typecheck` and `test` on every PR (`.github/workflows/test.yml`).
