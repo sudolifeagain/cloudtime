@@ -32,6 +32,9 @@ INSTANCE_MODE = "single"
 # DISCORD_CLIENT_ID
 # DISCORD_CLIENT_SECRET
 # ENCRYPTION_KEY          - AES-256 key (64 hex chars) for encrypting OAuth tokens at rest
+# GOOGLE_HOSTED_DOMAIN    - Optional. Google Workspace primary domain (e.g. "example.com").
+#                           When set, Google logins are restricted to accounts whose id_token
+#                           `hd` claim matches this value. See specs/037-google-hosted-domain/.
 
 # OAuth rate limits — see specs/058-oauth-rate-limiting/
 # Operators must verify current Cloudflare plan limits before production deployment.
