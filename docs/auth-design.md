@@ -128,9 +128,9 @@ that point:
 1. **Switch the affected cookies to `SameSite=None; Secure`** — required when
    adopting a POST-mode callback. `Secure` is mandatory for `SameSite=None`;
    the `__Host-` prefix already enforces it. Note that `SameSite=None` removes
-   the browser's built-in CSRF defense, so the state cookie's CSRF role
-   becomes entirely dependent on the server-side store comparison
-   (`oauth:state:*` in KV) — keep that intact.
+   the browser's built-in CSRF defense, so keep both CSRF checks intact:
+   compare the request `state` against the state cookie, then consume the
+   matching server-side KV entry (`oauth:state:*`).
 2. **Continue using only GET-mode callbacks.** Document any new provider as
    GET-only at the design stage so the cookie attributes do not need to change.
 
