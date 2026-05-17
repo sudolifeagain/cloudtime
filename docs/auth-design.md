@@ -84,20 +84,32 @@ Controlled by `INSTANCE_MODE` environment variable:
 3. System checks DUAL email verification:
    a) Existing user's email_verified must be true
    b) Incoming provider must report email as verified
-4. If BOTH verified → creates PendingLink (TTL: 1 hour)
-   If EITHER unverified → creates new user account instead (no PendingLink)
+4. If BOTH verified → send out-of-band verification email FIRST, then on
+   success create PendingLink (TTL: 1 hour, see Issue #80)
+   If EITHER unverified → create new user account instead (no PendingLink)
 5. Returns pending_link with existing_username
-6. User calls POST /api/v1/auth/link/approve/{pending_link_id}
-7. OAuth account is linked to existing user
-8. User is logged in as existing account
+6. Recipient opens the verification link from their inbox →
+   pending_links.email_verified_at is set
+7. User calls POST /api/v1/auth/link/approve/{pending_link_id}
+   (returns 403 "Email verification required" if step 6 has not occurred)
+8. OAuth account is linked to existing user
+9. User is logged in as existing account
 ```
+
+**Out-of-band email verification (Issue #80)**: This is the third defence on
+top of "dual `email_verified` check" and "manual approval". Even when a
+provider reports `email_verified: true`, the existing user must prove inbox
+access before approval is honoured. The verification email is sent BEFORE the
+PendingLink row is committed — if the send fails or the provider is not
+configured, no row is written. See [email-setup.md](./email-setup.md) for
+operator configuration and `specs/080-out-of-band-email-verification/`.
 
 **email_verified behavior:**
 - Set on user creation based on the OAuth provider's report.
 - Updated on each login: uses a **high-water mark** approach — once verified (`true`), never downgraded back to `false`. Only upgrades (false → true) are applied. This follows industry best practices (Auth0, Firebase, Clerk).
 - Provider-specific extraction: GitHub requires `GET /user/emails` (primary email's `verified` field), Google returns `email_verified` or `verified_email` depending on endpoint, Discord returns `verified` (absent without `email` scope, treated as `false`).
 
-**Single-user mode:** Same-email detection still applies, but since there's only one user, the new provider is linked directly without approval. The `pending_links` table is not used. The `email_verified` field is still recorded accurately regardless of instance mode.
+**Single-user mode:** The same-email merge branch is gated on `INSTANCE_MODE=multi`. In single-user mode the PendingLink path is never entered — a second OAuth login that resolves to a different `(provider, provider_user_id)` falls through to the single-user gate (`WHERE (SELECT COUNT(*) FROM users) = 0`) which returns 403 "Registration closed". Operators who want a second provider linked to the owner must use `POST /api/v1/auth/link/{provider}` (session required), not the implicit same-email flow. The verification-email pipeline is therefore inert in single-user mode and `EMAIL_PROVIDER` need not be set.
 
 ## Session Security
 

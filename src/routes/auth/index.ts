@@ -10,13 +10,17 @@ import link from "./link";
 
 const auth = new Hono<{ Bindings: Env }>();
 
-// Session-authenticated routes (static paths first)
+// `link` is mounted BEFORE `sessions` because the public verify endpoint
+// (`/link/verify/:token`, Issue #80) must not be intercepted by the
+// wildcard session middleware in `sessions`. Hono matches sub-apps in
+// mount order, so the verify route resolves to `link`'s handler before
+// sessions can claim it.
+auth.route("/", link);
+
+// Session-authenticated routes (static paths)
 auth.route("/", sessions);
 
 // Public routes (parameterized, last)
 auth.route("/", login);
-
-// Account linking routes (session required for initiation, cookie-based for callback)
-auth.route("/", link);
 
 export default auth;

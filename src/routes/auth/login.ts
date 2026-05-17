@@ -14,9 +14,15 @@ import {
   generateNonce,
   generateSessionToken,
   generateApiKey,
+  generateVerificationToken,
   encryptToken,
   timingSafeEqual,
 } from "../../utils/crypto";
+import {
+  sendEmail,
+  EmailNotConfiguredError,
+  EmailSendError,
+} from "../../utils/email";
 import {
   isValidProvider,
   buildAuthorizeUrl,
@@ -175,9 +181,15 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
       );
     }
 
-    // No existing OAuth link — check if email matches an existing user
+    // No existing OAuth link — check if email matches an existing user.
+    // The same-email merge flow is only meaningful in multi-user mode;
+    // single-user mode falls through and the single-user gate further
+    // down returns "Registration closed" (Issue #80 PR2: ensure we never
+    // create a PendingLink, and therefore never need to send a
+    // verification email, in single-user mode).
     let unverifiedUserId: string | null = null;
-    if (userInfo.providerEmail) {
+    const isMultiUser = c.env.INSTANCE_MODE === "multi";
+    if (isMultiUser && userInfo.providerEmail) {
       const emailMatch = await c.env.DB.prepare("SELECT id, email_verified FROM users WHERE email = ?")
         .bind(userInfo.providerEmail)
         .first<{ id: string; email_verified: number }>();
@@ -205,16 +217,76 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
             ? await encryptToken(userInfo.refreshToken, c.env.ENCRYPTION_KEY, encCtx)
             : null;
 
-          // Create pending link for manual approval
+          // Generate the out-of-band verification token first so we can include
+          // it in the email; only persist after the send succeeds (fail-closed).
+          const { plaintext: verifyToken, hash: verifyTokenHash } =
+            await generateVerificationToken();
+          const verifyOrigin = c.env.APP_URL ?? new URL(c.req.url).origin;
+          const verifyUrl = `${verifyOrigin}/api/v1/auth/link/verify/${verifyToken}`;
+          const recipientDomain = userInfo.providerEmail.includes("@")
+            ? userInfo.providerEmail.slice(userInfo.providerEmail.indexOf("@") + 1)
+            : "(unknown)";
+
           const pendingId = crypto.randomUUID();
           const pendingExpiry = new Date(Date.now() + 3600_000) // 1 hour
             .toISOString()
             .replace("T", " ")
             .replace("Z", "");
 
+          try {
+            await sendEmail(c.env, {
+              from: c.env.EMAIL_FROM ?? "",
+              to: userInfo.providerEmail,
+              subject: "Confirm CloudTime account link",
+              text:
+                `Someone signed in with ${provider} using this email address and is requesting to merge it into your existing CloudTime account.\n\n` +
+                `If that was you, open this link to confirm — it expires in 1 hour:\n\n${verifyUrl}\n\n` +
+                `After confirming, return to CloudTime and approve the merge from your account settings.\n\n` +
+                `If this was not you, ignore this email; the request will expire and no change will be made.`,
+              html:
+                `<!doctype html><html><body>` +
+                `<p>Someone signed in with <strong>${provider}</strong> using this email address ` +
+                `and is requesting to merge it into your existing CloudTime account.</p>` +
+                `<p>If that was you, click the link below to confirm — it expires in 1 hour:</p>` +
+                `<p><a href="${verifyUrl}">${verifyUrl}</a></p>` +
+                `<p>After confirming, return to CloudTime and approve the merge from your account settings.</p>` +
+                `<p>If this was not you, ignore this email; the request will expire and no change will be made.</p>` +
+                `</body></html>`,
+            });
+            console.log(
+              `[email] sent provider=${c.env.EMAIL_PROVIDER} pending_link=${pendingId} recipient_domain=${recipientDomain}`,
+            );
+          } catch (err) {
+            if (err instanceof EmailNotConfiguredError) {
+              console.warn(
+                `[email] not configured — refusing PendingLink for recipient_domain=${recipientDomain}`,
+              );
+              return c.json(
+                { error: "Email delivery not configured" },
+                503,
+                noCacheHeaders(),
+              );
+            }
+            if (err instanceof EmailSendError) {
+              console.error(
+                `[email] send failed recipient_domain=${recipientDomain} status=${err.status ?? "n/a"} message=${err.message}`,
+              );
+              return c.json(
+                {
+                  error:
+                    "Unable to send verification email; please try again later",
+                },
+                502,
+                noCacheHeaders(),
+              );
+            }
+            throw err;
+          }
+
+          // Email sent — now persist the PendingLink with the matching hash.
           const linkResult = await c.env.DB.prepare(
-            `INSERT INTO pending_links (id, existing_user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO pending_links (id, existing_user_id, provider, provider_user_id, provider_username, provider_email, email_verified, access_token_encrypted, refresh_token_encrypted, token_expires_at, expires_at, email_verification_token_hash)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(existing_user_id, provider, provider_user_id) DO UPDATE SET
                provider_username = excluded.provider_username,
                provider_email = excluded.provider_email,
@@ -222,7 +294,9 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
                access_token_encrypted = excluded.access_token_encrypted,
                refresh_token_encrypted = excluded.refresh_token_encrypted,
                token_expires_at = excluded.token_expires_at,
-               expires_at = excluded.expires_at
+               expires_at = excluded.expires_at,
+               email_verification_token_hash = excluded.email_verification_token_hash,
+               email_verified_at = NULL
              RETURNING id`,
           )
             .bind(
@@ -237,6 +311,7 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
               refreshTokenEnc,
               userInfo.tokenExpiresAt,
               pendingExpiry,
+              verifyTokenHash,
             )
             .first<{ id: string }>();
 

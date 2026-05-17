@@ -34,7 +34,78 @@ import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../../
 import { sessionMw } from "./middleware";
 import { getRedirectUri, noCacheHeaders } from "./helpers";
 
+const VERIFY_SUCCESS_HTML =
+  `<!doctype html><html><head><meta charset="utf-8"><title>Email verified — CloudTime</title></head>` +
+  `<body><h1>Email verified</h1>` +
+  `<p>Thanks. Return to CloudTime and approve the account merge from your account settings.</p>` +
+  `</body></html>`;
+
 const link = new Hono<SessionAuthEnv>();
+
+// GET /link/verify/:token (public — out-of-band PendingLink verification, Issue #80).
+// The token in the URL is the only proof; first hit consumes it via UPDATE-
+// with-RETURNING. CSRF middleware is bypassed for this path (see src/index.ts)
+// so non-GET methods reach the route layer and receive a clean 405.
+link.get("/link/verify/:token", async (c) => {
+  const token = c.req.param("token");
+  if (!token) {
+    return c.json({ error: "Token not found" }, 410, noCacheHeaders());
+  }
+  let tokenHash: string;
+  try {
+    tokenHash = await sha256Hex(token);
+  } catch {
+    return c.json({ error: "Token not found" }, 410, noCacheHeaders());
+  }
+
+  // Atomic single-use consumption: only flip email_verified_at when the row
+  // exists, hasn't been verified yet, and hasn't expired. `meta.changes`
+  // distinguishes the success path from the various 410 cases.
+  const result = await c.env.DB.prepare(
+    `UPDATE pending_links
+       SET email_verified_at = datetime('now')
+     WHERE email_verification_token_hash = ?
+       AND email_verified_at IS NULL
+       AND expires_at > datetime('now')
+     RETURNING id`,
+  )
+    .bind(tokenHash)
+    .first<{ id: string }>();
+
+  if (result) {
+    return c.body(VERIFY_SUCCESS_HTML, 200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
+    });
+  }
+
+  // Distinguish replay vs expiry vs not-found for clearer logs and bodies.
+  // SELECT after the failed UPDATE is two queries on the cold path only.
+  const existing = await c.env.DB.prepare(
+    `SELECT email_verified_at, expires_at FROM pending_links
+     WHERE email_verification_token_hash = ?`,
+  )
+    .bind(tokenHash)
+    .first<{ email_verified_at: string | null; expires_at: string }>();
+
+  if (!existing) {
+    return c.json({ error: "Token not found" }, 410, noCacheHeaders());
+  }
+  if (existing.email_verified_at !== null) {
+    return c.json({ error: "Token already used" }, 410, noCacheHeaders());
+  }
+  return c.json({ error: "Token expired" }, 410, noCacheHeaders());
+});
+
+// Non-GET methods on the verify path receive 405 (CSRF middleware is
+// bypassed for this path in src/index.ts so this handler is reachable).
+link.on(["POST", "PUT", "PATCH", "DELETE"], "/link/verify/:token", (c) =>
+  c.json({ error: "Method Not Allowed" }, 405, {
+    Allow: "GET",
+    "Cache-Control": "no-store",
+  }),
+);
 
 // POST /link/approve/:pending_link_id (session required)
 link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
@@ -45,7 +116,8 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
     const pending = await c.env.DB.prepare(
       `SELECT provider, provider_user_id, provider_username, provider_email,
               email_verified, access_token_encrypted, refresh_token_encrypted,
-              token_expires_at, expires_at
+              token_expires_at, expires_at,
+              email_verification_token_hash, email_verified_at
        FROM pending_links WHERE id = ? AND existing_user_id = ?`,
     )
       .bind(pendingLinkId, userId)
@@ -59,6 +131,8 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
         refresh_token_encrypted: string | null;
         token_expires_at: string | null;
         expires_at: string;
+        email_verification_token_hash: string | null;
+        email_verified_at: string | null;
       }>();
 
     if (!pending) return c.json({ error: "Not found" }, 404, noCacheHeaders());
@@ -68,6 +142,19 @@ link.post("/link/approve/:pending_link_id", sessionMw, async (c) => {
     if (new Date() > expiresAt) {
       await c.env.DB.prepare("DELETE FROM pending_links WHERE id = ?").bind(pendingLinkId).run();
       return c.json({ error: "Pending link expired" }, 410, noCacheHeaders());
+    }
+
+    // Out-of-band email verification gate (Issue #80). Rows created under the
+    // new flow carry a token hash; the recipient must have clicked the email
+    // link to set email_verified_at. Rows pre-dating the feature (NULL hash)
+    // also fail this check — they must be re-triggered via OAuth, and
+    // expire naturally within 1 hour.
+    if (pending.email_verified_at === null) {
+      return c.json(
+        { error: "Email verification required" },
+        403,
+        noCacheHeaders(),
+      );
     }
 
     // Check if this provider account was linked to another user in the meantime

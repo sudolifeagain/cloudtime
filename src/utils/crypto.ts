@@ -66,6 +66,19 @@ export async function generateApiKey(): Promise<{ plaintext: string; hash: strin
   return { plaintext, hash };
 }
 
+/**
+ * Generate a one-time verification token used in URLs sent to a user's
+ * email inbox (Issue #80, PendingLink out-of-band verification).
+ *
+ * The plaintext appears only in the email body and the URL; the
+ * SHA-256 hash is what we persist. Same pattern as `generateApiKey`.
+ */
+export async function generateVerificationToken(): Promise<{ plaintext: string; hash: string }> {
+  const plaintext = base64url(randomBytes(32));
+  const hash = await sha256Hex(plaintext);
+  return { plaintext, hash };
+}
+
 // ─── AES-256-GCM encryption for OAuth tokens at rest ─────
 
 async function importAesKey(keyHex: string): Promise<CryptoKey> {

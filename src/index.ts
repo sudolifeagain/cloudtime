@@ -87,6 +87,14 @@ app.use("/*", async (c, next) => {
   if (c.req.header("Authorization")) {
     return next();
   }
+  // The out-of-band email verification endpoint (Issue #80) is intentionally
+  // exempt from CSRF: it is method-restricted at the route layer (GET success,
+  // 405 for other methods) and the bearer is the URL token itself, which is
+  // unguessable. CSRF would otherwise convert non-GET probes into 403 before
+  // the route handler can return the documented 405.
+  if (c.req.path.startsWith("/api/v1/auth/link/verify/")) {
+    return next();
+  }
   return csrfMiddleware(c, next);
 });
 
