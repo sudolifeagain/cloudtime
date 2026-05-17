@@ -82,11 +82,17 @@ CREATE TABLE IF NOT EXISTS pending_links (
   token_expires_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT NOT NULL,
+  -- Out-of-band email verification (Issue #80). Populated at PendingLink
+  -- creation when running in multi-user mode with an email provider configured.
+  email_verification_token_hash TEXT,
+  email_verified_at TEXT,
   FOREIGN KEY (existing_user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE(existing_user_id, provider, provider_user_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_pending_links_expires ON pending_links(expires_at);
+CREATE INDEX IF NOT EXISTS idx_pending_links_token_hash
+  ON pending_links(email_verification_token_hash);
 
 -- ============================================================
 -- Heartbeats (core tracking data)

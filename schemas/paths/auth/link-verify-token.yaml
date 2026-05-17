@@ -1,0 +1,47 @@
+get:
+  operationId: verifyLinkEmailToken
+  tags:
+    - auth
+  summary: Out-of-band email verification for PendingLink
+  description: |
+    Verifies the recipient's inbox access for an outstanding PendingLink.
+    The token is single-use and embedded in a one-time email sent at
+    PendingLink creation.
+
+    On first successful hit within the token's TTL, the server marks the
+    underlying PendingLink row as email-verified. Subsequent hits, hits
+    against an expired row, and hits against an unknown token all return
+    410 Gone. The endpoint is public (no auth) because the recipient may
+    not have a CloudTime session in the browser used to open the email.
+
+    The state change occurs on GET because the token itself is the proof
+    of authorisation; this is acceptable for single-use tokens and is
+    intentionally compatible with mobile email clients that pre-fetch
+    links (pre-fetch consumes the token; user clicks then see 410 — this
+    behaviour is documented in the operator runbook).
+
+    See specs/080-out-of-band-email-verification/.
+  security: []
+  parameters:
+    - name: token
+      in: path
+      required: true
+      schema:
+        type: string
+      description: |
+        32-byte base64url-encoded one-time token. Plaintext appears only
+        in the email body; only the SHA-256 hash is persisted server-side.
+  responses:
+    '200':
+      description: Verification succeeded. Recipient should return to CloudTime to approve the merge.
+      content:
+        text/html:
+          schema:
+            type: string
+          example: |
+            <!doctype html><h1>Email verified</h1>
+            <p>Return to CloudTime and approve the account merge.</p>
+    '405':
+      description: Method Not Allowed — verify endpoint only accepts GET.
+    '410':
+      $ref: ../../components/responses/Gone.yaml

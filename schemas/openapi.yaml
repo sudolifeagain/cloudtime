@@ -68,6 +68,8 @@ paths:
     $ref: paths/auth/link-provider-callback.yaml
   /auth/link/approve/{pending_link_id}:
     $ref: paths/auth/link-approve.yaml
+  /auth/link/verify/{token}:
+    $ref: paths/auth/link-verify-token.yaml
   /auth/providers:
     $ref: paths/auth/providers.yaml
   /auth/providers/{provider}:
