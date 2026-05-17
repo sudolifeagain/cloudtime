@@ -2,7 +2,7 @@
 
 This guide covers operator-managed backups of the CloudTime D1 database. Cloudflare provides account-level snapshots, but operator-driven exports remain necessary for migration, schema-change confidence, and self-managed retention.
 
-> **Scope**: only the D1 database needs backup. KV is a cache (auth lookups, OAuth state, Google JWKS) and re-warms automatically after restore.
+> **Scope**: only the D1 database needs durable backup. KV is a cache (auth lookups, OAuth state, Google JWKS), but stale auth cache entries must be cleared or replaced after a D1 restore.
 
 ---
 
@@ -11,7 +11,7 @@ This guide covers operator-managed backups of the CloudTime D1 database. Cloudfl
 | Resource | Backup needed? | Why |
 |---|---|---|
 | `cloudtime-db` (D1) | **Yes** | Source of truth for users, heartbeats, summaries, goals, sessions, oauth_accounts, pending_links, user_agents, machine_names, … |
-| `CLOUDTIME_KV` (KV) | No | Cache only. Keys: `apikey:<hash>`, `session:<hash>`, `oauth:state:<state>`, `google:jwks`. All TTL-bound and reconstructable. |
+| `CLOUDTIME_KV` (KV) | No, but clear on restore | Cache only. Keys: `apikey:<hash>`, `session:<hash>`, `oauth:state:<state>`, `google:jwks`. All TTL-bound and reconstructable, but stale auth caches can briefly outlive a D1 rollback unless purged. |
 | Worker secrets | Track elsewhere | `wrangler secret put` values (OAuth client secrets, `ENCRYPTION_KEY`, `RESEND_API_KEY`). Store these in a password manager — there is no `wrangler secret get`. |
 | Source code | Yes, via Git | This repo is the source; tag releases for the version actually deployed. |
 
@@ -138,6 +138,23 @@ wrangler d1 execute cloudtime-db --remote --command "
 wrangler d1 execute cloudtime-db --remote --file=backup-20260518-090000.sql
 ```
 
+Then clear `CLOUDTIME_KV` before sending traffic back to the Worker. At minimum remove auth-related cache keys:
+
+```bash
+wrangler kv key list --binding=CLOUDTIME_KV --remote --prefix=apikey: > kv-apikey.json
+wrangler kv key list --binding=CLOUDTIME_KV --remote --prefix=session: > kv-session.json
+wrangler kv bulk delete kv-apikey.json --binding=CLOUDTIME_KV --remote
+wrangler kv bulk delete kv-session.json --binding=CLOUDTIME_KV --remote
+```
+
+The safer option is to create a fresh KV namespace, update `wrangler.toml`, and redeploy:
+
+```bash
+wrangler kv namespace create CLOUDTIME_KV
+# update wrangler.toml with the new id
+wrangler deploy
+```
+
 In practice it's simpler to drop and recreate the database entirely:
 
 ```bash
@@ -145,6 +162,8 @@ wrangler d1 delete cloudtime-db
 wrangler d1 create cloudtime-db          # writes a new database_id
 # update wrangler.toml with the new id
 wrangler d1 execute cloudtime-db --remote --file=backup-20260518-090000.sql
+wrangler kv namespace create CLOUDTIME_KV # writes a new id
+# update wrangler.toml with the new KV id too, or otherwise clear old auth cache keys
 wrangler deploy
 ```
 
@@ -156,6 +175,8 @@ Useful for migration to a new Cloudflare account or environment:
 wrangler d1 create cloudtime-db-restored
 # add a new [[d1_databases]] block in wrangler.toml pointing at this DB
 wrangler d1 execute cloudtime-db-restored --remote --file=backup-20260518-090000.sql
+wrangler kv namespace create CLOUDTIME_KV_RESTORED
+# bind CLOUDTIME_KV to the new namespace id for the restored environment
 
 # Swap the binding name once verified, then redeploy
 wrangler deploy
@@ -166,6 +187,7 @@ wrangler deploy
 After restore, walk through this list before relying on the instance:
 
 - [ ] `GET /api/v1/health` returns 200.
+- [ ] `CLOUDTIME_KV` was recreated or auth cache keys (`apikey:*`, `session:*`) were purged before traffic resumed.
 - [ ] `GET /api/v1/users/current` with your stored API key returns your profile (proves the row + `api_key_hash` survived).
 - [ ] Send one test heartbeat; verify it appears in `SELECT * FROM heartbeats ORDER BY time DESC LIMIT 1`.
 - [ ] Wait for one cron cycle (≤1 hour) and confirm `summaries` aggregation runs without errors (`wrangler tail`).

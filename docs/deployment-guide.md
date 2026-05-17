@@ -62,7 +62,7 @@ Set these via `wrangler secret put <NAME>` (each command will prompt for the val
 | `DISCORD_CLIENT_ID` | for Discord login | from Discord Developer Portal |
 | `DISCORD_CLIENT_SECRET` | for Discord login | |
 | `ENCRYPTION_KEY` | **yes** | 64 hex characters (256 bits). Generate with `openssl rand -hex 32` |
-| `APP_URL` | recommended | The public origin of your Worker (e.g. `https://time.example.com`). Used for OAuth redirect URI computation and CSRF origin checks. |
+| `APP_URL` | **yes in production** | The public origin of your Worker (e.g. `https://time.example.com`). Required for OAuth redirect URI computation and CSRF origin checks outside local development. |
 | `GOOGLE_HOSTED_DOMAIN` | optional | Restricts Google login to one Workspace domain. See `specs/037-google-hosted-domain/`. |
 | `EMAIL_PROVIDER` | multi-user only | `resend` is currently the only supported value. |
 | `EMAIL_FROM` | multi-user only | Sender address on a domain you control. |
@@ -153,14 +153,14 @@ If you want to keep accumulated heartbeats but kick out an unintended owner, con
 
 ---
 
-## 9. Configure your WakaTime plugin
+## 9. Configure your WakaTime-compatible editor plugin
 
-Point your editor's WakaTime plugin at your Worker. In `~/.wakatime.cfg`:
+Point your editor's WakaTime-compatible plugin at your Worker. In `~/.wakatime.cfg`:
 
 ```ini
 [settings]
 api_url = https://your-worker.example.com/api/v1
-api_key = ck_<your plaintext key from step 9 of section 8>
+api_key = ck_<your plaintext key from step 3 above>
 ```
 
 Restart your editor. Your IDE's status bar should start showing today's coding time within a few seconds of typing.
