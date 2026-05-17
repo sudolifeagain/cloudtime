@@ -33,6 +33,10 @@ get:
     - GitHub App: "Email addresses: Read-only" permission (set at app registration, not per-request)
     - Google: `openid email profile`
     - Discord: `identify email`
+
+    **Rate limiting:** Enforced at the Cloudflare edge with a native Rate
+    Limiting binding. Limit: 10 requests per configured 60-second window, keyed
+    by client IP truncated to /24 for IPv4 or /48 for IPv6.
   security: []
   parameters:
     - name: provider

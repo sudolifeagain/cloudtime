@@ -58,6 +58,11 @@ get:
     **Response headers for defense in depth:**
     - `Referrer-Policy: no-referrer` — prevents authorization code leakage via Referer header.
     - `Cache-Control: no-store` — prevents caching of authentication responses.
+
+    **Rate limiting:** Enforced at the Cloudflare edge with a native Rate
+    Limiting binding before state validation or provider token exchange. Limit:
+    5 requests per configured 60-second window, keyed by client IP truncated to
+    /24 for IPv4 or /48 for IPv6.
   security: []
   parameters:
     - name: provider

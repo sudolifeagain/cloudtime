@@ -42,6 +42,10 @@ export interface paths {
          *     - GitHub App: "Email addresses: Read-only" permission (set at app registration, not per-request)
          *     - Google: `openid email profile`
          *     - Discord: `identify email`
+         *
+         *     **Rate limiting:** Enforced at the Cloudflare edge with a native Rate
+         *     Limiting binding. Limit: 10 requests per configured 60-second window, keyed
+         *     by client IP truncated to /24 for IPv4 or /48 for IPv6.
          */
         get: operations["oauthRedirect"];
         put?: never;
@@ -115,6 +119,11 @@ export interface paths {
          *     **Response headers for defense in depth:**
          *     - `Referrer-Policy: no-referrer` — prevents authorization code leakage via Referer header.
          *     - `Cache-Control: no-store` — prevents caching of authentication responses.
+         *
+         *     **Rate limiting:** Enforced at the Cloudflare edge with a native Rate
+         *     Limiting binding before state validation or provider token exchange. Limit:
+         *     5 requests per configured 60-second window, keyed by client IP truncated to
+         *     /24 for IPv4 or /48 for IPv6.
          */
         get: operations["oauthCallback"];
         put?: never;
@@ -1501,12 +1510,12 @@ export interface components {
             };
         };
         /**
-         * @description Rate limit exceeded. Recommended limits:
-         *     - OAuth start/callback: 10 req/min per IP
-         *     - API key regeneration: 3 req/min per user
-         *     - Account linking: 5 req/min per user
-         *     - Session management: 30 req/min per user
-         *     Implementation: Use Cloudflare Workers native Rate Limiting binding.
+         * @description Rate limit exceeded. The exact threshold depends on the endpoint.
+         *     OAuth login endpoints enforce Cloudflare Workers native Rate Limiting
+         *     bindings, keyed by truncated client IP. Authenticated endpoints may use
+         *     separate application-level controls, such as pending-link limits.
+         *
+         *     See the operation description for endpoint-specific limits.
          */
         TooManyRequests: {
             headers: {
