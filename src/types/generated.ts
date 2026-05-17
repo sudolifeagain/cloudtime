@@ -608,9 +608,10 @@ export interface paths {
         /**
          * List user's goals
          * @description Returns the authenticated user's goals ordered by `created_at` ascending.
-         *     Each entry includes only the persisted Goal fields. `chart_data` and
-         *     `status` are NOT computed for the list endpoint — clients that need
-         *     per-period progress must request each goal individually via
+         *     Each entry conforms to the `Goal` schema, which includes only persisted
+         *     goal fields. `chart_data` and `status` are NOT computed for the list
+         *     endpoint — clients that need per-period progress must request each goal
+         *     individually via
          *     `GET /users/current/goals/{goal_id}`.
          */
         get: operations["getGoals"];
@@ -1332,30 +1333,31 @@ export interface components {
             languages?: string[];
             editors?: string[];
             projects?: string[];
-            /**
-             * @description Populated only by `GET /users/current/goals/{goal_id}`. Always 7 entries
-             *     in chronological order; the last entry is always `range_status: pending`.
-             */
-            chart_data?: {
-                /** Format: double */
-                actual_seconds?: number;
-                /** Format: double */
-                goal_seconds?: number;
-                range?: components["schemas"]["TimeRange"];
-                /** @enum {string} */
-                range_status?: "success" | "fail" | "pending";
-            }[];
-            /**
-             * @description Populated only by `GET /users/current/goals/{goal_id}`. Mirrors the
-             *     `range_status` of the most recently completed period unless the goal
-             *     is snoozed, in which case it is forced to `pending`.
-             * @enum {string}
-             */
-            status?: "success" | "fail" | "pending";
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             modified_at?: string;
+        };
+        GoalWithChart: components["schemas"]["Goal"] & {
+            /**
+             * @description Always 7 entries in chronological order; the last entry is always
+             *     `range_status: pending`.
+             */
+            chart_data: {
+                /** Format: double */
+                actual_seconds: number;
+                /** Format: double */
+                goal_seconds: number;
+                range: components["schemas"]["TimeRange"];
+                /** @enum {string} */
+                range_status: "success" | "fail" | "pending";
+            }[];
+            /**
+             * @description Mirrors the `range_status` of the most recently completed period
+             *     unless the goal is snoozed, in which case it is forced to `pending`.
+             * @enum {string}
+             */
+            status: "success" | "fail" | "pending";
         };
         LeaderboardEntry: {
             rank?: number;
@@ -2600,7 +2602,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Goal"];
+                        data: components["schemas"]["GoalWithChart"];
                     };
                 };
             };
