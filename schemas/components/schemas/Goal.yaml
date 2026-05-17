@@ -41,31 +41,6 @@ properties:
     type: array
     items:
       type: string
-  chart_data:
-    type: array
-    items:
-      type: object
-      properties:
-        actual_seconds:
-          type: number
-          format: double
-        goal_seconds:
-          type: number
-          format: double
-        range:
-          $ref: ./TimeRange.yaml
-        range_status:
-          type: string
-          enum:
-            - success
-            - fail
-            - pending
-  status:
-    type: string
-    enum:
-      - success
-      - fail
-      - pending
   created_at:
     type: string
     format: date-time

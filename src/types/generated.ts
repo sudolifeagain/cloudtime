@@ -605,7 +605,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List user's goals */
+        /**
+         * List user's goals
+         * @description Returns the authenticated user's goals ordered by `created_at` ascending.
+         *     Each entry conforms to the `Goal` schema, which includes only persisted
+         *     goal fields. `chart_data` and `status` are NOT computed for the list
+         *     endpoint — clients that need per-period progress must request each goal
+         *     individually via
+         *     `GET /users/current/goals/{goal_id}`.
+         */
         get: operations["getGoals"];
         put?: never;
         post?: never;
@@ -622,7 +630,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a single goal with chart data */
+        /**
+         * Get a single goal with chart data
+         * @description Returns a single goal owned by the authenticated user, augmented with
+         *     `chart_data` (the most recent 7 periods of actual vs target activity)
+         *     and top-level `status` (the most recently completed period's outcome,
+         *     forced to `pending` if the goal is snoozed).
+         *
+         *     Period boundaries use the user's profile timezone (`users.timezone`).
+         *     Day periods span local calendar days. Week periods span ISO 8601
+         *     Monday-Sunday weeks in the user's timezone.
+         *
+         *     Requests for a goal owned by a different user return 404 (not 403) to
+         *     avoid leaking goal-id existence.
+         */
         get: operations["getGoal"];
         put?: never;
         post?: never;
@@ -1312,21 +1333,31 @@ export interface components {
             languages?: string[];
             editors?: string[];
             projects?: string[];
-            chart_data?: {
-                /** Format: double */
-                actual_seconds?: number;
-                /** Format: double */
-                goal_seconds?: number;
-                range?: components["schemas"]["TimeRange"];
-                /** @enum {string} */
-                range_status?: "success" | "fail" | "pending";
-            }[];
-            /** @enum {string} */
-            status?: "success" | "fail" | "pending";
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             modified_at?: string;
+        };
+        GoalWithChart: components["schemas"]["Goal"] & {
+            /**
+             * @description Always 7 entries in chronological order; the last entry is always
+             *     `range_status: pending`.
+             */
+            chart_data: {
+                /** Format: double */
+                actual_seconds: number;
+                /** Format: double */
+                goal_seconds: number;
+                range: components["schemas"]["TimeRange"];
+                /** @enum {string} */
+                range_status: "success" | "fail" | "pending";
+            }[];
+            /**
+             * @description Mirrors the `range_status` of the most recently completed period
+             *     unless the goal is snoozed, in which case it is forced to `pending`.
+             * @enum {string}
+             */
+            status: "success" | "fail" | "pending";
         };
         LeaderboardEntry: {
             rank?: number;
@@ -2571,7 +2602,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Goal"];
+                        data: components["schemas"]["GoalWithChart"];
                     };
                 };
             };

@@ -1,0 +1,45 @@
+allOf:
+  - $ref: ./Goal.yaml
+  - type: object
+    required:
+      - chart_data
+      - status
+    properties:
+      chart_data:
+        type: array
+        description: |
+          Always 7 entries in chronological order; the last entry is always
+          `range_status: pending`.
+        minItems: 7
+        maxItems: 7
+        items:
+          type: object
+          required:
+            - actual_seconds
+            - goal_seconds
+            - range
+            - range_status
+          properties:
+            actual_seconds:
+              type: number
+              format: double
+            goal_seconds:
+              type: number
+              format: double
+            range:
+              $ref: ./TimeRange.yaml
+            range_status:
+              type: string
+              enum:
+                - success
+                - fail
+                - pending
+      status:
+        type: string
+        description: |
+          Mirrors the `range_status` of the most recently completed period
+          unless the goal is snoozed, in which case it is forced to `pending`.
+        enum:
+          - success
+          - fail
+          - pending

@@ -3,6 +3,13 @@ get:
   tags:
     - goals
   summary: List user's goals
+  description: |
+    Returns the authenticated user's goals ordered by `created_at` ascending.
+    Each entry conforms to the `Goal` schema, which includes only persisted
+    goal fields. `chart_data` and `status` are NOT computed for the list
+    endpoint — clients that need per-period progress must request each goal
+    individually via
+    `GET /users/current/goals/{goal_id}`.
   responses:
     '200':
       description: List of goals
