@@ -5,20 +5,41 @@ import { getApiKey, getUserId } from "../utils/auth";
 import { sha256Hex } from "../utils/crypto";
 import { getSessionTokenFromCookie, validateSession } from "../utils/session";
 
+const DEFAULT_TIMEOUT_MINUTES = 15;
+
+/**
+ * Lazily fetch the authenticated user's profile settings (timezone + heartbeat
+ * timeout). Caches both on the Hono context so the D1 query runs at most once
+ * per request.
+ */
+async function loadUserSettings(c: Context<AuthEnv>): Promise<void> {
+  if (c.get("userTimezone") !== undefined && c.get("userTimeout") !== undefined) {
+    return;
+  }
+  const row = await c.env.DB
+    .prepare("SELECT timezone, timeout FROM users WHERE id = ?")
+    .bind(c.get("userId"))
+    .first<{ timezone: string; timeout: number }>();
+  c.set("userTimezone", row?.timezone ?? "UTC");
+  c.set("userTimeout", row?.timeout ?? DEFAULT_TIMEOUT_MINUTES);
+}
+
 /**
  * Lazily fetch the authenticated user's profile timezone.
  * Caches on the Hono context so the D1 query runs at most once per request.
  */
 export async function getUserTimezone(c: Context<AuthEnv>): Promise<string> {
-  const cached = c.get("userTimezone");
-  if (cached) return cached;
-  const row = await c.env.DB
-    .prepare("SELECT timezone FROM users WHERE id = ?")
-    .bind(c.get("userId"))
-    .first<{ timezone: string }>();
-  const tz = row?.timezone ?? "UTC";
-  c.set("userTimezone", tz);
-  return tz;
+  await loadUserSettings(c);
+  return c.get("userTimezone") ?? "UTC";
+}
+
+/**
+ * Lazily fetch the authenticated user's heartbeat session timeout in MINUTES
+ * (matches the DB column). Falls back to 15 if the user row is missing.
+ */
+export async function getUserTimeout(c: Context<AuthEnv>): Promise<number> {
+  await loadUserSettings(c);
+  return c.get("userTimeout") ?? DEFAULT_TIMEOUT_MINUTES;
 }
 
 export const authMiddleware = createMiddleware<AuthEnv>(async (c, next) => {
