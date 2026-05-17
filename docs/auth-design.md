@@ -112,6 +112,31 @@ Controlled by `INSTANCE_MODE` environment variable:
 | Revocation | DELETE /auth/session removes from DB |
 | Cleanup | Cron purges expired sessions hourly |
 
+### Note: `SameSite=Lax` and POST-mode OAuth callbacks (Issue #53)
+
+The OAuth `state` cookie and session cookie both use `SameSite=Lax`. Browsers
+send `Lax` cookies on top-level cross-site **GET** navigations but **not** on
+cross-site **POST** requests. All three providers we support today (GitHub,
+Google, Discord) use GET callbacks, so this is not an issue in the current
+implementation.
+
+If a future provider uses OpenID Connect `response_mode=form_post` (or any
+other cross-site POST callback), the `Lax` cookie will not accompany the
+request and CSRF state validation will fail. Two mitigations are possible at
+that point:
+
+1. **Switch the affected cookies to `SameSite=None; Secure`** — required when
+   adopting a POST-mode callback. `Secure` is mandatory for `SameSite=None`;
+   the `__Host-` prefix already enforces it. Note that `SameSite=None` removes
+   the browser's built-in CSRF defense, so the state cookie's CSRF role
+   becomes entirely dependent on the server-side store comparison
+   (`oauth:state:*` in KV) — keep that intact.
+2. **Continue using only GET-mode callbacks.** Document any new provider as
+   GET-only at the design stage so the cookie attributes do not need to change.
+
+This is a forward-looking note. Until a POST-mode provider is added, no code
+change is required.
+
 ## API Key Format
 
 ```

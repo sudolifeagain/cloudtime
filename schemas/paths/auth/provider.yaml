@@ -67,6 +67,13 @@ get:
             Short-lived HttpOnly cookie containing the `state` value for CSRF validation
             on callback. Attributes: HttpOnly, Secure, SameSite=Lax, Max-Age=600, Path=/.
             SameSite=Lax is required because the OAuth callback is a cross-site navigation.
+
+            Note: `SameSite=Lax` cookies are NOT sent on cross-site POST requests, so this
+            attribute is only safe for providers that use a GET-mode callback (GitHub,
+            Google, Discord — all currently supported). Adopting a future provider that
+            uses POST-mode callbacks (e.g., OpenID Connect `response_mode=form_post`)
+            will require switching the affected cookies to `SameSite=None; Secure`.
+            See docs/auth-design.md § Session Security for details (Issue #53).
           schema:
             type: string
     '400':
