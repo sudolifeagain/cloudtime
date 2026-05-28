@@ -3,6 +3,11 @@ delete:
   tags:
     - custom_rules
   summary: Delete a custom rule
+  description: |
+    Deletes a single rule owned by the authenticated user and returns 204.
+    A rule owned by a different user (or an unknown id) returns 404 (not
+    403) to avoid leaking rule-id existence. Deleting a rule invalidates the
+    user's cached rule set used by heartbeat ingestion.
   parameters:
     - name: rule_id
       in: path
@@ -14,3 +19,5 @@ delete:
       description: Rule deleted
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml

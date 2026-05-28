@@ -1,20 +1,23 @@
 type: object
+description: |
+  One rule in a `PUT /users/current/custom_rules` payload. The PUT replaces
+  the entire rule set, so `id` and `created_at` are server-managed and
+  ignored on input.
+
+  Conditional requirement (enforced server-side, returns 400 on violation):
+  `change` actions require `destination` and a non-empty `destination_value`;
+  `hide` actions ignore both (omit them).
 required:
   - action
   - source
   - operation
   - source_value
-  - destination
-  - destination_value
 properties:
-  id:
-    type: string
-    description: Include to update existing rule
   action:
     type: string
     enum:
       - change
-      - delete
+      - hide
   source:
     type: string
     enum:
@@ -29,12 +32,14 @@ properties:
     enum:
       - equals
       - contains
-      - starts with
-      - ends with
+      - starts_with
+      - ends_with
   source_value:
     type: string
+    minLength: 1
   destination:
     type: string
+    description: Required for `change` actions; ignored for `hide`.
     enum:
       - project
       - language
@@ -44,5 +49,7 @@ properties:
       - entity
   destination_value:
     type: string
+    description: Required (non-empty) for `change` actions; ignored for `hide`.
   priority:
     type: integer
+    description: Ascending order of application. Defaults to the array index when omitted.
