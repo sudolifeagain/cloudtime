@@ -86,9 +86,13 @@ describe("GET /insights/:insight_type/:range", () => {
 
     const res = await call(`${INSIGHTS}/languages/${YEAR}`, { headers: bearer(user.apiKey) });
     expect(res.status).toBe(200);
-    const { data } = (await res.json()) as { data: { type: string; range: { text: string }; items: { name: string }[] } };
+    const { data } = (await res.json()) as {
+      data: { type: string; range: { start: string; end: string; text: string }; items: { name: string }[] };
+    };
     expect(data.type).toBe("languages");
     expect(data.range.text).toBe("2026");
+    expect(data.range.start).toBe("2026-01-01T00:00:00Z");
+    expect(data.range.end).toBe("2026-12-31T23:59:59Z");
     expect(data.items.map((i) => i.name)).toEqual(["TypeScript", "Go"]);
   });
 

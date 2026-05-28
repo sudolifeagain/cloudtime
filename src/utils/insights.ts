@@ -1,9 +1,9 @@
 /**
  * Pure insight builders (specs/103-insights/). Shape a window of `summaries`
- * rows into the `Insight` response for a given `insight_type`. No D1, no I/O —
+ * rows into the `Insight` response for a given `insight_type`. No D1, no I/O -
  * the route owns the single grouped SELECT and passes the rows in.
  *
- * Dimension insights reuse `aggregateDimension` (grouping, percent, NULL →
+ * Dimension insights reuse `aggregateDimension` (grouping, percent, NULL ->
  * "Unknown", formatting). Temporal insights derive per-date totals.
  */
 import type { components } from "../types/generated";
@@ -27,7 +27,7 @@ export const INSIGHT_TYPES = [
 ] as const;
 export type InsightType = (typeof INSIGHT_TYPES)[number];
 
-/** insight_type → the `summaries` column it groups by. */
+/** insight_type -> the `summaries` column it groups by. */
 const DIMENSION_INSIGHTS: Partial<Record<InsightType, Dimension>> = {
   projects: "project",
   languages: "language",
@@ -83,7 +83,12 @@ export function buildInsight(
   const grandTotal = rows.reduce((sum, r) => sum + r.total_seconds, 0);
   const base: Insight = {
     type,
-    range: { start: range.start, end: range.end, text: range.text, timezone: tz },
+    range: {
+      start: `${range.start}T00:00:00Z`,
+      end: `${range.end}T23:59:59Z`,
+      text: range.text,
+      timezone: tz,
+    },
   };
 
   const dimension = DIMENSION_INSIGHTS[type];

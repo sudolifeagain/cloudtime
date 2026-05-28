@@ -1,5 +1,5 @@
 /**
- * Unit tests for src/utils/insights.ts — the pure insight builder
+ * Unit tests for src/utils/insights.ts - the pure insight builder
  * (specs/103-insights/). No D1, no KV.
  */
 import { describe, expect, it } from "vitest";
@@ -23,7 +23,7 @@ function row(partial: Partial<SummaryRow>): SummaryRow {
   };
 }
 
-describe("buildInsight — dimension types", () => {
+describe("buildInsight - dimension types", () => {
   const rows: SummaryRow[] = [
     row({ date: "2026-05-01", language: "TypeScript", total_seconds: 7200 }),
     row({ date: "2026-05-02", language: "Go", total_seconds: 3600 }),
@@ -35,6 +35,8 @@ describe("buildInsight — dimension types", () => {
     const out = buildInsight("languages", rows, RANGE, "UTC");
     expect(out.type).toBe("languages");
     expect(out.range?.timezone).toBe("UTC");
+    expect(out.range?.start).toBe("2026-05-01T00:00:00Z");
+    expect(out.range?.end).toBe("2026-05-31T23:59:59Z");
     const items = out.items ?? [];
     expect(items.map((i) => i.name)).toEqual(["TypeScript", "Go", "Unknown"]);
     expect(items[0].total_seconds).toBe(9000); // 7200 + 1800
@@ -49,7 +51,7 @@ describe("buildInsight — dimension types", () => {
   });
 });
 
-describe("buildInsight — temporal types", () => {
+describe("buildInsight - temporal types", () => {
   // Three active days: Mon 2026-05-04, Tue 2026-05-05, Mon 2026-05-11
   const rows: SummaryRow[] = [
     row({ date: "2026-05-04", total_seconds: 3600 }), // Monday

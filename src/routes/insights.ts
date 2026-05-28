@@ -2,7 +2,7 @@
  * Coding activity insights (specs/103-insights/).
  *
  * Derives the requested insight_type over a range from the pre-aggregated
- * `summaries` table — one grouped SELECT, then pure in-memory shaping in
+ * `summaries` table - one grouped SELECT, then pure in-memory shaping in
  * src/utils/insights.ts. No raw-heartbeat scan, no new table.
  */
 import { Hono } from "hono";
