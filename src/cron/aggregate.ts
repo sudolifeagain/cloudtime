@@ -26,7 +26,7 @@ type SummaryTuple = {
 };
 
 const DEFAULT_TIMEOUT = 15 * 60; // 15 minutes in seconds
-const MAX_USER_TIMEOUT = 60 * 60; // 60 minutes — max allowed by validation
+export const MAX_USER_TIMEOUT = 60 * 60; // 60 minutes - max allowed by validation
 const HEARTBEAT_LIMIT = 5000;
 
 async function getLastAggregatedAt(db: D1Database): Promise<number> {

@@ -1,10 +1,12 @@
+import { MAX_USER_TIMEOUT } from "./aggregate";
+
 /**
  * Heartbeat retention purge (Issue #108).
  *
  * The UI surfaces (`/summaries`, `/stats`) read from the pre-aggregated
  * `summaries` table, not from raw heartbeats, so old raw heartbeats can be
  * discarded once the operator's retention window has passed without losing
- * the rollup. Only `GET /heartbeats?date=…` for old days is affected.
+ * the rollup. Only `GET /heartbeats?date=...` for old days is affected.
  *
  * Runs inside the hourly cron, throttled with a per-run row cap so a large
  * backlog clears over several cycles rather than hammering D1 in one shot.
@@ -16,7 +18,7 @@ const SECONDS_PER_DAY = 86400;
 /**
  * Parse the `HEARTBEAT_RETENTION_DAYS` env value. Returns the positive number
  * of days, or null when retention is disabled (unset / blank / non-positive /
- * non-numeric) — null means "retain forever".
+ * non-numeric) - null means "retain forever".
  */
 export function parseRetentionDays(raw: string | undefined): number | null {
   if (raw === undefined || raw.trim() === "") return null;
@@ -25,16 +27,24 @@ export function parseRetentionDays(raw: string | undefined): number | null {
   return n;
 }
 
+async function getLastAggregatedAt(db: D1Database): Promise<number | null> {
+  const row = await db
+    .prepare("SELECT value FROM meta WHERE key = 'last_aggregated_at'")
+    .first<{ value: string }>();
+  const value = row ? Number(row.value) : null;
+  return value !== null && Number.isFinite(value) && value > 0 ? value : null;
+}
+
 /**
  * Delete up to `limit` heartbeats older than `retentionDays` days. Returns the
  * number of rows deleted so the caller can log progress / detect a backlog.
  *
- * `heartbeats.time` is epoch seconds. The cutoff (now − retentionDays days) is
- * always far older than the aggregator's lookback window (minutes), so this
- * never removes data the recent-window aggregation still needs.
+ * `heartbeats.time` is epoch seconds. The retention cutoff is additionally
+ * capped by the aggregation cursor minus the max lookback window so this never
+ * removes data that has not safely passed through cron aggregation.
  *
- * Uses a subquery-bounded DELETE (`id IN (SELECT … LIMIT ?)`) because SQLite /
- * D1 do not support `DELETE … LIMIT` directly. The `idx_heartbeats_time` index
+ * Uses a subquery-bounded DELETE (`id IN (SELECT ... LIMIT ?)`) because SQLite /
+ * D1 do not support `DELETE ... LIMIT` directly. The `idx_heartbeats_time` index
  * backs the time filter.
  */
 export async function purgeOldHeartbeats(
@@ -44,7 +54,14 @@ export async function purgeOldHeartbeats(
 ): Promise<number> {
   if (!Number.isFinite(retentionDays) || retentionDays <= 0) return 0;
 
-  const cutoff = Date.now() / 1000 - retentionDays * SECONDS_PER_DAY;
+  const lastAggregatedAt = await getLastAggregatedAt(db);
+  if (lastAggregatedAt === null) return 0;
+
+  const retentionCutoff = Date.now() / 1000 - retentionDays * SECONDS_PER_DAY;
+  const aggregationSafeCutoff = lastAggregatedAt - MAX_USER_TIMEOUT;
+  const cutoff = Math.min(retentionCutoff, aggregationSafeCutoff);
+  if (!Number.isFinite(cutoff) || cutoff <= 0) return 0;
+
   const res = await db
     .prepare(
       `DELETE FROM heartbeats

@@ -7,19 +7,19 @@ Operator-facing runbook for running a CloudTime instance. See also
 ## Heartbeat retention (`HEARTBEAT_RETENTION_DAYS`)
 
 CloudTime stores every heartbeat as a raw row in the `heartbeats` table. The
-visible UI surfaces — `/summaries`, `/stats`, `/status_bar`, `/durations`,
-goals — read from the pre-aggregated `summaries` table, **not** from raw
+visible UI surfaces - `/summaries`, `/stats`, `/status_bar`, `/durations`,
+goals - read from the pre-aggregated `summaries` table, **not** from raw
 heartbeats. Raw heartbeats are only needed by:
 
-- `GET /heartbeats?date=…` (inspecting a specific day's raw events), and
-- the hourly cron aggregator's recent-window scan (last ~hour).
+- `GET /heartbeats?date=...` (inspecting a specific day's raw events), and
+- the hourly cron aggregator's catch-up cursor and recent-window scan.
 
 Because of this, raw heartbeats older than your inspection window can be
 discarded without affecting the aggregated rollup or any dashboard.
 
 ### Why set a retention window
 
-Daily ingest is typically thousands of heartbeats per active user — millions
+Daily ingest is typically thousands of heartbeats per active user - millions
 of rows per year. Cloudflare D1 has plan-level row/size caps, so a
 long-running instance will eventually need pruning.
 
@@ -37,31 +37,35 @@ HEARTBEAT_RETENTION_DAYS = "90"
 |---|---|
 | unset (default) | Retain raw heartbeats forever. No purge runs. |
 | positive number (e.g. `"90"`) | Purge raw heartbeats older than N days on each hourly cron. |
-| `"0"`, negative, or non-numeric | Treated as unset — retain forever. |
+| `"0"`, negative, or non-numeric | Treated as unset - retain forever. |
 
 Re-deploy (`wrangler deploy`) after changing the value.
 
 ### How it works
 
 - The purge runs inside the existing hourly cron (`crons = ["0 * * * *"]`),
-  alongside aggregation and session cleanup, and independently — a failure in
+  alongside aggregation and session cleanup, and independently - a failure in
   one does not block the others.
-- Each run deletes at most **1000** rows (`DELETE … WHERE id IN (SELECT id …
+- Each run deletes at most **1000** rows (`DELETE ... WHERE id IN (SELECT id ...
   WHERE time < cutoff LIMIT 1000)`), so a large backlog clears over several
   cron cycles rather than hammering D1 in a single run. At hourly cadence that
   is up to 24,000 rows/day of backlog clearance; once caught up, each run only
   removes the rows that aged past the window in the last hour.
-- The cutoff (`now − N days`) is always far older than the aggregator's
-  lookback window (minutes), so the purge never removes data the recent-window
-  aggregation still needs. Choose a retention window comfortably larger than a
-  day; values in the tens-to-hundreds of days are typical.
+- The purge is capped by the aggregation cursor (`last_aggregated_at`) minus the
+  aggregator's maximum lookback window, so it only deletes rows that are safely
+  behind completed cron aggregation. If aggregation has no cursor yet, or has
+  fallen behind, purge skips or waits for aggregation to catch up before
+  deleting that range.
+- Choose a retention window comfortably larger than a day; values in the
+  tens-to-hundreds of days are typical.
 
 ### Trade-offs
 
-- **Aggregated data is preserved.** `summaries` are computed before a heartbeat
-  could ever be purged, so historical `/summaries` and `/stats` are unaffected.
-- **Old raw days become unavailable.** `GET /heartbeats?date=…` for a day
-  beyond the retention window returns an empty list — the raw events are gone.
+- **Aggregated data is preserved.** The purge only removes rows safely behind
+  the aggregation cursor, so historical `/summaries` and `/stats` are
+  unaffected.
+- **Old raw days become unavailable.** `GET /heartbeats?date=...` for a day
+  beyond the retention window returns an empty list - the raw events are gone.
 - **`user_projects` first/last timestamps are unaffected.** They are maintained
   at insert time, not derived from a live heartbeat scan, so purging does not
   shift them.
@@ -70,8 +74,11 @@ Re-deploy (`wrangler deploy`) after changing the value.
 
 If you enable retention on an instance that has accumulated a large backlog,
 the first purges will each remove 1000 rows per hour until the backlog is
-cleared. This is intentional throttling. To clear faster, you can run a manual
-bounded delete via `wrangler d1 execute` during a maintenance window, e.g.:
+cleared. This is intentional throttling. If aggregation has fallen behind,
+purge will wait for the aggregation cursor to catch up before deleting that
+range. To clear faster, first confirm `last_aggregated_at` is newer than your
+retention cutoff, then run a manual bounded delete via `wrangler d1 execute`
+during a maintenance window, e.g.:
 
 ```bash
 wrangler d1 execute cloudtime-db --remote --command \
