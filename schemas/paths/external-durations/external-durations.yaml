@@ -3,6 +3,17 @@ get:
   tags:
     - external_durations
   summary: List external durations for a day
+  description: |
+    Returns the authenticated user's external durations whose `start_time`
+    falls on `date`, ordered by `start_time` ascending. `date` is interpreted
+    in the `timezone` query param when supplied, otherwise the user's profile
+    timezone (same convention as `GET /heartbeats`). Optional `project` and
+    `branches` (comma-separated) further filter the results. Missing or
+    malformed `date`, or an invalid IANA `timezone`, returns 400.
+
+    External durations are a parallel, non-coding time series — they are
+    **not** aggregated into `summaries`, so they do not affect `/stats`,
+    `/summaries`, goals, or insights.
   parameters:
     - name: date
       in: query
@@ -20,6 +31,10 @@ get:
         type: string
     - name: timezone
       in: query
+      description: >-
+        IANA timezone (e.g. Asia/Tokyo). Determines the local-day bounds for
+        `date`. Defaults to the authenticated user's profile timezone when
+        omitted.
       schema:
         type: string
   responses:
@@ -36,6 +51,8 @@ get:
                 type: array
                 items:
                   $ref: ../../components/schemas/ExternalDuration.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
 post:
@@ -43,6 +60,12 @@ post:
   tags:
     - external_durations
   summary: Create a single external duration
+  description: |
+    Creates one external duration and returns it. Idempotent on
+    `(user_id, external_id)`: re-sending the same `external_id` updates the
+    existing row in place (so calendar/meeting syncs can be replayed safely).
+    Validation failures (missing required fields, unknown `type`, or
+    `end_time` < `start_time`) return 400.
   requestBody:
     required: true
     content:
@@ -61,5 +84,7 @@ post:
             properties:
               data:
                 $ref: ../../components/schemas/ExternalDuration.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml

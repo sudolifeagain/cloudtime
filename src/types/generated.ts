@@ -894,10 +894,29 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List external durations for a day */
+        /**
+         * List external durations for a day
+         * @description Returns the authenticated user's external durations whose `start_time`
+         *     falls on `date`, ordered by `start_time` ascending. `date` is interpreted
+         *     in the `timezone` query param when supplied, otherwise the user's profile
+         *     timezone (same convention as `GET /heartbeats`). Optional `project` and
+         *     `branches` (comma-separated) further filter the results. Missing or
+         *     malformed `date`, or an invalid IANA `timezone`, returns 400.
+         *
+         *     External durations are a parallel, non-coding time series — they are
+         *     **not** aggregated into `summaries`, so they do not affect `/stats`,
+         *     `/summaries`, goals, or insights.
+         */
         get: operations["getExternalDurations"];
         put?: never;
-        /** Create a single external duration */
+        /**
+         * Create a single external duration
+         * @description Creates one external duration and returns it. Idempotent on
+         *     `(user_id, external_id)`: re-sending the same `external_id` updates the
+         *     existing row in place (so calendar/meeting syncs can be replayed safely).
+         *     Validation failures (missing required fields, unknown `type`, or
+         *     `end_time` < `start_time`) return 400.
+         */
         post: operations["createExternalDuration"];
         delete?: never;
         options?: never;
@@ -914,9 +933,23 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create up to 100 external durations */
+        /**
+         * Create up to 100 external durations
+         * @description Batch-creates external durations (all-or-nothing): every element is
+         *     validated first, and any invalid element returns 400 with nothing
+         *     written. Each element is idempotent on `(user_id, external_id)` — a
+         *     re-sent `external_id` updates the existing row. Returns the persisted
+         *     rows. The cap is 100 per request (larger than the heartbeat bulk cap, to
+         *     suit calendar imports).
+         */
         post: operations["createExternalDurationsBulk"];
-        /** Delete external durations */
+        /**
+         * Delete external durations
+         * @description Deletes the listed external durations (by `id`) whose `start_time` falls
+         *     on `date`, scoped to the authenticated user. Returns 204. A malformed
+         *     body (missing `date`/`ids`, or invalid `date`) returns 400. Unknown ids
+         *     are ignored.
+         */
         delete: operations["deleteExternalDurationsBulk"];
         options?: never;
         head?: never;
@@ -3152,6 +3185,7 @@ export interface operations {
                 date: string;
                 project?: string;
                 branches?: string;
+                /** @description IANA timezone (e.g. Asia/Tokyo). Determines the local-day bounds for `date`. Defaults to the authenticated user's profile timezone when omitted. */
                 timezone?: string;
             };
             header?: never;
@@ -3171,6 +3205,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -3198,6 +3233,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -3225,6 +3261,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -3252,6 +3289,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };

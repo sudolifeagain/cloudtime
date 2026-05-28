@@ -3,6 +3,13 @@ post:
   tags:
     - external_durations
   summary: Create up to 100 external durations
+  description: |
+    Batch-creates external durations (all-or-nothing): every element is
+    validated first, and any invalid element returns 400 with nothing
+    written. Each element is idempotent on `(user_id, external_id)` — a
+    re-sent `external_id` updates the existing row. Returns the persisted
+    rows. The cap is 100 per request (larger than the heartbeat bulk cap, to
+    suit calendar imports).
   requestBody:
     required: true
     content:
@@ -26,6 +33,8 @@ post:
                 type: array
                 items:
                   $ref: ../../components/schemas/ExternalDuration.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
 delete:
@@ -33,6 +42,11 @@ delete:
   tags:
     - external_durations
   summary: Delete external durations
+  description: |
+    Deletes the listed external durations (by `id`) whose `start_time` falls
+    on `date`, scoped to the authenticated user. Returns 204. A malformed
+    body (missing `date`/`ids`, or invalid `date`) returns 400. Unknown ids
+    are ignored.
   requestBody:
     required: true
     content:
@@ -53,5 +67,7 @@ delete:
   responses:
     '204':
       description: External durations deleted
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
