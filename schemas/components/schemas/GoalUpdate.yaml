@@ -1,0 +1,42 @@
+type: object
+description: |
+  Request body for partially updating a goal. Only the fields present in the
+  body are changed; omitted fields keep their current value. At least one
+  mutable field MUST be provided (an empty body returns 400).
+
+  `type` and `delta` are immutable after creation — changing them would
+  reinterpret the goal's historical chart, so callers must delete and
+  recreate instead. Both are rejected with 400 if present.
+
+  Filter arrays must stay consistent with the goal's existing `type` (the
+  same rule documented on `GoalInput`). Setting a filter array on a
+  `type=coding` goal, or clearing the required array of a filtered goal,
+  returns 400.
+properties:
+  title:
+    type: string
+    minLength: 1
+    maxLength: 200
+  target_seconds:
+    type: number
+    format: double
+    exclusiveMinimum: 0
+    maximum: 604800
+  is_enabled:
+    type: boolean
+  is_snoozed:
+    type: boolean
+  is_inverse:
+    type: boolean
+  languages:
+    type: array
+    items:
+      type: string
+  editors:
+    type: array
+    items:
+      type: string
+  projects:
+    type: array
+    items:
+      type: string

@@ -37,3 +37,73 @@ get:
       $ref: ../../components/responses/Unauthorized.yaml
     '404':
       $ref: ../../components/responses/NotFound.yaml
+patch:
+  operationId: updateGoal
+  tags:
+    - goals
+  summary: Update a goal
+  description: |
+    Partially updates a goal owned by the authenticated user. Only the
+    fields present in the body change; omitted fields are left untouched.
+    Returns the updated goal in the `Goal` shape (no `chart_data`).
+
+    `type` and `delta` are immutable — sending either returns 400. An empty
+    body, or filter arrays inconsistent with the goal's `type`, also return
+    400.
+
+    Requests for a goal owned by a different user return 404 (not 403) to
+    avoid leaking goal-id existence.
+  parameters:
+    - name: goal_id
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../../components/schemas/GoalUpdate.yaml
+  responses:
+    '200':
+      description: Updated goal
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/Goal.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
+delete:
+  operationId: deleteGoal
+  tags:
+    - goals
+  summary: Delete a goal
+  description: |
+    Permanently deletes a goal owned by the authenticated user. Returns 204
+    with no body on success.
+
+    Requests for a goal owned by a different user (or an unknown id) return
+    404 (not 403) to avoid leaking goal-id existence.
+  parameters:
+    - name: goal_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '204':
+      description: Goal deleted
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
