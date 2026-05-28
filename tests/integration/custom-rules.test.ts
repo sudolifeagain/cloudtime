@@ -92,6 +92,8 @@ describe("custom_rules CRUD", () => {
     expect(data[0].priority).toBe(0);
     expect(data[1].priority).toBe(1);
     expect(data[1].action).toBe("hide");
+    expect(data[1].destination).toBe("project");
+    expect(data[1].destination_value).toBe("");
     expect(data[0].created_at).toBeTruthy();
 
     const list = await call(RULES, { headers: bearer(user.apiKey) });

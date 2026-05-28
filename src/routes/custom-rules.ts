@@ -24,13 +24,14 @@ const SELECT_COLUMNS =
   "id, action, source, operation, source_value, destination, destination_value, priority, created_at";
 
 function rowToCustomRule(row: CustomRuleRow): CustomRule {
+  const destination = row.destination || row.source;
   return {
     id: row.id,
     action: row.action as CustomRule["action"],
     source: row.source as CustomRule["source"],
     operation: row.operation as CustomRule["operation"],
     source_value: row.source_value,
-    destination: row.destination as CustomRule["destination"],
+    destination: destination as CustomRule["destination"],
     destination_value: row.destination_value,
     priority: row.priority,
     created_at: normalizeDateTime(row.created_at),
