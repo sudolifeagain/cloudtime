@@ -15,6 +15,7 @@ import customRules from "./routes/custom-rules";
 import machines from "./routes/machines";
 import userAgents from "./routes/user-agents";
 import { aggregateHeartbeats } from "./cron/aggregate";
+import { parseRetentionDays, purgeOldHeartbeats } from "./cron/purge";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -141,9 +142,11 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
       (async () => {
-        // Run aggregation and session cleanup independently so a failure
-        // in one does not prevent the other from completing.
-        const [, batchResults] = await Promise.allSettled([
+        // Run aggregation, session cleanup, and the optional heartbeat purge
+        // independently so a failure in one does not prevent the others from
+        // completing.
+        const retentionDays = parseRetentionDays(env.HEARTBEAT_RETENTION_DAYS);
+        const [, batchResults, purgeResult] = await Promise.allSettled([
           aggregateHeartbeats(env.DB),
           // Atomic DELETE + RETURNING avoids TOCTOU between SELECT and DELETE
           env.DB.batch([
@@ -152,6 +155,10 @@ export default {
             ),
             env.DB.prepare("DELETE FROM pending_links WHERE expires_at < datetime('now')"),
           ]),
+          // Purge raw heartbeats past the retention window (Issue #108).
+          // No-op when retention is unset; throttled per run so a backlog
+          // clears over several cron cycles.
+          retentionDays !== null ? purgeOldHeartbeats(env.DB, retentionDays) : Promise.resolve(0),
         ]);
 
         // Clean up KV cache for deleted sessions
@@ -160,6 +167,10 @@ export default {
           if (expired.length > 0) {
             await Promise.all(expired.map((r) => env.KV.delete(`session:${r.token_hash}`)));
           }
+        }
+
+        if (purgeResult?.status === "rejected") {
+          console.error("Heartbeat purge failed:", purgeResult.reason);
         }
       })(),
     );

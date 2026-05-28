@@ -17,6 +17,12 @@ export interface Env {
   // Instance mode: "single" (default) or "multi" (future)
   INSTANCE_MODE?: string;
 
+  // Optional raw-heartbeat retention window in days (Issue #108). Unset or
+  // non-positive = retain forever. When set, the hourly cron purges raw
+  // heartbeats older than this many days; pre-aggregated `summaries` are
+  // unaffected.
+  HEARTBEAT_RETENTION_DAYS?: string;
+
   // Runtime environment (set via wrangler.toml [vars] or secret)
   ENVIRONMENT?: string;
 

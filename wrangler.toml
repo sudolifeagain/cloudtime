@@ -23,6 +23,11 @@ __APP_VERSION__ = '"0.1.0"'
 
 [vars]
 INSTANCE_MODE = "single"
+# HEARTBEAT_RETENTION_DAYS - Optional. Number of days of raw heartbeats to keep.
+#                            Unset = retain forever. When set, the hourly cron
+#                            purges older raw heartbeats; aggregated `summaries`
+#                            are unaffected. See docs/operations.md.
+# HEARTBEAT_RETENTION_DAYS = "90"
 
 # OAuth & Session secrets (set via `wrangler secret put <NAME>`)
 # GITHUB_CLIENT_ID
