@@ -4,6 +4,7 @@ import type { components } from "../types/generated";
 import { authMiddleware, getUserTimeout, getUserTimezone } from "../middleware/auth";
 import { getEpochBoundsForDate } from "../utils/time-format";
 import { resolveUserAgentId } from "../utils/user-agent";
+import { applyRules, loadRules } from "../utils/custom-rules";
 
 type HeartbeatInput = components["schemas"]["HeartbeatInput"];
 type Heartbeat = components["schemas"]["Heartbeat"];
@@ -139,6 +140,14 @@ heartbeats.post("/heartbeats", async (c) => {
   const userAgent = input.user_agent ?? c.req.header("User-Agent") ?? undefined;
 
   try {
+    // Apply the user's custom rules before persisting (Issue #101). A `change`
+    // rewrites a dimension in place; a `hide` drops the heartbeat. Hidden
+    // heartbeats still get a success-shaped response so the caller cannot tell
+    // which were dropped.
+    const rules = await loadRules(c.env, userId);
+    if (applyRules(input, rules) === null) {
+      return c.json({ data: buildHeartbeatResponse(crypto.randomUUID(), userId, input, machine, null) }, 201);
+    }
     const heartbeat = await insertHeartbeat(c.env.DB, userId, input, machine, userAgent);
     return c.json({ data: heartbeat }, 201);
   } catch (err) {
@@ -173,25 +182,37 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
   // Per-item validation
   const validationErrors: (string | null)[] = inputs.map((input) => validateHeartbeatInput(input));
   const ids = inputs.map(() => crypto.randomUUID());
-  const validCount = validationErrors.filter((e) => e === null).length;
+
+  // Apply the user's custom rules before anything is persisted (Issue #101).
+  // `change` rewrites dimensions on inputs[i] in place; `hide` flags the item
+  // so it is excluded from the batch. Rules are loaded once per request.
+  const rules = await loadRules(c.env, userId);
+  const hidden: boolean[] = new Array(inputs.length).fill(false);
+  for (let i = 0; i < inputs.length; i++) {
+    if (validationErrors[i]) continue;
+    if (applyRules(inputs[i], rules) === null) {
+      hidden[i] = true;
+    }
+  }
 
   // Resolve every distinct User-Agent value once before the heartbeat batch,
   // so a 25-item bulk POST issues at most a handful of upserts instead of one
-  // per heartbeat (Issue #99).
+  // per heartbeat (Issue #99). Hidden heartbeats are skipped so they leave no
+  // user_agents trace.
   const userAgentCache = new Map<string, string>();
   const userAgentIds: (string | null)[] = new Array(inputs.length).fill(null);
   for (let i = 0; i < inputs.length; i++) {
-    if (validationErrors[i]) continue;
+    if (validationErrors[i] || hidden[i]) continue;
     const ua = inputs[i].user_agent ?? headerUserAgent;
     userAgentIds[i] = await resolveUserAgentId(c.env.DB, userId, ua ?? null, userAgentCache);
   }
 
-  // Build insert statements only for valid heartbeats
+  // Build insert statements only for valid, non-hidden heartbeats
   const stmts: D1PreparedStatement[] = [];
   const projectTimes = new Map<string, { min: number; max: number }>();
 
   for (let i = 0; i < inputs.length; i++) {
-    if (validationErrors[i]) continue; // skip invalid
+    if (validationErrors[i] || hidden[i]) continue;
     const input = inputs[i];
     const machine = input.machine ?? headerMachine;
     stmts.push(
@@ -221,11 +242,17 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
     }
   }
 
-  // Map batch results back to per-input indices (valid items only)
+  // Map batch results back to per-input indices. Hidden items report success
+  // with the same shape as a stored heartbeat so the caller cannot tell which
+  // were dropped; invalid items report their error; the rest consume a batch
+  // result in order.
   let batchIdx = 0;
   const responses: [HeartbeatBulkItem, number][] = inputs.map((_, i) => {
     if (validationErrors[i]) {
       return [{ data: null, error: validationErrors[i] }, 400];
+    }
+    if (hidden[i]) {
+      return [{ data: { id: ids[i] }, error: null }, 201];
     }
     const success = batchResults[batchIdx]?.success ?? false;
     batchIdx++;
@@ -397,6 +424,22 @@ async function insertHeartbeat(
   }
   await db.batch(stmts);
 
+  return buildHeartbeatResponse(id, userId, input, machine, userAgentId, now);
+}
+
+/**
+ * Build the API response object for a heartbeat. Shared by the persisted path
+ * and the `hide` path so a dropped heartbeat is indistinguishable from a
+ * stored one in the response (Issue #101).
+ */
+function buildHeartbeatResponse(
+  id: string,
+  userId: string,
+  input: HeartbeatInput,
+  machine: string | undefined,
+  userAgentId: string | null,
+  now: string = new Date().toISOString(),
+): Heartbeat {
   return {
     id,
     user_id: userId,
