@@ -900,7 +900,8 @@ export interface paths {
          *     falls on `date`, ordered by `start_time` ascending. `date` is interpreted
          *     in the `timezone` query param when supplied, otherwise the user's profile
          *     timezone (same convention as `GET /heartbeats`). Optional `project` and
-         *     `branches` (comma-separated) further filter the results.
+         *     `branches` (comma-separated) further filter the results. Missing or
+         *     malformed `date`, or an invalid IANA `timezone`, returns 400.
          *
          *     External durations are a parallel, non-coding time series — they are
          *     **not** aggregated into `summaries`, so they do not affect `/stats`,
@@ -3184,6 +3185,7 @@ export interface operations {
                 date: string;
                 project?: string;
                 branches?: string;
+                /** @description IANA timezone (e.g. Asia/Tokyo). Determines the local-day bounds for `date`. Defaults to the authenticated user's profile timezone when omitted. */
                 timezone?: string;
             };
             header?: never;
