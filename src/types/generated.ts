@@ -823,7 +823,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List user's machines */
+        /**
+         * List user's machines
+         * @description Returns the authenticated user's machines (devices), ordered by
+         *     `last_seen_at` descending. Machines are recorded server-side from the
+         *     `machine` body field / `X-Machine-Name` header on incoming heartbeats;
+         *     this endpoint surfaces that per-device registry.
+         *
+         *     The `ip` field is the last source IP seen for the device and is
+         *     owner-private — it is only ever returned for the requesting user's own
+         *     machines (always the case here, since the list is user-scoped).
+         */
         get: operations["getMachineNames"];
         put?: never;
         post?: never;
@@ -1607,12 +1617,22 @@ export interface components {
         };
         Machine: {
             id: string;
-            /** @description Machine hostname */
+            /** @description Machine hostname (the heartbeat `machine` / `X-Machine-Name` value) */
             value: string;
+            /**
+             * @description Last source IP seen for this machine. Owner-private — returned only to
+             *     the user who owns the row. May be absent when no IP was captured.
+             */
             ip?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description Timestamp of the most recent heartbeat from this machine.
+             */
             last_seen_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description Timestamp the machine was first seen.
+             */
             created_at?: string;
         };
         UserAgent: {
