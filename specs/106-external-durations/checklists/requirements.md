@@ -23,7 +23,7 @@
 - [ ] `src/routes/external-durations.ts` implements all four handlers behind `authMiddleware`:
   - `POST /external_durations` — validate, upsert on `(user_id, external_id)`, return `201 {data}`.
   - `POST /external_durations.bulk` — validate all (≤100), `db.batch` upsert, return `201 {data[]}`; any invalid → 400, nothing written.
-  - `GET /external_durations?date=` — day-scoped by `start_time` (tz), `project`/`branches` filters, `400` on missing/bad date.
+  - `GET /external_durations?date=` — day-scoped by `start_time` (tz), `project`/`branches` filters, `400` on missing/bad date or invalid timezone.
   - `DELETE /external_durations.bulk` — `{date, ids}`, scoped by `user_id`, `204`, `400` on bad body.
 - [ ] `src/index.ts` mounts the router at `/api/v1/users/current`.
 - [ ] The cron aggregator and `summaries` are **not** modified.
@@ -32,7 +32,7 @@
 ### Behaviour (per `quickstart.md`)
 
 - [ ] A: single create 201; B: re-sync idempotent (no duplicate); C: validation 400s.
-- [ ] D: bulk all-or-nothing; E: list day-scoped + project filter, missing date 400; F: bulk delete 204 + unknown ids ignored.
+- [ ] D: bulk all-or-nothing; E: list day-scoped + project filter, missing date / invalid timezone 400; F: bulk delete 204 + unknown ids ignored.
 - [ ] G: `/stats` unaffected; H: unauthenticated 401, cross-user isolation.
 
 ### Tests

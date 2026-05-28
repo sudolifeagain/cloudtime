@@ -8,7 +8,8 @@ error responses and documents the behaviour. No schema field changes.
 
 1. `schemas/paths/external-durations/external-durations.yaml`
    - `getExternalDurations`: add `400`; document day-scoping (timezone),
-     `project`/`branches` filters, and the parallel-series note.
+     invalid timezone handling, `project`/`branches` filters, and the
+     parallel-series note.
    - `createExternalDuration`: add `400`; document upsert idempotency on
      `(user_id, external_id)`.
 2. `schemas/paths/external-durations/external-durations-bulk.yaml`
@@ -22,7 +23,7 @@ on the bulk body is **kept** (OpenAPI SSoT) over the issue prose's "max 25".
 
 ## Contract (shape unchanged)
 
-- `GET /users/current/external_durations?date=…` → `200 {data: ExternalDuration[]}`, `400`, `401`.
+- `GET /users/current/external_durations?date=...` -> `200 {data: ExternalDuration[]}`, `400`, `401`.
 - `POST /users/current/external_durations` → `201 {data: ExternalDuration}`, `400`, `401`.
 - `POST /users/current/external_durations.bulk` (≤100) → `201 {data: ExternalDuration[]}`, `400`, `401`.
 - `DELETE /users/current/external_durations.bulk` (`{date, ids}`) → `204`, `400`, `401`.

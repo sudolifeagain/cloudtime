@@ -63,9 +63,10 @@ curl -sX POST "$EXT.bulk" "${HJ[@]}" -d '[
 ```bash
 curl -s "$EXT?date=2026-05-29" -H "$H"
 curl -s "$EXT?date=2026-05-29&project=Personal" -H "$H"
+curl -si "$EXT?date=2026-05-29&timezone=Not/AZone" -H "$H"
 ```
 
-**Expected**: entries whose `start_time` is on that local day, ascending; `project` filter narrows them. Missing `date` → 400.
+**Expected**: entries whose `start_time` is on that local day, ascending; `project` filter narrows them. Missing `date` or invalid `timezone` returns 400.
 
 ## Scenario F — Bulk delete
 

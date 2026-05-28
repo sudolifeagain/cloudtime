@@ -38,10 +38,11 @@
 
 ## Decision 4: GET is day-scoped by `start_time`
 
-**Decision**: `GET /external_durations?date=…` returns durations whose `start_time` falls within the local day (in the `timezone` query param if given, else the user's profile timezone), ordered ascending, with optional `project` / `branches` filters.
+**Decision**: `GET /external_durations?date=...` returns durations whose `start_time` falls within the local day (in the `timezone` query param if given, else the user's profile timezone), ordered ascending, with optional `project` / `branches` filters. Invalid IANA timezone values return 400.
 
 **Rationale**:
 - Mirrors `GET /heartbeats?date=` (same `getEpochBoundsForDate` helper, same timezone convention) so the two day-views behave identically.
+- Existing timezone-aware read endpoints validate the timezone query before computing local-day bounds; external durations should follow that pattern instead of letting `Intl.DateTimeFormat` throw.
 - Filtering on `start_time` (rather than overlap) is the simplest, most predictable rule and uses the existing `idx_ext_durations_user_time` index.
 
 **Alternative considered**: overlap filtering (durations spanning the day boundary). Rejected for the first cut — adds complexity for a rare case; `start_time` bucketing matches how heartbeats are listed.

@@ -70,6 +70,7 @@ As an authenticated user, I want to remove external durations I no longer want.
 - **Cross-user `external_id` collision**: none — the unique key is `(user_id, external_id)`, scoped per user.
 - **Bulk with duplicate `external_id` within one request**: the last one wins after the upserts apply; not an error.
 - **Timezone**: `date` is interpreted in the `timezone` query param if provided, else the user's profile timezone (same as `GET /heartbeats`).
+- **Invalid timezone**: unrecognised IANA timezone values return 400 instead of falling through to a worker exception.
 - **Unknown ids in delete**: silently ignored (delete is scoped by `id IN (…) AND user_id`).
 
 ---
@@ -81,7 +82,7 @@ As an authenticated user, I want to remove external durations I no longer want.
 - **FR-001**: `POST /api/v1/users/current/external_durations` MUST create one external duration and return `201` with `{data: ExternalDuration}`. It MUST upsert on `(user_id, external_id)` (re-sent `external_id` updates in place).
 - **FR-002**: The server MUST generate `id` and `created_at`; `user_id` comes from the session. Validation: `external_id`, `entity`, `type ∈ {file,app,domain}`, `start_time`, `end_time` required and numeric; `end_time` ≥ `start_time`. Violations → 400, nothing stored.
 - **FR-003**: `POST /api/v1/users/current/external_durations.bulk` MUST validate every element first and, only if all pass, upsert them in one batch returning `{data: ExternalDuration[]}` (201). Any invalid element → 400, nothing written. > 100 elements → 400.
-- **FR-004**: `GET /api/v1/users/current/external_durations?date=YYYY-MM-DD` MUST return the user's durations whose `start_time` is within that local day, ordered by `start_time` ascending, as `{data: ExternalDuration[]}`. Optional `project` and `branches` (comma-separated) filter further. Missing/invalid `date` → 400.
+- **FR-004**: `GET /api/v1/users/current/external_durations?date=YYYY-MM-DD` MUST return the user's durations whose `start_time` is within that local day, ordered by `start_time` ascending, as `{data: ExternalDuration[]}`. Optional `project` and `branches` (comma-separated) filter further. Missing/invalid `date` or invalid `timezone` -> 400.
 - **FR-005**: `DELETE /api/v1/users/current/external_durations.bulk` with `{date, ids}` MUST delete the user's matching durations on that day and return `204`. Unknown/unowned ids are ignored. Malformed body → 400.
 - **FR-006**: All endpoints MUST require authentication (401) and be strictly scoped by `user_id`.
 - **FR-007**: External durations MUST NOT be aggregated into `summaries`; the cron aggregator is unchanged. They are exposed only via `GET /external_durations`.
