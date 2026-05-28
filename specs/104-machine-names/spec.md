@@ -59,7 +59,7 @@ As an authenticated user, I want to list my devices most-recently-active first s
 - **FR-003**: A bulk request MUST upsert each distinct `machine` value at most once per request.
 - **FR-004**: A heartbeat that is not persisted (invalid, or dropped by a `hide` custom rule) MUST NOT register a machine.
 - **FR-005**: `GET /api/v1/users/current/machine_names` MUST return the user's machines as `{"data": Machine[]}` ordered by `last_seen_at` descending.
-- **FR-006**: Each entry MUST include `id`, `value`, `last_seen_at`, `created_at`, and `ip` (the caller's own; the list is user-scoped so `ip` is never another user's).
+- **FR-006**: Each entry MUST include `id`, `value`, `last_seen_at`, and `created_at`. When an IP was captured, `ip` MUST be the caller's own machine IP; when no IP was captured, `ip` MAY be omitted. The list is user-scoped so `ip` is never another user's.
 - **FR-007**: The endpoint MUST require API-key or session authentication; unauthenticated requests return 401.
 - **FR-008**: Results MUST be strictly scoped by `user_id`; no other user's machines appear.
 

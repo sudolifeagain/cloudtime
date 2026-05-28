@@ -11,7 +11,7 @@
 - [x] `contracts/openapi-diff.md` documents the description-only clarifications.
 - [x] `machine-names.yaml` and `Machine.yaml` carry the clarifying descriptions.
 - [x] `npm run generate` produces only JSDoc changes (no type-shape change); `npm run typecheck` passes.
-- [x] PR1 contains no changes under `src/`.
+- [x] PR1 contains no runtime code changes under `src/` (only regenerated `src/types/generated.ts`).
 - [x] PR1 references issue #104.
 
 ## PR2 (Implementation) gate — must be ✅ before merging

@@ -23,7 +23,7 @@ Returns `{"data": Machine[]}` ordered by `last_seen_at` descending.
 `Machine` (unchanged required set: `id`, `value`):
 
 - `id`, `value` (hostname) — required
-- `ip` — optional, owner-private (the caller's own; null when not captured)
+- `ip` — optional, owner-private (the caller's own; omitted when not captured)
 - `last_seen_at`, `created_at` — optional date-time
 
 Responses: `200` (list), `401` (unauthenticated).
