@@ -11,6 +11,7 @@ import summaries from "./routes/summaries";
 import stats from "./routes/stats";
 import users from "./routes/users";
 import goals from "./routes/goals";
+import customRules from "./routes/custom-rules";
 import userAgents from "./routes/user-agents";
 import { aggregateHeartbeats } from "./cron/aggregate";
 
@@ -123,6 +124,9 @@ app.route("/api/v1/users/current", users);
 
 // Goals routes (mounted at /users/current, sub-app defines /goals, /goals/:goal_id)
 app.route("/api/v1/users/current", goals);
+
+// Custom rules routes (mounted at /users/current, sub-app defines /custom_rules, /custom_rules/:rule_id)
+app.route("/api/v1/users/current", customRules);
 
 // User agents routes (mounted at /users/current, sub-app defines /user_agents)
 app.route("/api/v1/users/current", userAgents);
