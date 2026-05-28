@@ -7,12 +7,17 @@ properties:
     type: string
   value:
     type: string
-    description: Machine hostname
+    description: Machine hostname (the heartbeat `machine` / `X-Machine-Name` value)
   ip:
     type: string
+    description: |
+      Last source IP seen for this machine. Owner-private — returned only to
+      the user who owns the row. May be absent when no IP was captured.
   last_seen_at:
     type: string
     format: date-time
+    description: Timestamp of the most recent heartbeat from this machine.
   created_at:
     type: string
     format: date-time
+    description: Timestamp the machine was first seen.
