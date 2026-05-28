@@ -33,7 +33,7 @@
 ### Heartbeat integration
 
 - [ ] **T-106**: In `src/routes/heartbeats.ts`, load rules once per request and apply per heartbeat on `POST /heartbeats` and `/heartbeats.bulk`; filter `null` (hidden) from the batch; preserve per-item response order.
-- [ ] **T-107**: Verify the hidden-heartbeat success-response shape against the documented WakaTime-compatible bulk contract (API docs / `wakatime-cli` behaviour — not source).
+- [ ] **T-107**: Verify the hidden-heartbeat success-response shape against the documented WakaTime-compatible bulk contract (API docs / compatible CLI behaviour — not source).
 
 ### Tests
 

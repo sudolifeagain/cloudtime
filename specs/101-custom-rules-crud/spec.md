@@ -109,7 +109,7 @@ As an authenticated user, I want my rules applied to incoming heartbeats so rena
 
 - **FR-007**: `POST /heartbeats` and `POST /heartbeats.bulk` MUST load the user's rule set (cache-backed) and apply rules in ascending priority order to each heartbeat before INSERT.
 - **FR-008**: A `change` rule whose heartbeat `source` field satisfies `operation`/`source_value` MUST rewrite the heartbeat's `destination` column to `destination_value` in memory before persistence.
-- **FR-009**: A `hide` rule that matches MUST cause the heartbeat to be skipped (not stored, not aggregated). The endpoint MUST still return a per-item success result so a caller cannot tell which heartbeats were dropped. **The exact success-response shape MUST match the WakaTime-compatible bulk-heartbeat contract** — verified against the documented response (and `wakatime-cli` expectations) during PR2, not by copying WakaTime source.
+- **FR-009**: A `hide` rule that matches MUST cause the heartbeat to be skipped (not stored, not aggregated). The endpoint MUST still return a per-item success result so a caller cannot tell which heartbeats were dropped. **The exact success-response shape MUST match the WakaTime-compatible bulk-heartbeat contract** — verified against the documented response and compatible CLI expectations during PR2, not by copying upstream source.
 - **FR-010**: Rules apply sequentially: a `change` result is visible to later rules; the first matching `hide` ends processing for that heartbeat.
 - **FR-011**: Matching is case-sensitive: `equals` exact, `contains` substring, `starts_with` prefix, `ends_with` suffix. No regex.
 - **FR-012**: With an empty rule set, heartbeats MUST be stored unchanged (no behavioural change from today).

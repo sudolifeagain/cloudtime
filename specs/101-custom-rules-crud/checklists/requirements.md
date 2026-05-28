@@ -25,7 +25,7 @@
 - [ ] `src/routes/custom-rules.ts` exports a Hono sub-app: `GET` (ordered), `PUT` (atomic `db.batch` replace + cache invalidate), `DELETE` (`204`/`404` + cache invalidate), all behind `authMiddleware`.
 - [ ] `src/index.ts` mounts the router at `/api/v1/users/current`.
 - [ ] `src/routes/heartbeats.ts` applies rules before INSERT on `POST /heartbeats` and `/heartbeats.bulk`; hidden heartbeats are filtered from the batch; per-item response order preserved.
-- [ ] Hide-response shape verified against the documented WakaTime-compatible bulk contract (not by reading WakaTime source).
+- [ ] Hide-response shape verified against the documented WakaTime-compatible bulk contract (not by reading upstream source).
 - [ ] `npm run typecheck` passes; no hand-edited generated types.
 
 ### Behaviour (per `quickstart.md`)

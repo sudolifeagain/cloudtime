@@ -77,7 +77,7 @@
 
 ## Decision 7: `hide` success-response shape verified against the WakaTime-compatible contract
 
-**Decision**: When a `hide` rule drops a heartbeat, the endpoint still returns a per-item *success* result (so callers cannot enumerate what was dropped). The **exact** shape (status code per item, `data` null vs echoed) will be finalised in PR2 by checking the documented WakaTime-compatible bulk-heartbeat response and `wakatime-cli`'s expectations — **not** by reading WakaTime source.
+**Decision**: When a `hide` rule drops a heartbeat, the endpoint still returns a per-item *success* result (so callers cannot enumerate what was dropped). The **exact** shape (status code per item, `data` null vs echoed) will be finalised in PR2 by checking the documented WakaTime-compatible bulk-heartbeat response and compatible CLI expectations — **not** by reading upstream source.
 
 **Rationale**:
 - The bulk heartbeat response is wire-protocol consumed by editor plugins; diverging risks plugin errors. Project rule: verify wire-protocol behaviour against the CLI/API docs first.
