@@ -749,7 +749,34 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Coding activity insights */
+        /**
+         * Coding activity insights
+         * @description Derives an insight of the requested `insight_type` over `range` from the
+         *     pre-aggregated `summaries` table (no raw-heartbeat scan). All listed
+         *     insight types ship in the first cut; an `hours`-of-day insight is
+         *     intentionally absent because `summaries` has day granularity only (it
+         *     would require an hourly aggregate — a future addition).
+         *
+         *     `range` accepts `last_7_days`, `last_30_days`, `last_6_months`,
+         *     `last_year`, `all_time`, or `YYYY` / `YYYY-MM`, interpreted in the user's
+         *     profile timezone (same vocabulary as `GET /stats/{range}`). An
+         *     unrecognised range returns 400.
+         *
+         *     Which `Insight` field is populated depends on `insight_type`:
+         *     - `days` → `days[]` (per-day totals across the range).
+         *     - `best_day` → `best_day` (the single highest-total day).
+         *     - `daily_average` → `daily_average` (mean seconds per active day).
+         *     - `weekday` → `items[]`, one per weekday (`name` = Monday…Sunday),
+         *       `total_seconds` = mean for that weekday, ordered most-active first.
+         *     - `projects` / `languages` / `editors` / `categories` / `machines` /
+         *       `operating_systems` → `items[]`, top values of that dimension by
+         *       `total_seconds` (with `percent` of the range total).
+         *
+         *     The `timeout` and `writes_only` query parameters are accepted for
+         *     forward-compatibility but are not applied in the first cut: insights read
+         *     from `summaries`, which already bake in each user's session timeout and do
+         *     not retain per-heartbeat write flags.
+         */
         get: operations["getInsight"];
         put?: never;
         post?: never;
