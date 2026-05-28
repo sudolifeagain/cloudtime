@@ -7,7 +7,7 @@
 
 Wire the declared `getInsight` operation to a read handler that derives each insight type from the `summaries` table over a resolved range. Reuse `resolveStatsRange` for the range vocabulary and the existing duration-formatting helpers for `digital`/`text`. No new table, no raw-heartbeat scan.
 
-PR1 (this PR): SpecKit artifacts + OpenAPI description (per-type field mapping, range vocab, reserved query params). The operation, `Insight`, `SummaryItem`, and `TimeRange` schemas already exist, so the OpenAPI change is description-only (JSDoc-only generated diff). PR2: the route + a small insight-builder helper + tests.
+PR1 (this PR): SpecKit artifacts + OpenAPI description (per-type field mapping, range vocab, reserved query params) plus the explicit 400 response for invalid inputs. The operation, `Insight`, `SummaryItem`, and `TimeRange` schemas already exist, so the 200 response shape is unchanged. PR2: the route + a small insight-builder helper + tests.
 
 ## Technical Context
 
@@ -67,7 +67,7 @@ See [research.md](./research.md). Key decisions:
 3. **`daily_average` divides by active days**, not calendar days (avoids `all_time` dilution).
 4. **`weekday` returned as `items[]`** (no weekday-specific schema field), mean per active weekday occurrence.
 5. **NULL dimension → `"Unknown"`** bucket.
-6. **`timeout`/`writes_only` reserved** (summaries can't honour them).
+6. **`timeout`/`writes_only`/`weekday` reserved** (summaries can't honour them).
 
 ## Phase 1 — Design Outputs
 
@@ -112,7 +112,7 @@ Formatting (`digital`, `text`, `hours/minutes/seconds`) reuses the same helper `
 
 ### OpenAPI surface
 
-Already declared. PR1 adds the per-type field-mapping description — see [contracts/openapi-diff.md](./contracts/openapi-diff.md). No type-shape change.
+Already declared. PR1 adds the per-type field-mapping description and explicit 400 response - see [contracts/openapi-diff.md](./contracts/openapi-diff.md). No request parameter or 200 response shape change.
 
 ## Phase 2 — Implementation Tasks
 

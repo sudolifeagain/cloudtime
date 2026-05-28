@@ -70,12 +70,13 @@
 
 ---
 
-## Decision 7: `timeout` / `writes_only` reserved, not applied
+## Decision 7: `timeout` / `writes_only` / `weekday` reserved, not applied
 
-**Decision**: The declared `timeout` and `writes_only` query params are accepted (no 400) but not applied in the first cut.
+**Decision**: The declared `timeout`, `writes_only`, and `weekday` query params are accepted (no 400) but not applied in the first cut.
 
 **Rationale**:
-- `summaries` already bake in each user's session timeout during aggregation and do not retain per-heartbeat write flags, so these cannot be honoured without a raw-heartbeat scan (which Decision 1 rules out).
+- `summaries` already bake in each user's session timeout during aggregation and do not retain per-heartbeat write flags, so those cannot be honoured without a raw-heartbeat scan (which Decision 1 rules out).
+- `weekday` is an existing query parameter on the declared operation, but the first cut defines `weekday` as an insight type, not as a filter on `days`; applying both meanings in PR2 would be ambiguous.
 - Keeping the params accepted avoids breaking the declared contract and leaves room to honour them if insights ever move to a raw-scan path.
 
 **Alternative considered**: remove the params, or 400 when supplied. Rejected — unnecessary contract churn; silently-accepted-but-documented is least disruptive.

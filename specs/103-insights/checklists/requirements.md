@@ -5,13 +5,13 @@
 - [x] `spec.md` covers FR-001..FR-010 (dimension + temporal insights) with no `[NEEDS CLARIFICATION]` markers.
 - [x] `spec.md` explicitly lists the first-cut insight types and defers `hours`.
 - [x] `plan.md` Constitution Check has all five principles marked PASS.
-- [x] `research.md` documents the 7 design decisions (summaries-only, hours deferral, range reuse, active-day average, weekday-as-items, Unknown bucket, reserved params).
+- [x] `research.md` documents the 7 design decisions (summaries-only, hours deferral, range reuse, active-day average, weekday-as-items, Unknown bucket, reserved params including `weekday`).
 - [x] `data-model.md` confirms no schema change and documents the single grouped read + per-type shaping.
 - [x] `quickstart.md` enumerates scenarios A–I.
 - [x] `tasks.md` separates PR1 from PR2 with dependency arrows.
-- [x] `contracts/openapi-diff.md` documents the description-only clarification + per-type field mapping.
-- [x] `insights.yaml` carries the per-type / range / reserved-param description.
-- [x] `npm run generate` produces only JSDoc changes (no type-shape change); `npm run typecheck` passes.
+- [x] `contracts/openapi-diff.md` documents the contract clarification, explicit 400 response, and per-type field mapping.
+- [x] `insights.yaml` carries the per-type / range / reserved-param description and explicit 400 response.
+- [x] `npm run generate` produces the documented JSDoc plus 400 response type; `npm run typecheck` passes.
 - [x] PR1 contains no runtime code under `src/` (only regenerated `src/types/generated.ts`).
 - [x] PR1 references issue #103.
 

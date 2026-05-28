@@ -13,8 +13,8 @@
 - [x] **T-005**: Author `quickstart.md` (scenarios A–I).
 - [x] **T-006**: Author `contracts/openapi-diff.md`.
 - [x] **T-007**: Author `checklists/requirements.md`.
-- [x] **T-008**: Add the per-type / range / reserved-param description to `insights.yaml`. No type-shape change.
-- [x] **T-009**: Run `npm run generate` (JSDoc-only diff); run `npm run typecheck`.
+- [x] **T-008**: Add the per-type / range / reserved-param description and 400 response to `insights.yaml`. No request parameter or 200 response shape change.
+- [x] **T-009**: Run `npm run generate` (JSDoc + 400 response diff); run `npm run typecheck`.
 - [ ] **T-010**: Commit PR1 (spec+schema, then types), push, open PR against `develop`.
 
 ## PR2 — Implementation (after PR1 merges)
@@ -60,6 +60,6 @@ T-105 → T-106 → T-107 → T-108 → T-109
 ## Out of scope
 
 - `hours`-of-day insight (needs an hourly aggregate).
-- Applying `timeout` / `writes_only` (summaries can't honour them).
+- Applying `timeout` / `writes_only` / `weekday` (summaries can't honour them).
 - New aggregate tables / schema changes.
 - Response caching.

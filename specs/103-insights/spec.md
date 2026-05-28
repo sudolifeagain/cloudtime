@@ -71,7 +71,7 @@ As an authenticated user, I want day-level views — total per day, my best day,
 - **FR-007**: `weekday` MUST return `items[]` with one entry per occurring weekday (`name` = English weekday), `total_seconds` = mean of that weekday's active-day totals, ordered descending.
 - **FR-008**: The response MUST set `data.type` to the requested `insight_type` and `data.range` to the resolved `TimeRange` (`start`, `end`, `text`, `timezone`).
 - **FR-009**: Results MUST be strictly scoped by `user_id`; unauthenticated requests return 401.
-- **FR-010**: `timeout` and `writes_only` query parameters MUST be accepted without error but are not applied in the first cut (documented limitation).
+- **FR-010**: `timeout`, `writes_only`, and `weekday` query parameters MUST be accepted without error but are not applied in the first cut (documented limitation).
 
 ### Non-Functional Requirements
 
@@ -94,7 +94,7 @@ As an authenticated user, I want day-level views — total per day, my best day,
 ## Out of Scope
 
 - **`hours`-of-day insight.** Needs hour granularity; would require an hourly aggregate (extend cron) or a raw-heartbeat scan. Deferred to a follow-up; explicitly not in the declared enum.
-- **Applying `timeout` / `writes_only`.** Summaries already bake in the session timeout and drop the write flag; honouring these would require raw heartbeats. Reserved.
+- **Applying `timeout` / `writes_only` / `weekday`.** Summaries already bake in the session timeout, drop the write flag, and cannot filter already-aggregated daily rows by weekday query semantics. Reserved.
 - **New aggregate tables** or schema changes.
 - **Caching.** May be layered later (like `/stats`); not required for correctness.
 - **Custom / arbitrary ranges** beyond the `resolveStatsRange` vocabulary.
