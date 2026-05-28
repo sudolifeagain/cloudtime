@@ -5,6 +5,7 @@ import { authMiddleware, getUserTimeout, getUserTimezone } from "../middleware/a
 import { getEpochBoundsForDate } from "../utils/time-format";
 import { resolveUserAgentId } from "../utils/user-agent";
 import { applyRules, loadRules } from "../utils/custom-rules";
+import { machineUpsertStmt } from "../utils/machine";
 
 type HeartbeatInput = components["schemas"]["HeartbeatInput"];
 type Heartbeat = components["schemas"]["Heartbeat"];
@@ -138,6 +139,7 @@ heartbeats.post("/heartbeats", async (c) => {
 
   const machine = input.machine ?? c.req.header("X-Machine-Name") ?? undefined;
   const userAgent = input.user_agent ?? c.req.header("User-Agent") ?? undefined;
+  const ip = c.req.header("CF-Connecting-IP") ?? null;
 
   try {
     // Apply the user's custom rules before persisting (Issue #101). A `change`
@@ -148,7 +150,7 @@ heartbeats.post("/heartbeats", async (c) => {
     if (applyRules(input, rules) === null) {
       return c.json({ data: buildHeartbeatResponse(crypto.randomUUID(), userId, input, machine, null) }, 201);
     }
-    const heartbeat = await insertHeartbeat(c.env.DB, userId, input, machine, userAgent);
+    const heartbeat = await insertHeartbeat(c.env.DB, userId, input, machine, userAgent, ip);
     return c.json({ data: heartbeat }, 201);
   } catch (err) {
     console.error("POST /heartbeats error:", err);
@@ -177,6 +179,7 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
   // Resolve machine/user_agent: body field > header > undefined
   const headerMachine = c.req.header("X-Machine-Name") ?? undefined;
   const headerUserAgent = c.req.header("User-Agent") ?? undefined;
+  const ip = c.req.header("CF-Connecting-IP") ?? null;
   const now = new Date().toISOString();
 
   // Per-item validation
@@ -210,6 +213,7 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
   // Build insert statements only for valid, non-hidden heartbeats
   const stmts: D1PreparedStatement[] = [];
   const projectTimes = new Map<string, { min: number; max: number }>();
+  const machineValues = new Set<string>();
 
   for (let i = 0; i < inputs.length; i++) {
     if (validationErrors[i] || hidden[i]) continue;
@@ -227,9 +231,17 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
         projectTimes.set(input.project, { min: input.time, max: input.time });
       }
     }
+    if (machine) {
+      machineValues.add(machine);
+    }
   }
   for (const [project, times] of projectTimes) {
     stmts.push(c.env.DB.prepare(UPSERT_PROJECT_SQL).bind(userId, project, times.min, times.max));
+  }
+  // Register each distinct device once (Issue #104). Appended after the
+  // heartbeat inserts so the per-item batch-result mapping below is unaffected.
+  for (const value of machineValues) {
+    stmts.push(machineUpsertStmt(c.env.DB, userId, value, ip));
   }
 
   let batchResults: D1Result[] = [];
@@ -408,6 +420,7 @@ async function insertHeartbeat(
   input: HeartbeatInput,
   machine: string | undefined,
   userAgent: string | undefined,
+  ip: string | null = null,
 ): Promise<Heartbeat> {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -421,6 +434,10 @@ async function insertHeartbeat(
   const stmts = [bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, userAgentId, now)];
   if (input.project) {
     stmts.push(db.prepare(UPSERT_PROJECT_SQL).bind(userId, input.project, input.time, input.time));
+  }
+  // Register the device in the machine_names registry (Issue #104).
+  if (machine) {
+    stmts.push(machineUpsertStmt(db, userId, machine, ip));
   }
   await db.batch(stmts);
 
