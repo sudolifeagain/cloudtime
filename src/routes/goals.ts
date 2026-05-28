@@ -4,6 +4,7 @@ import type { components } from "../types/generated";
 import { authMiddleware } from "../middleware/auth";
 import { isValidTimezone } from "../utils/time-format";
 import { normalizeDateTime } from "../utils/user";
+import { validateGoalInput, validateGoalUpdate, type GoalType } from "../utils/goal-input";
 import {
   buildChart,
   buildDayRanges,
@@ -79,6 +80,23 @@ function rowToGoal(row: GoalRow): Goal {
 const GOAL_COLUMNS = `id, user_id, title, type, delta, target_seconds,
   is_enabled, is_snoozed, is_inverse, languages, editors, projects,
   created_at, modified_at`;
+
+/** Encode a filter array as JSON TEXT, or NULL when empty. */
+function jsonOrNull(values: string[]): string | null {
+  return values.length > 0 ? JSON.stringify(values) : null;
+}
+
+/** Fetch a single goal row scoped to its owner; null when absent or not owned. */
+async function selectGoalRow(
+  db: D1Database,
+  goalId: string,
+  userId: string,
+): Promise<GoalRow | null> {
+  return db
+    .prepare(`SELECT ${GOAL_COLUMNS} FROM goals WHERE id = ? AND user_id = ?`)
+    .bind(goalId, userId)
+    .first<GoalRow>();
+}
 
 const goals = new Hono<AuthEnv>();
 
@@ -241,6 +259,158 @@ goals.get("/goals/:goal_id", async (c) => {
     return c.json({ data: response });
   } catch (err) {
     console.error("GET /goals/:goal_id error:", err);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+goals.post("/goals", async (c) => {
+  const userId = c.get("userId");
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Request body must be valid JSON" }, 400);
+  }
+
+  const parsed = validateGoalInput(body);
+  if (!parsed.ok) {
+    return c.json({ error: parsed.error }, 400);
+  }
+  const g = parsed.value;
+  const id = crypto.randomUUID();
+
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO goals (id, user_id, title, type, delta, target_seconds,
+         is_enabled, is_snoozed, is_inverse, languages, editors, projects)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        id,
+        userId,
+        g.title,
+        g.type,
+        g.delta,
+        g.target_seconds,
+        g.is_enabled ? 1 : 0,
+        g.is_snoozed ? 1 : 0,
+        g.is_inverse ? 1 : 0,
+        jsonOrNull(g.languages),
+        jsonOrNull(g.editors),
+        jsonOrNull(g.projects),
+      )
+      .run();
+
+    const row = await selectGoalRow(c.env.DB, id, userId);
+    if (!row) {
+      console.error("POST /goals error: inserted goal not found on re-read", id);
+      return c.json({ error: "Internal server error" }, 500);
+    }
+    return c.json({ data: rowToGoal(row) }, 201);
+  } catch (err) {
+    console.error("POST /goals error:", err);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+goals.patch("/goals/:goal_id", async (c) => {
+  const userId = c.get("userId");
+  const goalId = c.req.param("goal_id");
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Request body must be valid JSON" }, 400);
+  }
+
+  try {
+    const existing = await selectGoalRow(c.env.DB, goalId, userId);
+    if (!existing) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    const existingType = (VALID_TYPES.has(existing.type) ? existing.type : "coding") as GoalType;
+
+    const parsed = validateGoalUpdate(body, existingType);
+    if (!parsed.ok) {
+      return c.json({ error: parsed.error }, 400);
+    }
+    const v = parsed.value;
+
+    // Build the SET clause from a fixed column allowlist — column names are
+    // never taken from user input, only the bound values are.
+    const sets: string[] = [];
+    const binds: (string | number | null)[] = [];
+    if (v.title !== undefined) {
+      sets.push("title = ?");
+      binds.push(v.title);
+    }
+    if (v.target_seconds !== undefined) {
+      sets.push("target_seconds = ?");
+      binds.push(v.target_seconds);
+    }
+    if (v.is_enabled !== undefined) {
+      sets.push("is_enabled = ?");
+      binds.push(v.is_enabled ? 1 : 0);
+    }
+    if (v.is_snoozed !== undefined) {
+      sets.push("is_snoozed = ?");
+      binds.push(v.is_snoozed ? 1 : 0);
+    }
+    if (v.is_inverse !== undefined) {
+      sets.push("is_inverse = ?");
+      binds.push(v.is_inverse ? 1 : 0);
+    }
+    if (v.languages !== undefined) {
+      sets.push("languages = ?");
+      binds.push(jsonOrNull(v.languages));
+    }
+    if (v.editors !== undefined) {
+      sets.push("editors = ?");
+      binds.push(jsonOrNull(v.editors));
+    }
+    if (v.projects !== undefined) {
+      sets.push("projects = ?");
+      binds.push(jsonOrNull(v.projects));
+    }
+    sets.push("modified_at = datetime('now')");
+    binds.push(goalId, userId);
+
+    await c.env.DB.prepare(
+      `UPDATE goals SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
+    )
+      .bind(...binds)
+      .run();
+
+    const row = await selectGoalRow(c.env.DB, goalId, userId);
+    if (!row) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    return c.json({ data: rowToGoal(row) });
+  } catch (err) {
+    console.error("PATCH /goals/:goal_id error:", err);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+goals.delete("/goals/:goal_id", async (c) => {
+  const userId = c.get("userId");
+  const goalId = c.req.param("goal_id");
+
+  try {
+    const res = await c.env.DB.prepare(
+      `DELETE FROM goals WHERE id = ? AND user_id = ?`,
+    )
+      .bind(goalId, userId)
+      .run();
+
+    if (res.meta.changes === 0) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    return c.body(null, 204);
+  } catch (err) {
+    console.error("DELETE /goals/:goal_id error:", err);
     return c.json({ error: "Internal server error" }, 500);
   }
 });
