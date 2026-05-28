@@ -620,7 +620,20 @@ export interface paths {
          */
         get: operations["getGoals"];
         put?: never;
-        post?: never;
+        /**
+         * Create a goal
+         * @description Creates a goal for the authenticated user and returns it in the same
+         *     `Goal` shape as the list endpoint (persisted fields only, no
+         *     `chart_data`).
+         *
+         *     Server-generated fields (`id`, `created_at`, `modified_at`) are assigned
+         *     by the server and ignored if present in the request body. Booleans
+         *     default to `is_enabled=true`, `is_snoozed=false`, `is_inverse=false`.
+         *
+         *     Validation failures (empty title, out-of-range `target_seconds`, unknown
+         *     `type` / `delta`, or filter arrays inconsistent with `type`) return 400.
+         */
+        post: operations["createGoal"];
         delete?: never;
         options?: never;
         head?: never;
@@ -651,10 +664,31 @@ export interface paths {
         get: operations["getGoal"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a goal
+         * @description Permanently deletes a goal owned by the authenticated user. Returns 204
+         *     with no body on success.
+         *
+         *     Requests for a goal owned by a different user (or an unknown id) return
+         *     404 (not 403) to avoid leaking goal-id existence.
+         */
+        delete: operations["deleteGoal"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update a goal
+         * @description Partially updates a goal owned by the authenticated user. Only the
+         *     fields present in the body change; omitted fields are left untouched.
+         *     Returns the updated goal in the `Goal` shape (no `chart_data`).
+         *
+         *     `type` and `delta` are immutable — sending either returns 400. An empty
+         *     body, or filter arrays inconsistent with the goal's `type`, also return
+         *     400.
+         *
+         *     Requests for a goal owned by a different user return 404 (not 403) to
+         *     avoid leaking goal-id existence.
+         */
+        patch: operations["updateGoal"];
         trace?: never;
     };
     "/leaders": {
@@ -1342,6 +1376,44 @@ export interface components {
             /** Format: date-time */
             modified_at?: string;
         };
+        /**
+         * @description Request body for creating a goal. Server-generated fields (`id`,
+         *     `created_at`, `modified_at`) are omitted and ignored if sent.
+         *
+         *     Conditional filter requirement (enforced server-side, returns 400 on
+         *     violation):
+         *     - `type=coding`: `languages` / `editors` / `projects` MUST be omitted or
+         *       empty.
+         *     - `type=languages`: `languages` MUST be a non-empty array; `editors` and
+         *       `projects` MUST be omitted or empty.
+         *     - `type=editors`: `editors` MUST be a non-empty array; the others empty.
+         *     - `type=projects`: `projects` MUST be a non-empty array; the others empty.
+         */
+        GoalInput: {
+            title: string;
+            /** @enum {string} */
+            type: "coding" | "languages" | "editors" | "projects";
+            /** @enum {string} */
+            delta: "day" | "week";
+            /**
+             * Format: double
+             * @description Target coding seconds per `delta` period. Must be greater than 0 and
+             *     at most 604800 (one week in seconds).
+             */
+            target_seconds: number;
+            /** @description Defaults to `true` when omitted. */
+            is_enabled?: boolean;
+            /** @description Defaults to `false` when omitted. */
+            is_snoozed?: boolean;
+            /**
+             * @description When true the goal is a cap ("stay under target") rather than a
+             *     floor ("reach target"). Defaults to `false` when omitted.
+             */
+            is_inverse?: boolean;
+            languages?: string[];
+            editors?: string[];
+            projects?: string[];
+        };
         GoalWithChart: components["schemas"]["Goal"] & {
             /**
              * @description Always 7 entries in chronological order; the last entry is always
@@ -1362,6 +1434,31 @@ export interface components {
              * @enum {string}
              */
             status: "success" | "fail" | "pending";
+        };
+        /**
+         * @description Request body for partially updating a goal. Only the fields present in the
+         *     body are changed; omitted fields keep their current value. At least one
+         *     mutable field MUST be provided (an empty body returns 400).
+         *
+         *     `type` and `delta` are immutable after creation — changing them would
+         *     reinterpret the goal's historical chart, so callers must delete and
+         *     recreate instead. Both are rejected with 400 if present.
+         *
+         *     Filter arrays must stay consistent with the goal's existing `type` (the
+         *     same rule documented on `GoalInput`). Setting a filter array on a
+         *     `type=coding` goal, or clearing the required array of a filtered goal,
+         *     returns 400.
+         */
+        GoalUpdate: {
+            title?: string;
+            /** Format: double */
+            target_seconds?: number;
+            is_enabled?: boolean;
+            is_snoozed?: boolean;
+            is_inverse?: boolean;
+            languages?: string[];
+            editors?: string[];
+            projects?: string[];
         };
         LeaderboardEntry: {
             rank?: number;
@@ -2599,6 +2696,34 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    createGoal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalInput"];
+            };
+        };
+        responses: {
+            /** @description Goal created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Goal"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     getGoal: {
         parameters: {
             query?: never;
@@ -2621,6 +2746,59 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteGoal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Goal deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateGoal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated goal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Goal"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
