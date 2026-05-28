@@ -12,11 +12,16 @@ properties:
     type: string
   action:
     type: string
+    description: |
+      `change` remaps the matched heartbeat's `destination` column to
+      `destination_value`. `hide` drops the heartbeat from persistence
+      (it is not stored or aggregated).
     enum:
       - change
-      - delete
+      - hide
   source:
     type: string
+    description: The heartbeat dimension matched against `source_value`.
     enum:
       - project
       - language
@@ -26,15 +31,22 @@ properties:
       - entity
   operation:
     type: string
+    description: |
+      How `source_value` is compared to the heartbeat's `source` field.
+      Regex is intentionally unsupported in this version (Workers CPU
+      budget); adding it later is additive.
     enum:
       - equals
       - contains
-      - starts with
-      - ends with
+      - starts_with
+      - ends_with
   source_value:
     type: string
   destination:
     type: string
+    description: |
+      The heartbeat dimension rewritten by a `change` action. Ignored for
+      `hide` actions.
     enum:
       - project
       - language
@@ -46,3 +58,9 @@ properties:
     type: string
   priority:
     type: integer
+    description: |
+      Rules are applied in ascending priority order (lowest first). Ties
+      break by `created_at`.
+  created_at:
+    type: string
+    format: date-time
