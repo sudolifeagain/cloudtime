@@ -766,9 +766,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List user's custom rules */
+        /**
+         * List user's custom rules
+         * @description Returns the authenticated user's custom rules ordered by `priority`
+         *     ascending (ties broken by `created_at`). This is the order in which the
+         *     rules are applied to incoming heartbeats.
+         */
         get: operations["getCustomRules"];
-        /** Replace user's custom rules */
+        /**
+         * Replace user's custom rules
+         * @description Replaces the authenticated user's entire rule set with the supplied
+         *     array (full-replace semantics, not a merge). An empty array clears all
+         *     rules. Server assigns each rule a fresh `id` and `created_at`; when
+         *     `priority` is omitted the array index is used. Returns the persisted
+         *     rules in application order.
+         *
+         *     Validation failures (unknown enum value, `change` rule missing
+         *     `destination` / `destination_value`, or empty `source_value`) return 400
+         *     and leave the existing rule set unchanged.
+         */
         put: operations["updateCustomRules"];
         post?: never;
         delete?: never;
@@ -787,7 +803,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete a custom rule */
+        /**
+         * Delete a custom rule
+         * @description Deletes a single rule owned by the authenticated user and returns 204.
+         *     A rule owned by a different user (or an unknown id) returns 404 (not
+         *     403) to avoid leaking rule-id existence. Deleting a rule invalidates the
+         *     user's cached rule set used by heartbeat ingestion.
+         */
         delete: operations["deleteCustomRule"];
         options?: never;
         head?: never;
@@ -1521,31 +1543,66 @@ export interface components {
         };
         CustomRule: {
             id: string;
-            /** @enum {string} */
-            action: "change" | "delete";
-            /** @enum {string} */
+            /**
+             * @description `change` remaps the matched heartbeat's `destination` column to
+             *     `destination_value`. `hide` drops the heartbeat from persistence
+             *     (it is not stored or aggregated).
+             * @enum {string}
+             */
+            action: "change" | "hide";
+            /**
+             * @description The heartbeat dimension matched against `source_value`.
+             * @enum {string}
+             */
             source: "project" | "language" | "editor" | "operating_system" | "category" | "entity";
-            /** @enum {string} */
-            operation: "equals" | "contains" | "starts with" | "ends with";
+            /**
+             * @description How `source_value` is compared to the heartbeat's `source` field.
+             *     Regex is intentionally unsupported in this version (Workers CPU
+             *     budget); adding it later is additive.
+             * @enum {string}
+             */
+            operation: "equals" | "contains" | "starts_with" | "ends_with";
             source_value: string;
-            /** @enum {string} */
+            /**
+             * @description The heartbeat dimension rewritten by a `change` action. Ignored for
+             *     `hide` actions.
+             * @enum {string}
+             */
             destination: "project" | "language" | "editor" | "operating_system" | "category" | "entity";
             destination_value: string;
+            /**
+             * @description Rules are applied in ascending priority order (lowest first). Ties
+             *     break by `created_at`.
+             */
             priority?: number;
+            /** Format: date-time */
+            created_at?: string;
         };
+        /**
+         * @description One rule in a `PUT /users/current/custom_rules` payload. The PUT replaces
+         *     the entire rule set, so `id` and `created_at` are server-managed and
+         *     ignored on input.
+         *
+         *     Conditional requirement (enforced server-side, returns 400 on violation):
+         *     `change` actions require `destination` and a non-empty `destination_value`;
+         *     `hide` actions ignore both (omit them).
+         */
         CustomRuleInput: {
-            /** @description Include to update existing rule */
-            id?: string;
             /** @enum {string} */
-            action: "change" | "delete";
+            action: "change" | "hide";
             /** @enum {string} */
             source: "project" | "language" | "editor" | "operating_system" | "category" | "entity";
             /** @enum {string} */
-            operation: "equals" | "contains" | "starts with" | "ends with";
+            operation: "equals" | "contains" | "starts_with" | "ends_with";
             source_value: string;
-            /** @enum {string} */
-            destination: "project" | "language" | "editor" | "operating_system" | "category" | "entity";
-            destination_value: string;
+            /**
+             * @description Required for `change` actions; ignored for `hide`.
+             * @enum {string}
+             */
+            destination?: "project" | "language" | "editor" | "operating_system" | "category" | "entity";
+            /** @description Required (non-empty) for `change` actions; ignored for `hide`. */
+            destination_value?: string;
+            /** @description Ascending order of application. Defaults to the array index when omitted. */
             priority?: number;
         };
         Machine: {
@@ -2969,6 +3026,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -2991,6 +3049,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     getMachineNames: {
