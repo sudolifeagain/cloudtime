@@ -1,0 +1,66 @@
+type: object
+description: |
+  Request body for creating a goal. Server-generated fields (`id`,
+  `created_at`, `modified_at`) are omitted and ignored if sent.
+
+  Conditional filter requirement (enforced server-side, returns 400 on
+  violation):
+  - `type=coding`: `languages` / `editors` / `projects` MUST be omitted or
+    empty.
+  - `type=languages`: `languages` MUST be a non-empty array; `editors` and
+    `projects` MUST be omitted or empty.
+  - `type=editors`: `editors` MUST be a non-empty array; the others empty.
+  - `type=projects`: `projects` MUST be a non-empty array; the others empty.
+required:
+  - title
+  - type
+  - delta
+  - target_seconds
+properties:
+  title:
+    type: string
+    minLength: 1
+    maxLength: 200
+  type:
+    type: string
+    enum:
+      - coding
+      - languages
+      - editors
+      - projects
+  delta:
+    type: string
+    enum:
+      - day
+      - week
+  target_seconds:
+    type: number
+    format: double
+    exclusiveMinimum: 0
+    maximum: 604800
+    description: |
+      Target coding seconds per `delta` period. Must be greater than 0 and
+      at most 604800 (one week in seconds).
+  is_enabled:
+    type: boolean
+    description: Defaults to `true` when omitted.
+  is_snoozed:
+    type: boolean
+    description: Defaults to `false` when omitted.
+  is_inverse:
+    type: boolean
+    description: |
+      When true the goal is a cap ("stay under target") rather than a
+      floor ("reach target"). Defaults to `false` when omitted.
+  languages:
+    type: array
+    items:
+      type: string
+  editors:
+    type: array
+    items:
+      type: string
+  projects:
+    type: array
+    items:
+      type: string

@@ -47,3 +47,41 @@ get:
                   $ref: ../../components/schemas/Goal.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
+post:
+  operationId: createGoal
+  tags:
+    - goals
+  summary: Create a goal
+  description: |
+    Creates a goal for the authenticated user and returns it in the same
+    `Goal` shape as the list endpoint (persisted fields only, no
+    `chart_data`).
+
+    Server-generated fields (`id`, `created_at`, `modified_at`) are assigned
+    by the server and ignored if present in the request body. Booleans
+    default to `is_enabled=true`, `is_snoozed=false`, `is_inverse=false`.
+
+    Validation failures (empty title, out-of-range `target_seconds`, unknown
+    `type` / `delta`, or filter arrays inconsistent with `type`) return 400.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../../components/schemas/GoalInput.yaml
+  responses:
+    '201':
+      description: Goal created
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/Goal.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
