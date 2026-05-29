@@ -87,3 +87,55 @@ wrangler d1 execute cloudtime-db --remote --command \
 
 Repeat until the row count stabilises. Always
 [back up](./backup-restore.md) before bulk deletes.
+
+## Data exports (`R2_BUCKET`)
+
+The `/data_dumps` endpoints let a user export their own data (migration,
+backup, portability). Exports are stored in R2, so the feature is **opt-in**:
+it is gated on a bound `R2_BUCKET`. While unbound, the endpoints fail closed
+with `503 {"error":"Data export not configured"}` — the same pattern as email
+delivery.
+
+### Enabling
+
+Create a bucket and bind it in `wrangler.toml`, then redeploy:
+
+```bash
+wrangler r2 bucket create cloudtime-dumps
+```
+
+```toml
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "cloudtime-dumps"
+```
+
+### How it works
+
+- `POST /api/v1/users/current/data_dumps` with `{"type":"daily"|"full"}`
+  records a `pending` dump. A repeat request for a `type` that already has a
+  `pending`/`processing` dump returns that existing dump (no duplicate).
+- The **hourly cron** builds pending dumps (up to 5 per run): it serialises the
+  export to JSON, uploads it to R2 (`dumps/{user_id}/{dump_id}.json`), and sets
+  `status=completed`, a `download_url`, and `expires_at` (7 days out). On error
+  the dump is marked `failed`.
+- `GET /api/v1/users/current/data_dumps` lists the user's dumps with status;
+  `download_url` (a short-lived, owner-authenticated worker route) appears once
+  `completed`.
+- The cron also **purges expired** dumps: it deletes the R2 object and marks
+  the row `expired`; the download then returns 404.
+
+### Export contents
+
+- `daily` → `{ user, summaries }` (profile + per-day aggregated buckets).
+- `full` → `{ user, summaries, daily, heartbeats }` (adds per-day totals and
+  raw heartbeats).
+
+Secrets (the API-key hash, OAuth tokens) are never included in an export.
+
+### Notes
+
+- Exports build on the cron cadence (up to ~1 hour), not instantly — they are
+  for migration/backup, not interactive use.
+- `email_when_finished` is accepted but only acts when email delivery is
+  configured (multi-user mode).

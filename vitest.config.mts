@@ -9,6 +9,7 @@ export default defineConfig({
         compatibilityDate: "2025-03-09",
         d1Databases: ["DB"],
         kvNamespaces: ["KV"],
+        r2Buckets: ["R2_BUCKET"],
         bindings: {
           INSTANCE_MODE: "single",
           GITHUB_CLIENT_ID: "test-github-client-id",
