@@ -463,10 +463,29 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List data exports */
+        /**
+         * List data exports
+         * @description Lists the authenticated user's data exports, newest first, with their
+         *     `status` and (once `completed`) a short-lived `download_url`.
+         *
+         *     Data export is gated on a bound R2 bucket (`R2_BUCKET`). When export is
+         *     not configured on this instance, the endpoint returns 503 — the same
+         *     fail-closed pattern as email delivery.
+         */
         get: operations["getDataDumps"];
         put?: never;
-        /** Start a data export */
+        /**
+         * Start a data export
+         * @description Requests a data export. The server records a `pending` dump and an
+         *     async cron sweep builds it (`processing` → `completed`), uploading the
+         *     output to R2 and setting a short-lived `download_url`; `expires_at`
+         *     defaults to 7 days. `daily` exports per-day summaries; `full` bundles
+         *     user profile + summaries + per-day records + raw heartbeats.
+         *
+         *     Gated on a bound R2 bucket (`R2_BUCKET`); returns 503 when export is not
+         *     configured. `email_when_finished` is accepted but only acts when email
+         *     delivery is configured (multi-user mode). An unknown `type` returns 400.
+         */
         post: operations["createDataDump"];
         delete?: never;
         options?: never;
@@ -1278,15 +1297,34 @@ export interface components {
         };
         DataDump: {
             id: string;
-            /** @enum {string} */
-            type: "daily" | "heartbeats";
-            /** @enum {string} */
-            status: "pending" | "processing" | "completed" | "failed";
-            /** Format: uri */
+            /**
+             * @description `daily` exports per-day summary buckets; `full` exports a complete
+             *     bundle (user profile + summaries + per-day records + raw heartbeats).
+             * @enum {string}
+             */
+            type: "daily" | "full";
+            /**
+             * @description Lifecycle: `pending` (queued) → `processing` (cron is building it) →
+             *     `completed` (`download_url` available) or `failed`. `expired` once the
+             *     dump has passed `expires_at` and its stored object has been purged.
+             * @enum {string}
+             */
+            status: "pending" | "processing" | "completed" | "failed" | "expired";
+            /**
+             * Format: uri
+             * @description Short-lived signed URL to the export, present only when `status` is
+             *     `completed` and before `expires_at`.
+             */
             download_url?: string;
-            /** Format: date-time */
-            created_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When the export request was created.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When the dump (and its stored object) is purged. Defaults to 7 days after creation.
+             */
             expires_at?: string;
         };
         /** @enum {string} */
@@ -1932,6 +1970,22 @@ export interface components {
                 };
             };
         };
+        /**
+         * @description The requested capability is not configured on this instance. Returned, for
+         *     example, when a data export is requested but no R2 bucket (`R2_BUCKET`) is
+         *     bound — the same fail-closed pattern as email delivery (`EMAIL_PROVIDER`).
+         */
+        ServiceUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    /** @example Data export not configured */
+                    error: string;
+                };
+            };
+        };
     };
     parameters: {
         /** @description Machine/device name (fallback if not provided in request body) */
@@ -2485,6 +2539,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     createDataDump: {
@@ -2498,7 +2553,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    type: "daily" | "heartbeats";
+                    type: "daily" | "full";
                     /** @default true */
                     email_when_finished?: boolean;
                 };
@@ -2516,7 +2571,9 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getHeartbeats: {

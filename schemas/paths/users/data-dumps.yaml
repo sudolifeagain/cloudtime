@@ -3,6 +3,13 @@ get:
   tags:
     - data_dumps
   summary: List data exports
+  description: |
+    Lists the authenticated user's data exports, newest first, with their
+    `status` and (once `completed`) a short-lived `download_url`.
+
+    Data export is gated on a bound R2 bucket (`R2_BUCKET`). When export is
+    not configured on this instance, the endpoint returns 503 — the same
+    fail-closed pattern as email delivery.
   responses:
     '200':
       description: List of data dumps
@@ -19,11 +26,23 @@ get:
                   $ref: ../../components/schemas/DataDump.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
+    '503':
+      $ref: ../../components/responses/ServiceUnavailable.yaml
 post:
   operationId: createDataDump
   tags:
     - data_dumps
   summary: Start a data export
+  description: |
+    Requests a data export. The server records a `pending` dump and an
+    async cron sweep builds it (`processing` → `completed`), uploading the
+    output to R2 and setting a short-lived `download_url`; `expires_at`
+    defaults to 7 days. `daily` exports per-day summaries; `full` bundles
+    user profile + summaries + per-day records + raw heartbeats.
+
+    Gated on a bound R2 bucket (`R2_BUCKET`); returns 503 when export is not
+    configured. `email_when_finished` is accepted but only acts when email
+    delivery is configured (multi-user mode). An unknown `type` returns 400.
   requestBody:
     required: true
     content:
@@ -37,7 +56,7 @@ post:
               type: string
               enum:
                 - daily
-                - heartbeats
+                - full
             email_when_finished:
               type: boolean
               default: true
@@ -53,5 +72,9 @@ post:
             properties:
               data:
                 $ref: ../../components/schemas/DataDump.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
+    '503':
+      $ref: ../../components/responses/ServiceUnavailable.yaml

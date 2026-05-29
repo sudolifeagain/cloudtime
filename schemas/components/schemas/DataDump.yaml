@@ -3,27 +3,41 @@ required:
   - id
   - type
   - status
+  - created_at
 properties:
   id:
     type: string
   type:
     type: string
+    description: |
+      `daily` exports per-day summary buckets; `full` exports a complete
+      bundle (user profile + summaries + per-day records + raw heartbeats).
     enum:
       - daily
-      - heartbeats
+      - full
   status:
     type: string
+    description: |
+      Lifecycle: `pending` (queued) → `processing` (cron is building it) →
+      `completed` (`download_url` available) or `failed`. `expired` once the
+      dump has passed `expires_at` and its stored object has been purged.
     enum:
       - pending
       - processing
       - completed
       - failed
+      - expired
   download_url:
     type: string
     format: uri
+    description: |
+      Short-lived signed URL to the export, present only when `status` is
+      `completed` and before `expires_at`.
   created_at:
     type: string
     format: date-time
+    description: When the export request was created.
   expires_at:
     type: string
     format: date-time
+    description: When the dump (and its stored object) is purged. Defaults to 7 days after creation.

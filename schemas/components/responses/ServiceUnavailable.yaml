@@ -1,0 +1,14 @@
+description: |
+  The requested capability is not configured on this instance. Returned, for
+  example, when a data export is requested but no R2 bucket (`R2_BUCKET`) is
+  bound — the same fail-closed pattern as email delivery (`EMAIL_PROVIDER`).
+content:
+  application/json:
+    schema:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: Data export not configured
