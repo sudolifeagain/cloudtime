@@ -43,3 +43,5 @@ get:
                 $ref: ../../components/schemas/GlobalStats.yaml
               message:
                 type: string
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml

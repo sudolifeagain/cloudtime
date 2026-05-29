@@ -2,7 +2,7 @@
 
 ## PR1 (Spec) gate — must be ✅ before merging
 
-- [x] `spec.md` covers FR-001..FR-005 with no `[NEEDS CLARIFICATION]` markers.
+- [x] `spec.md` covers FR-001..FR-006 with no `[NEEDS CLARIFICATION]` markers.
 - [x] `spec.md` records the decision (Option 1 UTC-fix) and why rate-limiting is not needed.
 - [x] `plan.md` Constitution Check has all five principles marked PASS.
 - [x] `research.md` documents the 4 decisions (option choice, param removal, no rate-limit, per-user untouched).
@@ -10,8 +10,8 @@
 - [x] `quickstart.md` enumerates scenarios A–E.
 - [x] `tasks.md` separates PR1 from PR2.
 - [x] `contracts/openapi-diff.md` documents the `timezone` param removal.
-- [x] `global-stats.yaml` drops the `timezone` param and updates the description.
-- [x] `npm run generate` sets `getGlobalStats` query params to `never`; `npm run typecheck` passes.
+- [x] `global-stats.yaml` drops the `timezone` param, updates the description, and declares the invalid-range `400`.
+- [x] `npm run generate` sets `getGlobalStats` query params to `never`, includes the `400` response; `npm run typecheck` passes.
 - [x] PR1 contains no runtime code under `src/` (only regenerated `src/types/generated.ts`).
 - [x] PR1 references issue #29.
 

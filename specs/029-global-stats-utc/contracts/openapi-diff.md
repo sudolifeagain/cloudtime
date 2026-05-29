@@ -1,8 +1,8 @@
 # OpenAPI Diff
 
 `getGlobalStats` loses its `timezone` query parameter and its description is
-rewritten to state the endpoint always aggregates in UTC. No response-body
-change.
+rewritten to state the endpoint always aggregates in UTC. The existing bad
+range behavior is also documented with an explicit `400` response.
 
 ## Files touched
 
@@ -10,6 +10,7 @@ change.
    - Remove the `timezone` query parameter.
    - Rewrite the operation `description`: unauthenticated, always UTC; explains
      the cache-stability and cross-user-ambiguity rationale (#29).
+   - Declare `400` with the shared `BadRequest` response for invalid ranges.
 
 No schema component changes; `GlobalStats` is unchanged (its `range.timezone`
 is now always `"UTC"` at runtime, but the field shape is the same).
@@ -23,8 +24,8 @@ is now always `"UTC"` at runtime, but the field shape is the same).
 ## Generated-types impact
 
 `npm run generate` sets `operations["getGlobalStats"]["parameters"]["query"]`
-to `never` (the `timezone` query param is gone). No other change; no body
-shapes affected.
+to `never` (the `timezone` query param is gone) and includes the `400`
+BadRequest response for invalid ranges. No success body shapes are affected.
 
 ## Backward compatibility
 

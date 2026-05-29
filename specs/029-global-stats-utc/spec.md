@@ -60,6 +60,7 @@ As an operator, I want global stats to be cheap and consistent regardless of cli
 - **FR-003**: The response `range.timezone` MUST be `"UTC"`.
 - **FR-004**: A supplied `timezone` MUST NOT cause a 400; it is ignored. Range validation (400 on bad `range`) is unchanged.
 - **FR-005**: The OpenAPI operation MUST NOT declare a `timezone` parameter.
+- **FR-006**: The OpenAPI operation MUST declare the existing `400` BadRequest response for invalid `range` values.
 
 ### Non-Functional Requirements
 
@@ -76,6 +77,7 @@ Reads the existing `summaries` table. No new columns. `summaries.date` remains p
 - **SC-002**: `range.timezone` is always `"UTC"` on global stats.
 - **SC-003**: The OpenAPI no longer advertises a `timezone` param for `getGlobalStats`.
 - **SC-004**: The authenticated per-user stats endpoint is unchanged.
+- **SC-005**: The OpenAPI explicitly documents the invalid-range `400` response.
 
 ## Out of Scope
 

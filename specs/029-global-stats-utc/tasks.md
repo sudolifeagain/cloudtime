@@ -13,8 +13,8 @@
 - [x] **T-005**: Author `quickstart.md` (scenarios A–E).
 - [x] **T-006**: Author `contracts/openapi-diff.md`.
 - [x] **T-007**: Author `checklists/requirements.md`.
-- [x] **T-008**: Remove the `timezone` query param from `global-stats.yaml`; rewrite the description (UTC, rationale).
-- [x] **T-009**: Run `npm run generate` (getGlobalStats query → never); run `npm run typecheck`.
+- [x] **T-008**: Remove the `timezone` query param from `global-stats.yaml`; rewrite the description (UTC, rationale); declare the invalid-range `400`.
+- [x] **T-009**: Run `npm run generate` (getGlobalStats query → never; `400` response present); run `npm run typecheck`.
 - [ ] **T-010**: Commit PR1 (spec+schema, then types), push, open PR against `develop`.
 
 ## PR2 — Implementation (after PR1 merges)

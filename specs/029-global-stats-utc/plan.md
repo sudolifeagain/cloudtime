@@ -64,7 +64,7 @@ The `timezone` query read, the `isValidTimezone` validation, and the tz in the c
 
 ### OpenAPI surface
 
-`getGlobalStats` loses its `timezone` query parameter — see [contracts/openapi-diff.md](./contracts/openapi-diff.md). No response-body change.
+`getGlobalStats` loses its `timezone` query parameter and explicitly declares the existing invalid-range `400` response — see [contracts/openapi-diff.md](./contracts/openapi-diff.md). No success response-body change.
 
 ## Phase 2 — Implementation Tasks
 
