@@ -129,6 +129,11 @@ describe("data_dumps (R2 bound)", () => {
     // force expiry
     await env.DB.prepare("UPDATE data_dumps SET expires_at = '2000-01-01 00:00:00' WHERE id = ?").bind(id).run();
 
+    const beforePurge = await listDumps(user.apiKey);
+    expect(beforePurge[0].status).toBe("expired");
+    expect(beforePurge[0].download_url).toBeUndefined();
+    expect((await call(`${DUMPS}/${id}/download`, { headers: bearer(user.apiKey) })).status).toBe(404);
+
     await purgeExpiredDumps(env);
 
     const dumps = await listDumps(user.apiKey);

@@ -32,12 +32,18 @@ function exportEnabled(env: Env): boolean {
   return !!env.R2_BUCKET;
 }
 
+function isExpired(row: DataDumpRow, nowMs = Date.now()): boolean {
+  return row.expires_at !== null && new Date(normalizeDateTime(row.expires_at)).getTime() <= nowMs;
+}
+
 function rowToDump(row: DataDumpRow): DataDump {
+  const expired = row.status === "completed" && isExpired(row);
+  const status = expired ? "expired" : row.status;
   return {
     id: row.id,
     type: row.type as DataDump["type"],
-    status: row.status as DataDump["status"],
-    download_url: row.download_url ?? undefined,
+    status: status as DataDump["status"],
+    download_url: status === "completed" ? row.download_url ?? undefined : undefined,
     created_at: normalizeDateTime(row.created_at),
     expires_at: row.expires_at ? normalizeDateTime(row.expires_at) : undefined,
   };
@@ -136,7 +142,7 @@ dataDumps.get("/data_dumps/:id/download", async (c) => {
     if (!row || row.status !== "completed") {
       return c.json({ error: "Not found" }, 404);
     }
-    if (row.expires_at && new Date(normalizeDateTime(row.expires_at)).getTime() < Date.now()) {
+    if (isExpired(row)) {
       return c.json({ error: "Not found" }, 404);
     }
 
