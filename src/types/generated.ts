@@ -1316,8 +1316,11 @@ export interface components {
              *     `completed` and before `expires_at`.
              */
             download_url?: string;
-            /** Format: date-time */
-            created_at?: string;
+            /**
+             * Format: date-time
+             * @description When the export request was created.
+             */
+            created_at: string;
             /**
              * Format: date-time
              * @description When the dump (and its stored object) is purged. Defaults to 7 days after creation.
@@ -1979,7 +1982,7 @@ export interface components {
             content: {
                 "application/json": {
                     /** @example Data export not configured */
-                    error?: string;
+                    error: string;
                 };
             };
         };
