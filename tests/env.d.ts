@@ -13,6 +13,7 @@ declare global {
     interface Env {
       DB: D1Database;
       KV: KVNamespace;
+      R2_BUCKET?: R2Bucket;
       GITHUB_CLIENT_ID: string;
       GITHUB_CLIENT_SECRET: string;
       GOOGLE_CLIENT_ID: string;

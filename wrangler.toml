@@ -17,6 +17,14 @@ id = "" # Set after: wrangler kv namespace create CLOUDTIME_KV
 [triggers]
 crons = ["0 * * * *"] # Hourly aggregation
 
+# Optional R2 bucket for user data exports (Issue #102). Uncomment and create
+# the bucket (`wrangler r2 bucket create cloudtime-dumps`) to enable the
+# /data_dumps endpoints; while unbound they fail closed with 503.
+# See docs/operations.md.
+# [[r2_buckets]]
+# binding = "R2_BUCKET"
+# bucket_name = "cloudtime-dumps"
+
 # Instance mode: "single" (default, one user) or "multi" (team/org)
 [define]
 __APP_VERSION__ = '"0.1.0"'

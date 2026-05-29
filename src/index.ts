@@ -15,10 +15,12 @@ import customRules from "./routes/custom-rules";
 import insights from "./routes/insights";
 import externalDurations from "./routes/external-durations";
 import commits from "./routes/commits";
+import dataDumps from "./routes/data-dumps";
 import machines from "./routes/machines";
 import userAgents from "./routes/user-agents";
 import { aggregateHeartbeats } from "./cron/aggregate";
 import { parseRetentionDays, purgeOldHeartbeats } from "./cron/purge";
+import { processPendingDumps, purgeExpiredDumps } from "./cron/data-dumps";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -142,6 +144,9 @@ app.route("/api/v1/users/current", externalDurations);
 // Commits routes (mounted at /users/current, sub-app defines /projects/:project/commits[/:hash])
 app.route("/api/v1/users/current", commits);
 
+// Data dumps routes (mounted at /users/current, sub-app defines /data_dumps[/:id/download])
+app.route("/api/v1/users/current", dataDumps);
+
 // Machine names routes (mounted at /users/current, sub-app defines /machine_names)
 app.route("/api/v1/users/current", machines);
 
@@ -158,7 +163,7 @@ export default {
         // independently so a failure in one does not prevent the others from
         // completing.
         const retentionDays = parseRetentionDays(env.HEARTBEAT_RETENTION_DAYS);
-        const [, batchResults, purgeResult] = await Promise.allSettled([
+        const [, batchResults, purgeResult, dumpBuildResult, dumpPurgeResult] = await Promise.allSettled([
           aggregateHeartbeats(env.DB),
           // Atomic DELETE + RETURNING avoids TOCTOU between SELECT and DELETE
           env.DB.batch([
@@ -171,6 +176,10 @@ export default {
           // No-op when retention is unset; throttled per run so a backlog
           // clears over several cron cycles.
           retentionDays !== null ? purgeOldHeartbeats(env.DB, retentionDays) : Promise.resolve(0),
+          // Build pending data dumps and purge expired ones (Issue #102).
+          // No-ops when R2_BUCKET is unbound.
+          processPendingDumps(env),
+          purgeExpiredDumps(env),
         ]);
 
         // Clean up KV cache for deleted sessions
@@ -183,6 +192,12 @@ export default {
 
         if (purgeResult?.status === "rejected") {
           console.error("Heartbeat purge failed:", purgeResult.reason);
+        }
+        if (dumpBuildResult?.status === "rejected") {
+          console.error("Data dump build failed:", dumpBuildResult.reason);
+        }
+        if (dumpPurgeResult?.status === "rejected") {
+          console.error("Data dump purge failed:", dumpPurgeResult.reason);
         }
       })(),
     );

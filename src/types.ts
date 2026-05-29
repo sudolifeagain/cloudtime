@@ -3,6 +3,10 @@ export interface Env {
   DB: D1Database;
   KV: KVNamespace;
 
+  // Optional R2 bucket for user data exports (Issue #102). When unbound, the
+  // data-dumps endpoints fail closed with 503 ("Data export not configured").
+  R2_BUCKET?: R2Bucket;
+
   // OAuth providers (set via `wrangler secret put`)
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
