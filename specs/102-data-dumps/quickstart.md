@@ -91,7 +91,7 @@ curl -si "<old download_url>" -H "$H"  # 404
 curl -si "$DUMPS"   # no auth → 401 (when R2 bound; 503 takes precedence only after auth)
 ```
 
-**Expected**: 401 unauthenticated. Another user never sees or downloads your dumps.
+**Expected**: 401 unauthenticated. Auth is checked before R2 gating; another user never sees or downloads your dumps.
 
 ## Reverting / cleanup
 

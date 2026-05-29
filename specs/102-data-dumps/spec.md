@@ -7,7 +7,7 @@
 
 ## Background
 
-A user-facing self-service export supports migration (between CloudTime instances, or to/from official WakaTime-compatible tooling), personal backup, and data-portability hygiene — distinct from operator-side D1 backups. A dump is requested, built asynchronously, and made available at a short-lived URL for a limited window.
+A user-facing self-service export supports migration (between CloudTime instances, or to/from WakaTime-compatible tooling), personal backup, and data-portability hygiene — distinct from operator-side D1 backups. A dump is requested, built asynchronously, and made available at a short-lived URL for a limited window.
 
 ## Spec-level decisions (resolved in this PR)
 
@@ -72,7 +72,7 @@ As an authenticated user, I want to see my exports and their status so I know wh
 
 ### Non-Functional Requirements
 
-- **NFR-001**: Building a dump MUST happen in the cron (off the request path); the `POST`/`GET` handlers MUST stay within the 10ms CPU budget (single-row write / indexed list).
+- **NFR-001**: Building a dump MUST happen in the cron (off the request path); the `POST`/`GET` handlers MUST stay within the 10ms CPU budget (single-row write / bounded user-scoped list).
 - **NFR-002**: No new external dependency. R2 access uses the Workers R2 binding. The async path reuses the existing hourly cron (no Queues binding).
 - **NFR-003**: No D1 schema migration — the `data_dumps` table already exists.
 

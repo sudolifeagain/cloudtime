@@ -9,9 +9,9 @@
 - [x] `data-model.md` confirms no D1 schema change, documents the R2 key + lifecycle statements + bundle shape.
 - [x] `quickstart.md` enumerates scenarios A–H (incl. the 503-when-unbound path).
 - [x] `tasks.md` separates PR1 from PR2 with dependency arrows.
-- [x] `contracts/openapi-diff.md` documents the enum reconciliation + `400`/`503` additions.
-- [x] `ServiceUnavailable.yaml` exists; `DataDump.yaml` + `data-dumps.yaml` carry the reconciled enums, descriptions, and 400/503.
-- [x] `npm run generate` reflects `type: daily|full`, `status` + `expired`, and the new responses; `npm run typecheck` passes.
+- [x] `contracts/openapi-diff.md` documents the enum reconciliation, required `created_at`, required 503 error body, and `400`/`503` additions.
+- [x] `ServiceUnavailable.yaml` exists; `DataDump.yaml` + `data-dumps.yaml` carry the reconciled enums, required `created_at`, descriptions, and 400/503.
+- [x] `npm run generate` reflects `type: daily|full`, `status` + `expired`, required `created_at`, and the new responses; `npm run typecheck` passes.
 - [x] PR1 contains no runtime code under `src/` (only regenerated `src/types/generated.ts`).
 - [x] PR1 references issue #102 and flags the `type` reconciliation for review.
 

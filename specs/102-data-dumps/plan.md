@@ -7,7 +7,7 @@
 
 Wire `getDataDumps` / `createDataDump` to handlers over the existing `data_dumps` table, with an R2-backed async build run by the existing hourly cron. The feature is gated on a bound `R2_BUCKET` (503 when unbound), so it ships safely without R2 provisioned and operators opt in by binding the bucket.
 
-PR1 (this PR): SpecKit artifacts + OpenAPI reconciliation (`type` `daily|full`, `status` + `expired`, `503`/`400` responses, new `ServiceUnavailable` response). PR2: the `R2_BUCKET` binding, the two route handlers, the cron sweep (build + purge), the export bundler, the download mechanism, and tests.
+PR1 (this PR): SpecKit artifacts + OpenAPI reconciliation (`type` `daily|full`, `status` + `expired`, required `created_at`, `503`/`400` responses, new `ServiceUnavailable` response). PR2: the `R2_BUCKET` binding, the two route handlers, the cron sweep (build + purge), the export bundler, the download mechanism, and tests.
 
 ## Technical Context
 
@@ -22,7 +22,7 @@ PR1 (this PR): SpecKit artifacts + OpenAPI reconciliation (`type` `daily|full`, 
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. SDD | PASS | Operations already declared; PR1 reconciles enums + adds 503/400, PR2 implements. `npm run generate` reflects the enum/response changes. |
+| I. SDD | PASS | Operations already declared; PR1 reconciles enums + required fields and adds 503/400, PR2 implements. `npm run generate` reflects the enum/response changes. |
 | II. Cloudflare-Native | PASS | R2 binding for object storage; reuses the existing hourly cron for async (no Queues). Fail-closed when unbound. |
 | III. Type Safety | PASS | Handlers use `components["schemas"]["DataDump"]`. No hand-edited types. |
 | IV. Legal/Trademark | PASS | Export shape derived from our own schema/data; "WakaTime-compatible" only in docs. |

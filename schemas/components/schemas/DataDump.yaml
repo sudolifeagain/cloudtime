@@ -3,6 +3,7 @@ required:
   - id
   - type
   - status
+  - created_at
 properties:
   id:
     type: string
@@ -35,6 +36,7 @@ properties:
   created_at:
     type: string
     format: date-time
+    description: When the export request was created.
   expires_at:
     type: string
     format: date-time

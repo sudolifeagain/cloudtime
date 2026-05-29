@@ -13,8 +13,8 @@
 - [x] **T-005**: Author `quickstart.md` (scenarios A–H).
 - [x] **T-006**: Author `contracts/openapi-diff.md`.
 - [x] **T-007**: Author `checklists/requirements.md`.
-- [x] **T-008**: Add `ServiceUnavailable.yaml`; reconcile `DataDump.yaml` (`type` `daily|full`, `status` + `expired`); add `400`/`503` + descriptions + `type` enum to `data-dumps.yaml`.
-- [x] **T-009**: Run `npm run generate`; verify enums + responses; run `npm run typecheck`.
+- [x] **T-008**: Add `ServiceUnavailable.yaml`; reconcile `DataDump.yaml` (`type` `daily|full`, `status` + `expired`, required `created_at`); add `400`/`503` + descriptions + `type` enum to `data-dumps.yaml`.
+- [x] **T-009**: Run `npm run generate`; verify enums, required fields, and responses; run `npm run typecheck`.
 - [ ] **T-010**: Commit PR1 (spec+schema, then types), push, open PR against `develop`. Flag the `heartbeats`→`full` reconciliation.
 
 ## PR2 — Implementation (after PR1 merges)

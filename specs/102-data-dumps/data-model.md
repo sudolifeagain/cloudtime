@@ -83,7 +83,8 @@ Built by `src/utils/export-bundle.ts` from D1 reads (`users`, `summaries`, `hear
 |---|---|
 | `id`, `type`, `status` | Pass through (enums) |
 | `download_url` | Present only when `status = completed` and unexpired; else omitted |
-| `created_at`, `expires_at` | `normalizeDateTime` → ISO 8601 (expires_at omitted when null) |
+| `created_at` | Always present; `normalizeDateTime` → ISO 8601 |
+| `expires_at` | `normalizeDateTime` → ISO 8601 when present; omitted when null |
 
 `user_id` is not surfaced in the `DataDump` response.
 

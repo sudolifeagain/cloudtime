@@ -7,10 +7,10 @@ responses (`400`, `503`). No new operations.
 ## Files touched
 
 1. `schemas/components/responses/ServiceUnavailable.yaml` — **new** `503`
-   response (capability not configured).
+   response (capability not configured) with required `error`.
 2. `schemas/components/schemas/DataDump.yaml` — `type` `daily|heartbeats` →
-   **`daily|full`**; `status` adds **`expired`**; field descriptions
-   (`download_url`, `expires_at`).
+   **`daily|full`**; `status` adds **`expired`**; make `created_at`
+   required; field descriptions (`download_url`, `created_at`, `expires_at`).
 3. `schemas/paths/users/data-dumps.yaml`
    - `getDataDumps`: add `503`; document R2 gating + status/`download_url`.
    - `createDataDump`: request `type` enum → `daily|full`; add `400` + `503`;
@@ -37,14 +37,14 @@ No path changes; no new operations.
 
 `DataDump`: `type ∈ {daily, full}`, `status ∈ {pending, processing,
 completed, failed, expired}`, optional `download_url` (when completed),
-`created_at`, `expires_at`.
+required `created_at`, optional `expires_at`.
 
 ## Generated-types impact
 
 `npm run generate` updates `components["schemas"]["DataDump"]` (`type`,
-`status` enums), adds the `503` response to both operations and `400` to
-`createDataDump`, and the `createDataDump` request `type` enum. No other
-body shapes change.
+`status` enums, required `created_at`), adds the `503` response to both
+operations and `400` to `createDataDump`, and the `createDataDump` request
+`type` enum. `ServiceUnavailable.error` is required.
 
 ## SDD compliance note
 
