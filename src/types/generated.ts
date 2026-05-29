@@ -998,7 +998,8 @@ export interface paths {
          * @description Returns a single commit identified by `project` + `hash` for the
          *     authenticated user, with `human_readable_total` derived from
          *     `total_seconds`. A commit not found for this user/project (or unknown
-         *     `hash`) returns 404 — never another user's commit.
+         *     `hash`) returns 404 — never another user's commit. If `branch` is supplied,
+         *     it filters the commit `ref`; a branch mismatch returns 404.
          */
         get: operations["getProjectCommit"];
         put?: never;
@@ -1764,7 +1765,8 @@ export interface components {
             committer_date?: string;
             /** Format: double */
             total_seconds?: number;
-            human_readable_total?: string;
+            /** @description Human-readable duration derived from total_seconds, treating missing stored time as zero. */
+            human_readable_total: string;
             /** Format: uri */
             url?: string;
             ref?: string;
@@ -3317,6 +3319,7 @@ export interface operations {
             query?: {
                 author?: string;
                 branch?: string;
+                /** @description 1-based page number. Defaults to 1; values below 1 return 400. */
                 page?: number;
             };
             header?: never;
@@ -3335,8 +3338,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Commit"][];
-                        page?: number;
-                        total_pages?: number;
+                        page: number;
+                        total_pages: number;
                     };
                 };
             };
@@ -3347,6 +3350,7 @@ export interface operations {
     getProjectCommit: {
         parameters: {
             query?: {
+                /** @description Optional exact match against the commit `ref`. */
                 branch?: string;
             };
             header?: never;
