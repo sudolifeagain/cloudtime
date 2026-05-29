@@ -1174,7 +1174,7 @@ export interface paths {
         };
         /**
          * Aggregate stats of all users
-         * @description Summary data is bucketed by each user's profile timezone at aggregation time. In single-user mode, the query timezone and bucketing timezone align when the user's profile timezone matches. Cross-user timezone aggregation is a known limitation deferred to multi-user support.
+         * @description Aggregates activity across all users over the requested range. This endpoint is unauthenticated and **always aggregates in UTC** — it does not accept a timezone. Fixing UTC keeps the response cacheable under a single key per range (a client-supplied timezone would otherwise fragment the cache on an unauthenticated endpoint) and avoids ambiguous cross-user date boundaries when `summaries.date` is bucketed per user timezone (#29).
          */
         get: operations["getGlobalStats"];
         put?: never;
@@ -3634,10 +3634,7 @@ export interface operations {
     };
     getGlobalStats: {
         parameters: {
-            query?: {
-                /** @description IANA timezone (e.g. Asia/Tokyo). Shifts the date anchor used for range resolution. Defaults to UTC when omitted. See endpoint description for timezone bucketing notes. */
-                timezone?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 range: string;
