@@ -29,10 +29,11 @@ interface CommitRow {
   total_seconds: number | null;
   ref: string | null;
   url: string | null;
+  created_at: string;
 }
 
 const SELECT_COLUMNS =
-  "hash, message, author_name, author_email, author_date, committer_name, committer_email, committer_date, total_seconds, ref, url";
+  "hash, message, author_name, author_email, author_date, committer_name, committer_email, committer_date, total_seconds, ref, url, created_at";
 
 function rowToCommit(row: CommitRow): Commit {
   return {
@@ -40,7 +41,7 @@ function rowToCommit(row: CommitRow): Commit {
     message: row.message ?? "",
     author_name: row.author_name ?? undefined,
     author_email: row.author_email ?? undefined,
-    author_date: row.author_date ? normalizeDateTime(row.author_date) : "",
+    author_date: normalizeDateTime(row.author_date ?? row.created_at),
     committer_name: row.committer_name ?? undefined,
     committer_email: row.committer_email ?? undefined,
     committer_date: row.committer_date ? normalizeDateTime(row.committer_date) : undefined,

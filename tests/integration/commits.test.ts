@@ -41,7 +41,8 @@ function bearer(apiKey: string): Record<string, string> {
 
 interface SeedCommit {
   hash: string;
-  authorDate: string;
+  authorDate?: string | null;
+  message?: string | null;
   totalSeconds?: number | null;
   authorEmail?: string;
   ref?: string;
@@ -58,9 +59,9 @@ async function seedCommits(userId: string, items: SeedCommit[]): Promise<void> {
       userId,
       c.project ?? PROJECT,
       c.hash,
-      `msg ${c.hash}`,
+      Object.prototype.hasOwnProperty.call(c, "message") ? (c.message ?? null) : `msg ${c.hash}`,
       c.authorEmail ?? "nao@example.com",
-      c.authorDate,
+      c.authorDate ?? null,
       c.totalSeconds ?? null,
       c.ref ?? "main",
     ),
@@ -70,6 +71,8 @@ async function seedCommits(userId: string, items: SeedCommit[]): Promise<void> {
 
 interface CommitShape {
   hash: string;
+  message: string;
+  author_date: string;
   human_readable_total: string;
   total_seconds?: number;
   ref?: string;
@@ -168,6 +171,18 @@ describe("GET .../commits/:hash (single)", () => {
   it("404s on an unknown hash", async () => {
     const res = await call(`${COMMITS}/nope`, { headers: bearer(user.apiKey) });
     expect(res.status).toBe(404);
+  });
+
+  it("keeps required response fields schema-valid when nullable DB fields are missing", async () => {
+    await seedCommits(user.userId, [{ hash: "partial", authorDate: null, message: null, totalSeconds: null }]);
+
+    const res = await call(`${COMMITS}/partial`, { headers: bearer(user.apiKey) });
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.message).toBe("");
+    expect(data.author_date).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(data.human_readable_total).toBe("0 secs");
+    expect(data).not.toHaveProperty("total_seconds");
   });
 
   it("404s for another user's commit", async () => {
