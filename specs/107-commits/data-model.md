@@ -61,11 +61,12 @@ SELECT hash, message, author_name, author_email, author_date,
 
 | Column | Treatment |
 |---|---|
-| `hash`, `message`, `author_name`, `author_email` | Pass through (null → omitted) |
-| `author_date`, `committer_date` | `normalizeDateTime` → ISO 8601 |
-| `committer_name`, `committer_email`, `ref`, `url` | Pass through |
+| `hash`, `message` | Pass through; required by the `Commit` response schema |
+| `author_name`, `author_email`, `committer_name`, `committer_email`, `ref`, `url` | Pass through (null → omitted) |
+| `author_date` | `normalizeDateTime` → ISO 8601; required by the `Commit` response schema |
+| `committer_date` | `normalizeDateTime` → ISO 8601 when present |
 | `total_seconds` | Pass through (null → 0 / omitted) |
-| `human_readable_total` | `formatHumanReadable(total_seconds ?? 0)` |
+| `human_readable_total` | Always include `formatHumanReadable(total_seconds ?? 0)` |
 
 `id`, `user_id`, `created_at`, `project` are not part of the `Commit` response schema and are not surfaced.
 

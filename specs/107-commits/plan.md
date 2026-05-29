@@ -5,7 +5,7 @@
 
 ## Summary
 
-Wire the two declared read operations (`getProjectCommits`, `getProjectCommit`) to handlers over the existing `commits` table. List is paginated (100/page, `author_date` DESC) with `author`/`branch` filters; single is by `(user_id, project, hash)` → 404 when absent. Ingestion is deferred (read path first, mirroring Goals #95/#96).
+Wire the two declared read operations (`getProjectCommits`, `getProjectCommit`) to handlers over the existing `commits` table. List is paginated (100/page, `author_date` DESC) with `author`/`branch` filters; single is by `(user_id, project, hash)` plus optional `branch`/`ref` filtering → 404 when absent or mismatched. Ingestion is deferred (read path first, mirroring Goals #95/#96).
 
 PR1 (this PR): SpecKit artifacts + OpenAPI descriptions + a `400` on the list (invalid page). PR2: the route + tests.
 
@@ -58,7 +58,7 @@ See [research.md](./research.md). Key decisions:
 1. **Read path first; ingestion deferred** (plugin-vs-webhook is an open product decision).
 2. **Pagination**: 100/page, `author_date` DESC, `page` 1-based, invalid page → 400.
 3. **Filters**: `author` → `author_email` exact; `branch` → `ref` exact.
-4. **Single → 404** for unknown/cross-user (no existence leak).
+4. **Single → 404** for unknown/cross-user/branch mismatch (no existence leak).
 5. **`human_readable_total`** derived from `total_seconds` (0 when NULL).
 
 ## Phase 1 — Design Outputs
@@ -83,9 +83,10 @@ commits.get("/projects/:project/commits", async (c) => {
 });
 
 commits.get("/projects/:project/commits/:hash", async (c) => {
-  const row = await db.prepare(
-    `SELECT … FROM commits WHERE user_id = ? AND project = ? AND hash = ?`,
-  ).bind(userId, project, hash).first();
+  const conditions = ["user_id = ?", "project = ?", "hash = ?"];
+  const binds = [userId, project, hash];
+  if (branch) { conditions.push("ref = ?"); binds.push(branch); }
+  const row = await db.prepare(`SELECT … FROM commits WHERE ${conditions.join(" AND ")}`).bind(...binds).first();
   if (!row) return c.json({ error: "Not found" }, 404);
   return c.json({ data: rowToCommit(row) });
 });

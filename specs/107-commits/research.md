@@ -6,7 +6,7 @@
 
 **Rationale**:
 - The declared OpenAPI surface is read-only, and per the SDD rule the schema is the single source of truth.
-- The issue explicitly leaves the ingestion mechanism open — a coding-time CLI/editor plugin (matches WakaTime) vs a server-side git webhook. Each carries different auth, source-of-truth, and operator-effort trade-offs; rushing it inside a low-priority read feature would lock in a contract prematurely.
+- The issue explicitly leaves the ingestion mechanism open — a WakaTime-compatible CLI/editor plugin vs a server-side git webhook. Each carries different auth, source-of-truth, and operator-effort trade-offs; rushing it inside a low-priority read feature would lock in a contract prematurely.
 - Mirrors Goals (#95/#96): the read path established the contract and handlers, then mutation followed. The `commits` table can be seeded out of band (`wrangler d1 execute`) meanwhile, and a future ingestion PR makes it live.
 
 **Alternative considered**: add a `POST .../commits` create now (client-plugin ingestion). Rejected for the first cut — it presupposes the plugin-vs-webhook decision and expands a low-priority feature; recommended as the likely follow-up (a client-plugin `POST` best matches the compatible ecosystem).

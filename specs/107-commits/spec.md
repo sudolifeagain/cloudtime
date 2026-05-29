@@ -48,7 +48,8 @@ As an authenticated user, I want a single commit by hash so a client can show it
 **Acceptance Scenarios**:
 1. **Given** an owned commit, **When** requesting `…/commits/{hash}`, **Then** `{data: Commit}` with `human_readable_total`.
 2. **Given** an unknown `hash`, or a hash owned by another user, **When** requesting, **Then** 404 (no existence leak).
-3. **Given** an unauthenticated request, **Then** 401.
+3. **Given** a `branch` query that does not match the commit `ref`, **When** requesting, **Then** 404.
+4. **Given** an unauthenticated request, **Then** 401.
 
 ---
 
@@ -70,7 +71,7 @@ As an authenticated user, I want a single commit by hash so a client can show it
 - **FR-002**: `page` defaults to 1; an invalid `page` (non-integer or < 1) MUST return 400. A `page` beyond the last returns an empty `data` (not an error).
 - **FR-003**: Optional `author` filters on `author_email` (exact); optional `branch` filters on `ref` (exact).
 - **FR-004**: Each `Commit` MUST include `human_readable_total` derived from `total_seconds` (0 when NULL), reusing the shared duration formatter.
-- **FR-005**: `GET /api/v1/users/current/projects/{project}/commits/{hash}` MUST return a single owned commit as `{data: Commit}`; an unknown/unowned `(project, hash)` MUST return 404 (never 403, never another user's row).
+- **FR-005**: `GET /api/v1/users/current/projects/{project}/commits/{hash}` MUST return a single owned commit as `{data: Commit}`; an unknown/unowned `(project, hash)` MUST return 404 (never 403, never another user's row). If `branch` is supplied, it MUST exact-match the commit `ref`; a mismatch returns 404.
 - **FR-006**: All endpoints MUST require authentication (401) and be strictly scoped by `user_id`.
 - **FR-007**: This feature MUST NOT add an ingestion path or modify heartbeat ingestion; the `commits` table is read-only here.
 

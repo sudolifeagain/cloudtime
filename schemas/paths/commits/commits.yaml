@@ -31,8 +31,11 @@ get:
         type: string
     - name: page
       in: query
+      description: 1-based page number. Defaults to 1; values below 1 return 400.
       schema:
         type: integer
+        minimum: 1
+        default: 1
   responses:
     '200':
       description: List of commits
@@ -42,6 +45,8 @@ get:
             type: object
             required:
               - data
+              - page
+              - total_pages
             properties:
               data:
                 type: array
@@ -49,8 +54,10 @@ get:
                   $ref: ../../components/schemas/Commit.yaml
               page:
                 type: integer
+                minimum: 1
               total_pages:
                 type: integer
+                minimum: 0
     '400':
       $ref: ../../components/responses/BadRequest.yaml
     '401':

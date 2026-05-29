@@ -3,6 +3,7 @@ required:
   - hash
   - message
   - author_date
+  - human_readable_total
 properties:
   hash:
     type: string
@@ -29,6 +30,7 @@ properties:
     format: double
   human_readable_total:
     type: string
+    description: Human-readable duration derived from total_seconds, treating missing stored time as zero.
   url:
     type: string
     format: uri

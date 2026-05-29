@@ -1,35 +1,42 @@
 # OpenAPI Diff
 
 The two `commits` read operations (`getProjectCommits`, `getProjectCommit`)
-and the `Commit` schema already existed. This PR adds descriptions and a `400`
-on the list. No schema field changes.
+and the `Commit` schema already existed. This PR adds descriptions, a `400`
+on the list, explicit pagination requirements, and makes
+`human_readable_total` required because handlers always derive it from stored
+seconds.
 
 ## Files touched
 
 1. `schemas/paths/commits/commits.yaml` — `getProjectCommits`: add `description`
    (pagination 100/page, `author_date` DESC, `author`/`branch` filters,
-   `human_readable_total` derivation, read-only / ingestion-deferred note) and
-   a `400` response (invalid `page`).
+   `human_readable_total` derivation, read-only / ingestion-deferred note), a
+   `400` response (invalid `page`), `page` default/minimum, and required
+   `page` / `total_pages` response fields.
 2. `schemas/paths/commits/commit.yaml` — `getProjectCommit`: add `description`
-   (single by `project` + `hash`, 404 for unknown/cross-user).
+   (single by `project` + `hash`, optional `branch`/`ref` filter, 404 for
+   unknown/cross-user/branch mismatch).
+3. `schemas/components/schemas/Commit.yaml` — make `human_readable_total`
+   required and document that it is derived from `total_seconds`.
 
-No new operations, no path changes, no schema field changes.
+No new operations or path changes.
 
-## Contract (shape unchanged)
+## Contract
 
 - `GET /users/current/projects/{project}/commits?page=&author=&branch=` →
   `200 {data: Commit[], page, total_pages}`, `400`, `401`.
-- `GET /users/current/projects/{project}/commits/{hash}` →
+- `GET /users/current/projects/{project}/commits/{hash}?branch=` →
   `200 {data: Commit}`, `401`, `404`.
 
 `Commit` carries `hash`, `message`, author/committer name/email/date,
-`total_seconds`, `human_readable_total`, `ref`, `url`.
+`total_seconds`, required `human_readable_total`, `ref`, `url`.
 
 ## Generated-types impact
 
 `npm run generate` adds the `400` (BadRequest) response to
-`operations["getProjectCommits"]` plus the JSDoc descriptions. No
-request/response **body** type changes — `Commit` is untouched.
+`operations["getProjectCommits"]` plus the JSDoc descriptions. The list
+response now requires `page` and `total_pages`; `Commit` now requires
+`human_readable_total`.
 
 ## Ingestion — explicitly not in the contract
 

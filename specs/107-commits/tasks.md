@@ -13,8 +13,8 @@
 - [x] **T-005**: Author `quickstart.md` (scenarios A–F).
 - [x] **T-006**: Author `contracts/openapi-diff.md`.
 - [x] **T-007**: Author `checklists/requirements.md`.
-- [x] **T-008**: Add descriptions to both commit path files; add `400` to `getProjectCommits`.
-- [x] **T-009**: Run `npm run generate` (400 + JSDoc, no body type change); run `npm run typecheck`.
+- [x] **T-008**: Add descriptions to both commit path files; add `400` to `getProjectCommits`; encode pagination requirements; require derived `human_readable_total`.
+- [x] **T-009**: Run `npm run generate` (400 + JSDoc + required pagination fields + required `human_readable_total`); run `npm run typecheck`.
 - [ ] **T-010**: Commit PR1 (spec+schema, then types), push, open PR against `develop`.
 
 ## PR2 — Implementation (after PR1 merges)
@@ -23,13 +23,13 @@
 
 - [ ] **T-101**: `src/routes/commits.ts` — Hono sub-app, both handlers behind `authMiddleware`:
   - `GET /projects/:project/commits` — parse/validate `page` (400 if invalid), build `WHERE` (`user_id`, `project`, optional `author_email`, `ref`), `COUNT` + paged `SELECT` (100/page, `ORDER BY author_date DESC, hash ASC`), return `{data, page, total_pages}`.
-  - `GET /projects/:project/commits/:hash` — single by `(user_id, project, hash)`, `404` when absent.
+  - `GET /projects/:project/commits/:hash` — single by `(user_id, project, hash)`, optional `branch` exact-matches `ref`, `404` when absent or mismatched.
   - `rowToCommit` (adds `human_readable_total`, normalises dates).
 - [ ] **T-102**: Mount in `src/index.ts`: `app.route("/api/v1/users/current", commits)`.
 
 ### Tests
 
-- [ ] **T-103**: `tests/integration/commits.test.ts` — list ordering/pagination/filters, single + 404, empty project, invalid page 400, cross-user, 401.
+- [ ] **T-103**: `tests/integration/commits.test.ts` — list ordering/pagination/filters, single + 404 including branch mismatch, empty project, invalid page 400, cross-user, 401.
 
 ### Verification
 

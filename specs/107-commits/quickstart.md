@@ -51,7 +51,7 @@ curl -sH "$H" "$BASE/users/current/projects/cloudtime/commits?branch=main"
 
 ```bash
 curl -sH "$H" "$BASE/users/current/projects/cloudtime/commits/abc123"
-curl -si "$H" "$BASE/users/current/projects/cloudtime/commits/nope"
+curl -si -H "$H" "$BASE/users/current/projects/cloudtime/commits/nope"
 ```
 
 **Expected**: the first returns `{data: Commit}` with `human_readable_total`; the unknown hash returns 404.

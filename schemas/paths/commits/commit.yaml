@@ -7,7 +7,8 @@ get:
     Returns a single commit identified by `project` + `hash` for the
     authenticated user, with `human_readable_total` derived from
     `total_seconds`. A commit not found for this user/project (or unknown
-    `hash`) returns 404 — never another user's commit.
+    `hash`) returns 404 — never another user's commit. If `branch` is supplied,
+    it filters the commit `ref`; a branch mismatch returns 404.
   parameters:
     - name: project
       in: path
@@ -21,6 +22,7 @@ get:
         type: string
     - name: branch
       in: query
+      description: Optional exact match against the commit `ref`.
       schema:
         type: string
   responses:
