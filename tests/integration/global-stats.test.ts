@@ -13,8 +13,20 @@ import worker from "../../src/index";
 import { truncate } from "../helpers/fixtures";
 
 const BASE = "https://test.cloudtime.dev";
+const CACHE_KEYS = [
+  "global-stats:last_7_days",
+  "global-stats:last_7_days:UTC",
+  "global-stats:last_7_days:Asia/Tokyo",
+  "global-stats:last_30_days",
+  "global-stats:last_30_days:Not/AZone",
+];
+
+async function clearGlobalStatsCache(): Promise<void> {
+  await Promise.all(CACHE_KEYS.map((key) => env.KV.delete(key)));
+}
 
 beforeEach(async () => {
+  await clearGlobalStatsCache();
   // Mark aggregation recent so the endpoint returns 200 (not 202).
   await env.DB.prepare(
     "INSERT INTO meta (key, value) VALUES ('last_aggregated_at', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
@@ -25,8 +37,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await truncate("meta");
-  await env.KV.delete("global-stats:last_7_days");
-  await env.KV.delete("global-stats:last_30_days");
+  await clearGlobalStatsCache();
 });
 
 async function call(path: string): Promise<Response> {
@@ -55,12 +66,17 @@ describe("GET /api/v1/stats/:range (global, UTC)", () => {
     expect(b.data.range.timezone).toBe("UTC");
     // Different timezones resolve to the same cache key, so the payloads match.
     expect(b.data).toEqual(a.data);
+    expect(await env.KV.get("global-stats:last_7_days", "json")).not.toBeNull();
+    expect(await env.KV.get("global-stats:last_7_days:UTC", "json")).toBeNull();
+    expect(await env.KV.get("global-stats:last_7_days:Asia/Tokyo", "json")).toBeNull();
   });
 
   it("does not reject an invalid timezone (it is ignored)", async () => {
     const res = await call("/api/v1/stats/last_30_days?timezone=Not/AZone");
     expect(res.status).toBe(200);
     expect(((await res.json()) as GlobalStatsBody).data.range.timezone).toBe("UTC");
+    expect(await env.KV.get("global-stats:last_30_days", "json")).not.toBeNull();
+    expect(await env.KV.get("global-stats:last_30_days:Not/AZone", "json")).toBeNull();
   });
 
   it("still 400s on an invalid range", async () => {
