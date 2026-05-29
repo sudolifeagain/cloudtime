@@ -56,6 +56,17 @@ ON CONFLICT (user_id, external_id) DO UPDATE SET
   meta = excluded.meta
 RETURNING ${RETURNING_COLUMNS}`;
 
+function parseDateString(date: string): boolean {
+  if (!DATE_RE.test(date)) return false;
+  const [y, m, d] = date.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d));
+  return (
+    utc.getUTCFullYear() === y &&
+    utc.getUTCMonth() === m - 1 &&
+    utc.getUTCDate() === d
+  );
+}
+
 function upsertStmt(
   db: D1Database,
   userId: string,
@@ -104,7 +115,7 @@ externalDurations.get("/external_durations", async (c) => {
   const userId = c.get("userId");
 
   const date = c.req.query("date");
-  if (!date || !DATE_RE.test(date)) {
+  if (!date || !parseDateString(date)) {
     return c.json({ error: "date query parameter is required (YYYY-MM-DD)" }, 400);
   }
   const tzParam = c.req.query("timezone");
@@ -232,7 +243,7 @@ externalDurations.delete("/external_durations.bulk", async (c) => {
 
   const date = body.date;
   const ids = body.ids;
-  if (typeof date !== "string" || !DATE_RE.test(date)) {
+  if (typeof date !== "string" || !parseDateString(date)) {
     return c.json({ error: "date is required (YYYY-MM-DD)" }, 400);
   }
   if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === "string" && id.length > 0)) {

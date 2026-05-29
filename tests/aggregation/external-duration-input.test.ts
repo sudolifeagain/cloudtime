@@ -46,6 +46,10 @@ describe("validateExternalDuration", () => {
     expect(validateExternalDuration({ ...valid, type: "meeting" }).ok).toBe(false);
   });
 
+  it("rejects an unknown category", () => {
+    expect(validateExternalDuration({ ...valid, category: "not-a-category" }).ok).toBe(false);
+  });
+
   it("rejects non-numeric or reversed times", () => {
     expect(validateExternalDuration({ ...valid, start_time: "1" as unknown as number }).ok).toBe(false);
     expect(validateExternalDuration({ ...valid, end_time: valid.start_time - 1 }).ok).toBe(false);

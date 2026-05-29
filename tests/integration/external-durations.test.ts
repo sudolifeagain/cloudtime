@@ -90,6 +90,7 @@ describe("POST /external_durations", () => {
     const bad = [
       body({ entity: undefined }),
       body({ type: "meeting" }),
+      body({ category: "not-a-category" }),
       body({ start_time: 100, end_time: 50 }),
     ];
     for (const b of bad) {
@@ -159,8 +160,9 @@ describe("GET /external_durations", () => {
     expect(((await filtered.json()) as { data: ExtShape[] }).data.map((d) => d.external_id)).toEqual(["a"]);
   });
 
-  it("400s on missing date and on invalid timezone", async () => {
+  it("400s on missing date, invalid dates, and invalid timezone", async () => {
     expect((await call(EXT, { headers: bearer(user.apiKey) })).status).toBe(400);
+    expect((await call(`${EXT}?date=2026-02-31`, { headers: bearer(user.apiKey) })).status).toBe(400);
     expect((await call(`${EXT}?date=${D}&timezone=Not/AZone`, { headers: bearer(user.apiKey) })).status).toBe(400);
   });
 
@@ -202,6 +204,13 @@ describe("DELETE /external_durations.bulk", () => {
       body: JSON.stringify({ ids: ["x"] }),
     });
     expect(res.status).toBe(400);
+
+    const invalidDate = await call(`${EXT}.bulk`, {
+      method: "DELETE",
+      headers: authJson(user.apiKey),
+      body: JSON.stringify({ date: "2026-02-31", ids: ["x"] }),
+    });
+    expect(invalidDate.status).toBe(400);
   });
 });
 

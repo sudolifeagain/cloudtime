@@ -4,10 +4,35 @@
  * Pure: turns an untrusted parsed JSON value into a normalised row ready to
  * upsert, or a 400-worthy error. No D1, no I/O.
  */
+import type { components } from "../types/generated";
 
 export type ExternalDurationType = "file" | "app" | "domain";
+type Category = components["schemas"]["Category"];
 
 const TYPES = new Set<string>(["file", "app", "domain"]);
+const VALID_CATEGORIES = new Set<string>([
+  "coding",
+  "building",
+  "indexing",
+  "debugging",
+  "browsing",
+  "running tests",
+  "writing tests",
+  "manual testing",
+  "writing docs",
+  "communicating",
+  "code reviewing",
+  "notes",
+  "researching",
+  "learning",
+  "designing",
+  "ai coding",
+  "advising",
+  "meeting",
+  "planning",
+  "supporting",
+  "translating",
+]);
 
 export interface ValidatedExternalDuration {
   external_id: string;
@@ -15,7 +40,7 @@ export interface ValidatedExternalDuration {
   type: ExternalDurationType;
   start_time: number;
   end_time: number;
-  category: string | null;
+  category: Category | null;
   project: string | null;
   branch: string | null;
   language: string | null;
@@ -58,7 +83,15 @@ export function validateExternalDuration(body: unknown): ValidationResult<Valida
   if (r.end_time < r.start_time) {
     return fail("end_time must be greater than or equal to start_time");
   }
-  for (const field of ["category", "project", "branch", "language", "meta"] as const) {
+  if (r.category !== undefined && r.category !== null) {
+    if (typeof r.category !== "string") {
+      return fail("category must be a string");
+    }
+    if (!VALID_CATEGORIES.has(r.category)) {
+      return fail(`category must be one of: ${[...VALID_CATEGORIES].join(", ")}`);
+    }
+  }
+  for (const field of ["project", "branch", "language", "meta"] as const) {
     if (r[field] !== undefined && r[field] !== null && typeof r[field] !== "string") {
       return fail(`${field} must be a string`);
     }
@@ -72,7 +105,7 @@ export function validateExternalDuration(body: unknown): ValidationResult<Valida
       type: r.type as ExternalDurationType,
       start_time: r.start_time,
       end_time: r.end_time,
-      category: optionalString(r.category),
+      category: (r.category ?? null) as Category | null,
       project: optionalString(r.project),
       branch: optionalString(r.branch),
       language: optionalString(r.language),
