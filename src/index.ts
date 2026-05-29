@@ -14,6 +14,7 @@ import goals from "./routes/goals";
 import customRules from "./routes/custom-rules";
 import insights from "./routes/insights";
 import externalDurations from "./routes/external-durations";
+import commits from "./routes/commits";
 import machines from "./routes/machines";
 import userAgents from "./routes/user-agents";
 import { aggregateHeartbeats } from "./cron/aggregate";
@@ -137,6 +138,9 @@ app.route("/api/v1/users/current", insights);
 
 // External durations routes (mounted at /users/current, sub-app defines /external_durations, /external_durations.bulk)
 app.route("/api/v1/users/current", externalDurations);
+
+// Commits routes (mounted at /users/current, sub-app defines /projects/:project/commits[/:hash])
+app.route("/api/v1/users/current", commits);
 
 // Machine names routes (mounted at /users/current, sub-app defines /machine_names)
 app.route("/api/v1/users/current", machines);
