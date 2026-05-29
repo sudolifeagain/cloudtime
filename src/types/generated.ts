@@ -3666,6 +3666,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
         };
     };
 }
