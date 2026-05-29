@@ -963,7 +963,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List commits for a project with coding time */
+        /**
+         * List commits for a project with coding time
+         * @description Returns a page of the authenticated user's commits for `project`, ordered
+         *     by `author_date` descending, 100 per page. `page` defaults to 1; the
+         *     response includes `page` and `total_pages`. Optional `author` (matches
+         *     `author_email`) and `branch` (matches the commit `ref`) filter the
+         *     results. `human_readable_total` is derived from `total_seconds`.
+         *
+         *     Commits are stored in the `commits` table. This is the read surface only —
+         *     the ingestion path (a coding-time plugin posting commits, or a git
+         *     webhook) is a deliberate follow-up decision and is out of scope here, so
+         *     the list is empty until commits are populated. An invalid `page` returns
+         *     400.
+         */
         get: operations["getProjectCommits"];
         put?: never;
         post?: never;
@@ -980,7 +993,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a single commit with coding time */
+        /**
+         * Get a single commit with coding time
+         * @description Returns a single commit identified by `project` + `hash` for the
+         *     authenticated user, with `human_readable_total` derived from
+         *     `total_seconds`. A commit not found for this user/project (or unknown
+         *     `hash`) returns 404 — never another user's commit.
+         */
         get: operations["getProjectCommit"];
         put?: never;
         post?: never;
@@ -3321,6 +3340,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
