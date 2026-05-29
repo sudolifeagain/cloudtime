@@ -3,6 +3,18 @@ get:
   tags:
     - commits
   summary: List commits for a project with coding time
+  description: |
+    Returns a page of the authenticated user's commits for `project`, ordered
+    by `author_date` descending, 100 per page. `page` defaults to 1; the
+    response includes `page` and `total_pages`. Optional `author` (matches
+    `author_email`) and `branch` (matches the commit `ref`) filter the
+    results. `human_readable_total` is derived from `total_seconds`.
+
+    Commits are stored in the `commits` table. This is the read surface only —
+    the ingestion path (a coding-time plugin posting commits, or a git
+    webhook) is a deliberate follow-up decision and is out of scope here, so
+    the list is empty until commits are populated. An invalid `page` returns
+    400.
   parameters:
     - name: project
       in: path
@@ -39,5 +51,7 @@ get:
                 type: integer
               total_pages:
                 type: integer
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml

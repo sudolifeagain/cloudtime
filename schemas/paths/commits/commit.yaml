@@ -3,6 +3,11 @@ get:
   tags:
     - commits
   summary: Get a single commit with coding time
+  description: |
+    Returns a single commit identified by `project` + `hash` for the
+    authenticated user, with `human_readable_total` derived from
+    `total_seconds`. A commit not found for this user/project (or unknown
+    `hash`) returns 404 — never another user's commit.
   parameters:
     - name: project
       in: path
