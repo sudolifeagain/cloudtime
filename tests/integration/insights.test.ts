@@ -132,3 +132,66 @@ describe("GET /insights/:insight_type/:range", () => {
     await env.KV.delete(`apikey:${bob.apiKeyHash}`);
   });
 });
+
+describe("GET /insights/days/:range?weekday= (filter)", () => {
+  // 2026-03-02 & 2026-03-09 are Mondays; 2026-03-03 is a Tuesday.
+  async function seedDaysFixture(): Promise<void> {
+    await seedSummary({ userId: user.userId, date: "2026-03-02", project: "p", totalSeconds: 3600 }); // Mon
+    await seedSummary({ userId: user.userId, date: "2026-03-09", project: "p", totalSeconds: 5400 }); // Mon
+    await seedSummary({ userId: user.userId, date: "2026-03-03", project: "p", totalSeconds: 1800 }); // Tue
+  }
+
+  async function dayDates(query: string): Promise<{ status: number; dates: string[] }> {
+    const res = await call(`${INSIGHTS}/days/${YEAR}${query}`, { headers: bearer(user.apiKey) });
+    if (res.status !== 200) return { status: res.status, dates: [] };
+    const { data } = (await res.json()) as { data: { days: { date: string }[] } };
+    return { status: res.status, dates: data.days.map((d) => d.date) };
+  }
+
+  it("filters by weekday name", async () => {
+    await seedDaysFixture();
+    expect((await dayDates("?weekday=monday")).dates).toEqual(["2026-03-02", "2026-03-09"]);
+  });
+
+  it("integer and name are equivalent, case-insensitively", async () => {
+    await seedDaysFixture();
+    const byInt = await dayDates("?weekday=1");
+    const byName = await dayDates("?weekday=monday");
+    const byCaps = await dayDates("?weekday=MONDAY");
+    expect(byInt.dates).toEqual(["2026-03-02", "2026-03-09"]);
+    expect(byName.dates).toEqual(byInt.dates);
+    expect(byCaps.dates).toEqual(byInt.dates);
+  });
+
+  it("returns a single matching day, and empty when none match", async () => {
+    await seedDaysFixture();
+    expect((await dayDates("?weekday=tuesday")).dates).toEqual(["2026-03-03"]);
+    expect((await dayDates("?weekday=saturday")).dates).toEqual([]);
+  });
+
+  it("400s on an invalid weekday for the days type", async () => {
+    await seedDaysFixture();
+    expect((await dayDates("?weekday=funday")).status).toBe(400);
+    expect((await dayDates("?weekday=7")).status).toBe(400);
+    expect((await dayDates("?weekday=")).status).toBe(400);
+  });
+
+  it("is ignored by non-`days` insight types (valid or invalid value)", async () => {
+    await seedSummary({ userId: user.userId, date: "2026-03-02", language: "TypeScript", totalSeconds: 3600 }); // Mon
+    await seedSummary({ userId: user.userId, date: "2026-03-03", language: "Go", totalSeconds: 1800 }); // Tue
+
+    const names = async (path: string): Promise<{ status: number; names: string[] }> => {
+      const r = await call(path, { headers: bearer(user.apiKey) });
+      const body = (await r.json()) as { data: { items: { name: string }[] } };
+      return { status: r.status, names: body.data.items.map((i) => i.name) };
+    };
+
+    const plain = await names(`${INSIGHTS}/languages/${YEAR}`);
+    const filtered = await names(`${INSIGHTS}/languages/${YEAR}?weekday=monday`);
+    const bogus = await names(`${INSIGHTS}/languages/${YEAR}?weekday=funday`);
+    expect(filtered.status).toBe(200);
+    expect(bogus.status).toBe(200);
+    expect(filtered.names).toEqual(plain.names);
+    expect(bogus.names).toEqual(plain.names);
+  });
+});

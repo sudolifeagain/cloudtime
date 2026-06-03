@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import { authMiddleware, getUserTimezone } from "../middleware/auth";
 import { resolveStatsRange } from "../utils/stats-range";
-import { buildInsight, INSIGHT_TYPES, type InsightType } from "../utils/insights";
+import { buildInsight, INSIGHT_TYPES, parseWeekday, type InsightType } from "../utils/insights";
 import type { SummaryRow } from "../utils/summary-builder";
 
 const VALID_INSIGHT_TYPES = new Set<string>(INSIGHT_TYPES);
@@ -36,6 +36,20 @@ insights.get("/insights/:insight_type/:range", async (c) => {
     );
   }
 
+  // `weekday` filters the `days` insight only; other types ignore it (incl.
+  // invalid values). For `days`, a present-but-unparseable value is a 400.
+  let weekdayFilter: number | null = null;
+  const weekdayRaw = c.req.query("weekday");
+  if (weekdayRaw !== undefined && insightType === "days") {
+    weekdayFilter = parseWeekday(weekdayRaw);
+    if (weekdayFilter === null) {
+      return c.json(
+        { error: "Invalid weekday. Use 0-6 (0=Sunday) or a weekday name (sunday-saturday)." },
+        400,
+      );
+    }
+  }
+
   const userId = c.get("userId");
   try {
     const { results } = await c.env.DB.prepare(
@@ -48,7 +62,7 @@ insights.get("/insights/:insight_type/:range", async (c) => {
       .bind(userId, resolved.start, resolved.end)
       .all<SummaryRow>();
 
-    return c.json({ data: buildInsight(insightType as InsightType, results, resolved, tz) });
+    return c.json({ data: buildInsight(insightType as InsightType, results, resolved, tz, weekdayFilter) });
   } catch (err) {
     console.error("GET /insights error:", err);
     return c.json({ error: "Internal server error" }, 500);

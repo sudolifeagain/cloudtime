@@ -3,7 +3,7 @@
  * (specs/103-insights/). No D1, no KV.
  */
 import { describe, expect, it } from "vitest";
-import { buildInsight, type ResolvedRange } from "../../src/utils/insights";
+import { buildInsight, parseWeekday, type ResolvedRange } from "../../src/utils/insights";
 import type { SummaryRow } from "../../src/utils/summary-builder";
 
 const RANGE: ResolvedRange = { start: "2026-05-01", end: "2026-05-31", text: "last 30 days" };
@@ -98,5 +98,49 @@ describe("buildInsight - temporal types", () => {
     expect(buildInsight("best_day", [], RANGE, "UTC").best_day?.total_seconds).toBe(0);
     expect(buildInsight("daily_average", [], RANGE, "UTC").daily_average?.seconds).toBe(0);
     expect(buildInsight("weekday", [], RANGE, "UTC").items).toEqual([]);
+  });
+
+  it("days: weekday filter keeps only matching dates, preserving order/shape", () => {
+    // Monday filter (1) -> the two Mondays only.
+    const mon = buildInsight("days", rows, RANGE, "UTC", 1);
+    expect(mon.days?.map((d) => d.date)).toEqual(["2026-05-04", "2026-05-11"]);
+    expect(mon.days?.[1].total_seconds).toBe(5400);
+    // Tuesday filter (2) -> the single Tuesday.
+    expect(buildInsight("days", rows, RANGE, "UTC", 2).days?.map((d) => d.date)).toEqual(["2026-05-05"]);
+    // Sunday filter (0) -> no matches.
+    expect(buildInsight("days", rows, RANGE, "UTC", 0).days).toEqual([]);
+    // null filter -> unchanged (all active days).
+    expect(buildInsight("days", rows, RANGE, "UTC", null).days?.map((d) => d.date)).toEqual([
+      "2026-05-04",
+      "2026-05-05",
+      "2026-05-11",
+    ]);
+  });
+
+  it("weekday filter only affects the `days` type", () => {
+    // A non-null filter passed to a non-`days` type is ignored.
+    const wd = buildInsight("weekday", rows, RANGE, "UTC", 1);
+    expect(wd.items?.map((i) => i.name)).toEqual(["Monday", "Tuesday"]);
+  });
+});
+
+describe("parseWeekday", () => {
+  it("parses integers 0-6", () => {
+    expect(parseWeekday("0")).toBe(0);
+    expect(parseWeekday("6")).toBe(6);
+  });
+
+  it("parses case-insensitive weekday names, trimming whitespace", () => {
+    expect(parseWeekday("sunday")).toBe(0);
+    expect(parseWeekday("MONDAY")).toBe(1);
+    expect(parseWeekday("  saturday  ")).toBe(6);
+  });
+
+  it("returns null for out-of-range, unknown, or empty input", () => {
+    expect(parseWeekday("7")).toBeNull();
+    expect(parseWeekday("-1")).toBeNull();
+    expect(parseWeekday("funday")).toBeNull();
+    expect(parseWeekday("")).toBeNull();
+    expect(parseWeekday("01")).toBeNull();
   });
 });
