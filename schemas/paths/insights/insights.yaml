@@ -16,7 +16,8 @@ get:
     invalid `insight_type` or unrecognised range returns 400.
 
     Which `Insight` field is populated depends on `insight_type`:
-    - `days` -> `days[]` (per-day totals across the range).
+    - `days` -> `days[]` (per-day totals across the range; restricted to a
+      single weekday when the `weekday` query parameter is set).
     - `best_day` -> `best_day` (the single highest-total day).
     - `daily_average` -> `daily_average` (mean seconds per active day).
     - `weekday` -> `items[]`, one per weekday (`name` = Monday-Sunday),
@@ -25,10 +26,12 @@ get:
       `operating_systems` -> `items[]`, top values of that dimension by
       `total_seconds` (with `percent` of the range total).
 
-    The `timeout`, `writes_only`, and `weekday` query parameters are accepted
-    for forward-compatibility but are not applied in the first cut: insights
-    read from `summaries`, which already bake in each user's session timeout
-    and do not retain per-heartbeat write flags or weekday filters.
+    The `weekday` query parameter filters the `days` insight type to a single
+    day of the week (see the parameter definition for accepted values); it is
+    ignored by every other insight type. The `timeout` and `writes_only` query
+    parameters remain accepted for forward-compatibility but are not applied:
+    insights read from `summaries`, which already bake in each user's session
+    timeout and do not retain per-heartbeat write flags.
   parameters:
     - name: insight_type
       in: path
@@ -65,8 +68,10 @@ get:
     - name: weekday
       in: query
       description: >-
-        Reserved for future filtering of the days insight type (0-6 or
-        monday-sunday). Accepted but not applied in the first cut.
+        Restricts the `days` insight type to a single day of the week. Accepts an
+        integer 0-6 (0=Sunday ... 6=Saturday) or a case-insensitive English weekday
+        name (sunday ... saturday). Ignored by all other insight types. For the
+        `days` type, an out-of-range integer or unrecognised name returns 400.
       schema:
         type: string
   responses:
