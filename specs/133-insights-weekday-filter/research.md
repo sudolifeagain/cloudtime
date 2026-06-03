@@ -10,7 +10,7 @@ Documented decisions that shape the contract. Each records the choice, the alter
 
 **Why**: The existing `weekday` insight already maps weekdays this way — `src/utils/insights.ts` derives the day via `new Date(\`${date}T00:00:00Z\`).getUTCDay()` (0=Sunday) and indexes `WEEKDAY_NAMES = ["Sunday", …, "Saturday"]`. Reusing the same convention keeps the two insight types internally consistent: filtering `days` by `weekday=1` selects exactly the dates the `weekday` insight labels "Monday". Inventing a different (e.g. ISO 0=Monday) convention for the filter would make the two disagree.
 
-**Alternatives rejected**: ISO-8601 (1=Monday…7=Sunday) — clean externally but inconsistent with our shipped `weekday` insight, and we do not read WakaTime source to mirror their exact integer mapping (trademark hygiene). Internal consistency is the deciding factor.
+**Alternatives rejected**: ISO-8601 (1=Monday…7=Sunday) — clean externally but inconsistent with our shipped `weekday` insight, and we do not inspect third-party source code to mirror external integer mappings (trademark hygiene). Internal consistency is the deciding factor.
 
 ## D-2: Accept both integer and full weekday name
 

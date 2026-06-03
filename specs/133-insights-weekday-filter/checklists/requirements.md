@@ -28,4 +28,4 @@ Quality gate for the spec before implementation. Each item is verifiable against
 
 - [x] No new D1 table / migration (Cloudflare-Native, Simplicity).
 - [x] Generated-types impact assessed (JSDoc-only) in contracts/openapi-diff.md.
-- [x] Convention chosen for internal consistency; no WakaTime source consulted (Legal/Trademark).
+- [x] Convention chosen for internal consistency; no third-party source consulted (Legal/Trademark).

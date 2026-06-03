@@ -15,7 +15,7 @@
 - [x] **T-007**: Author `checklists/requirements.md`.
 - [x] **T-008**: Update `schemas/paths/insights/insights.yaml` — `days` field mapping note, reserved-params paragraph, and the `weekday` parameter description. No parameter add/remove, no 200/response shape change.
 - [x] **T-009**: Run `npm run generate` (expect JSDoc-only diff in `src/types/generated.ts`); run `npm run typecheck`.
-- [ ] **T-010**: Commit PR1 (artifacts + schema, then regenerated types), push, open PR against `develop` referencing #133.
+- [x] **T-010**: Commit PR1 (artifacts + schema, then regenerated types), push, open PR against `develop` referencing #133.
 
 ## PR2 — Implementation (after PR1 merges)
 

@@ -27,7 +27,7 @@ Graduate the already-declared `weekday` query parameter from *reserved* to *appl
 | I. SDD | PASS | Parameter already declared; PR1 clarifies its description (reserved → applied) and regenerates; PR2 implements. `npm run generate` is JSDoc-only. |
 | II. Cloudflare-Native | PASS | No new SELECT, no new table/binding; in-memory filter over already-materialised per-date totals. Stays within the existing CPU budget. |
 | III. Type Safety | PASS | Handler keeps using `components["schemas"]["Insight"]`; parameter remains `string` in generated types. No hand-edited types. |
-| IV. Legal/Trademark | PASS | Convention chosen for internal consistency with our own `weekday` insight; no WakaTime source consulted. |
+| IV. Legal/Trademark | PASS | Convention chosen for internal consistency with our own `weekday` insight; no third-party source consulted. |
 | V. Simplicity First | PASS | One parameter activated, one branch of one pure builder touched. `timeout`/`writes_only` deliberately left out of scope. |
 
 ## Project Structure
