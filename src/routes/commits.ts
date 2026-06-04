@@ -1,10 +1,10 @@
 /**
- * Per-commit coding-time read endpoints (specs/107-commits/).
+ * Per-commit coding-time endpoints (specs/107-commits/, specs/135-commits-ingestion/).
  *
- * Read surface only: a paginated list and a single-commit lookup over the
- * existing `commits` table. Ingestion (a coding-time plugin posting commits,
- * or a git webhook) is a deliberate follow-up; the table is seeded out of
- * band until then.
+ * Read: a paginated list and a single-commit lookup over the `commits` table.
+ * Write: `POST .../commits` ingests one commit (a git post-commit hook or a
+ * webhook adapter), idempotent on (user_id, project, hash). `total_seconds`
+ * is client-supplied; the server does not correlate heartbeats.
  */
 import { Hono } from "hono";
 import type { AuthEnv } from "../types";
@@ -12,6 +12,7 @@ import type { components } from "../types/generated";
 import { authMiddleware } from "../middleware/auth";
 import { normalizeDateTime } from "../utils/user";
 import { formatHumanReadable } from "../utils/time-format";
+import { validateCommitInput } from "../utils/commit-input";
 
 type Commit = components["schemas"]["Commit"];
 
@@ -34,6 +35,25 @@ interface CommitRow {
 
 const SELECT_COLUMNS =
   "hash, message, author_name, author_email, author_date, committer_name, committer_email, committer_date, total_seconds, ref, url, created_at";
+
+// Idempotent on the existing UNIQUE(user_id, project, hash) index: re-posting a
+// hash updates the row's mutable fields in place (id/created_at preserved).
+const UPSERT_SQL = `INSERT INTO commits
+  (id, user_id, project, hash, message, author_name, author_email, author_date,
+   committer_name, committer_email, committer_date, total_seconds, ref, url)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (user_id, project, hash) DO UPDATE SET
+  message = excluded.message,
+  author_name = excluded.author_name,
+  author_email = excluded.author_email,
+  author_date = excluded.author_date,
+  committer_name = excluded.committer_name,
+  committer_email = excluded.committer_email,
+  committer_date = excluded.committer_date,
+  total_seconds = excluded.total_seconds,
+  ref = excluded.ref,
+  url = excluded.url
+RETURNING ${SELECT_COLUMNS}`;
 
 function rowToCommit(row: CommitRow): Commit {
   return {
@@ -64,6 +84,53 @@ const commits = new Hono<AuthEnv>();
 
 commits.use("/projects/:project/commits", authMiddleware);
 commits.use("/projects/:project/commits/*", authMiddleware);
+
+commits.post("/projects/:project/commits", async (c) => {
+  const userId = c.get("userId");
+  const project = c.req.param("project");
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Request body must be valid JSON" }, 400);
+  }
+
+  const parsed = validateCommitInput(body);
+  if (!parsed.ok) {
+    return c.json({ error: parsed.error }, 400);
+  }
+  const v = parsed.value;
+
+  try {
+    const row = await c.env.DB.prepare(UPSERT_SQL)
+      .bind(
+        crypto.randomUUID(),
+        userId,
+        project,
+        v.hash,
+        v.message,
+        v.author_name,
+        v.author_email,
+        v.author_date,
+        v.committer_name,
+        v.committer_email,
+        v.committer_date,
+        v.total_seconds,
+        v.ref,
+        v.url,
+      )
+      .first<CommitRow>();
+    if (!row) {
+      console.error("POST /projects/:project/commits error: upsert returned no row");
+      return c.json({ error: "Internal server error" }, 500);
+    }
+    return c.json({ data: rowToCommit(row) }, 201);
+  } catch (err) {
+    console.error("POST /projects/:project/commits error:", err);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
 
 commits.get("/projects/:project/commits", async (c) => {
   const userId = c.get("userId");

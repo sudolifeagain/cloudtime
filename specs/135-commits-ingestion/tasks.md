@@ -20,11 +20,12 @@
 
 ## PR2 — Implementation (after PR1 merges)
 
-- [ ] **T-101**: `src/routes/commits.ts` — add the `POST /projects/:project/commits` handler under `authMiddleware`: zod-validate `CommitInput` (`hash` non-empty; `total_seconds` number `>= 0` if present; `author_date`/`committer_date` valid date-times if present), normalize dates, `INSERT … ON CONFLICT(user_id, project, hash) DO UPDATE`, shape via `rowToCommit`, return `201 { data: Commit }`. Update the file header (ingestion no longer deferred).
-- [ ] **T-102**: Integration tests `tests/integration/commits.test.ts` (extend) — quickstart A–H: create + read-back, idempotent re-post (single row, updated fields), omitted total_seconds → "0 secs", validation 400s (missing/blank hash, negative total_seconds, bad date), 401, project-from-path, cross-user isolation.
-- [ ] **T-103**: `npm run typecheck` — zero errors.
-- [ ] **T-104**: `npm test` — full suite green incl. new ingestion tests.
-- [ ] **T-105**: Commit with `feat:` prefix, push, open PR against `develop` referencing PR1 and issue #135.
+- [x] **T-101**: `src/utils/commit-input.ts` (new) — `validateCommitInput` (manual validation, mirroring `external-duration-input`): `hash` non-empty; `total_seconds` number `>= 0` if present; `author_date`/`committer_date` parseable date-times normalized to SQLite datetime (UTC). `src/routes/commits.ts` — add the `POST /projects/:project/commits` handler under `authMiddleware`: validate → `INSERT … ON CONFLICT(user_id, project, hash) DO UPDATE … RETURNING` → shape via `rowToCommit` → `201 { data: Commit }`. File header updated.
+- [x] **T-102a**: Unit tests `tests/aggregation/commit-input.test.ts` — minimal/full bodies, date normalization (Z / offset / date-only), 400 cases (hash, total_seconds, dates, non-string fields, non-object body).
+- [x] **T-102b**: Integration tests `tests/integration/commits.test.ts` (extend) — create + read-back, idempotent re-post (single row, updated fields), omitted total_seconds → "0 secs", validation 400s, 401, project-from-path, cross-user isolation.
+- [x] **T-103**: `npm run typecheck` — zero errors.
+- [x] **T-104**: `npm test` — full suite green (323 tests) incl. new unit + integration.
+- [x] **T-105**: Commit with `feat:` prefix, push, open PR against `develop` referencing PR1 and issue #135.
 
 ## Dependencies
 

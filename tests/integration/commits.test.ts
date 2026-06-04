@@ -39,6 +39,16 @@ function bearer(apiKey: string): Record<string, string> {
   return { Authorization: `Bearer ${apiKey}` };
 }
 
+async function postCommit(project: string, body: unknown, apiKey?: string): Promise<Response> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey) Object.assign(headers, bearer(apiKey));
+  return call(`/api/v1/users/current/projects/${project}/commits`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
 interface SeedCommit {
   hash: string;
   authorDate?: string | null;
@@ -197,5 +207,87 @@ describe("GET .../commits/:hash (single)", () => {
 
   it("returns 401 when unauthenticated", async () => {
     expect((await call(`${COMMITS}/abc123`)).status).toBe(401);
+  });
+});
+
+describe("POST .../commits (ingestion)", () => {
+  it("ingests a commit and returns it, readable via the read endpoints", async () => {
+    const res = await postCommit(
+      PROJECT,
+      {
+        hash: "a1b2c3",
+        message: "fix: handle empty range",
+        author_name: "Nao",
+        author_email: "nao@example.com",
+        author_date: "2026-06-05T01:00:00Z",
+        ref: "main",
+        total_seconds: 1800,
+        url: "https://github.com/org/cloudtime/commit/a1b2c3",
+      },
+      user.apiKey,
+    );
+    expect(res.status).toBe(201);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.hash).toBe("a1b2c3");
+    expect(data.total_seconds).toBe(1800);
+    expect(data.human_readable_total).toBe("30 mins");
+    expect(data.author_date).toBe("2026-06-05T01:00:00Z");
+    expect(data.ref).toBe("main");
+
+    const list = await call(COMMITS, { headers: bearer(user.apiKey) });
+    expect(((await list.json()) as { data: CommitShape[] }).data.map((c) => c.hash)).toContain("a1b2c3");
+
+    const single = await call(`${COMMITS}/a1b2c3`, { headers: bearer(user.apiKey) });
+    expect(single.status).toBe(200);
+    expect((await single.json() as { data: CommitShape }).data.hash).toBe("a1b2c3");
+  });
+
+  it("is idempotent on (user, project, hash): re-post updates in place", async () => {
+    await postCommit(PROJECT, { hash: "dup", message: "v1", total_seconds: 1000 }, user.apiKey);
+    const second = await postCommit(PROJECT, { hash: "dup", message: "v2", total_seconds: 2000 }, user.apiKey);
+    expect(second.status).toBe(201);
+
+    const list = await call(COMMITS, { headers: bearer(user.apiKey) });
+    const dups = ((await list.json()) as { data: CommitShape[] }).data.filter((c) => c.hash === "dup");
+    expect(dups).toHaveLength(1);
+    expect(dups[0].message).toBe("v2");
+    expect(dups[0].total_seconds).toBe(2000);
+  });
+
+  it("omitted total_seconds reads back as '0 secs' with no total_seconds field", async () => {
+    const res = await postCommit(PROJECT, { hash: "notime", message: "docs" }, user.apiKey);
+    expect(res.status).toBe(201);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.human_readable_total).toBe("0 secs");
+    expect(data).not.toHaveProperty("total_seconds");
+  });
+
+  it("400s on missing/blank hash, negative total_seconds, or bad date", async () => {
+    expect((await postCommit(PROJECT, { message: "no hash" }, user.apiKey)).status).toBe(400);
+    expect((await postCommit(PROJECT, { hash: "" }, user.apiKey)).status).toBe(400);
+    expect((await postCommit(PROJECT, { hash: "x", total_seconds: -5 }, user.apiKey)).status).toBe(400);
+    expect((await postCommit(PROJECT, { hash: "x", author_date: "nope" }, user.apiKey)).status).toBe(400);
+    expect((await postCommit(PROJECT, { hash: "x", author_date: "2026-06-05" }, user.apiKey)).status).toBe(400);
+    expect((await postCommit(PROJECT, { hash: "x", author_date: "2026-02-31T00:00:00Z" }, user.apiKey)).status).toBe(400);
+  });
+
+  it("401s when unauthenticated", async () => {
+    expect((await postCommit(PROJECT, { hash: "x" })).status).toBe(401);
+  });
+
+  it("stores project from the path, ignoring any project in the body", async () => {
+    await postCommit(PROJECT, { hash: "p1", project: "other" }, user.apiKey);
+    expect((await call(`${COMMITS}/p1`, { headers: bearer(user.apiKey) })).status).toBe(200);
+    expect(
+      (await call("/api/v1/users/current/projects/other/commits/p1", { headers: bearer(user.apiKey) })).status,
+    ).toBe(404);
+  });
+
+  it("isolates ingested commits per user", async () => {
+    await postCommit(PROJECT, { hash: "mine", total_seconds: 100 }, user.apiKey);
+    const bob = await seedUser({ username: "bobpost", email: "bobpost@example.test" });
+    const bobList = await call(COMMITS, { headers: bearer(bob.apiKey) });
+    expect(((await bobList.json()) as { data: CommitShape[] }).data).toEqual([]);
+    await env.KV.delete(`apikey:${bob.apiKeyHash}`);
   });
 });
