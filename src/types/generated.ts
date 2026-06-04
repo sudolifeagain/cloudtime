@@ -996,15 +996,32 @@ export interface paths {
          *     `author_email`) and `branch` (matches the commit `ref`) filter the
          *     results. `human_readable_total` is derived from `total_seconds`.
          *
-         *     Commits are stored in the `commits` table. This is the read surface only —
-         *     the ingestion path (a coding-time plugin posting commits, or a git
-         *     webhook) is a deliberate follow-up decision and is out of scope here, so
-         *     the list is empty until commits are populated. An invalid `page` returns
-         *     400.
+         *     Commits are stored in the `commits` table and populated via the `POST`
+         *     ingestion endpoint below (a git `post-commit` hook or a webhook adapter
+         *     posts each commit). The list is empty until commits are ingested. An
+         *     invalid `page` returns 400.
          */
         get: operations["getProjectCommits"];
         put?: never;
-        post?: never;
+        /**
+         * Ingest a commit for a project
+         * @description Records one commit for the authenticated user under `project` (taken from
+         *     the path; any `project` in the body is ignored). Intended for a git
+         *     `post-commit` hook or a webhook adapter.
+         *
+         *     Idempotent on `(user_id, project, hash)`: re-posting the same `hash`
+         *     updates the existing row in place (message, author/committer fields,
+         *     `total_seconds`, `ref`, `url`) rather than creating a duplicate, so hooks
+         *     can be retried safely. Always returns 201 with the stored `Commit`.
+         *
+         *     `hash` is required and must be non-empty. `total_seconds` is the optional
+         *     client-supplied coding time for the commit (the server does not correlate
+         *     heartbeats); when present it must be a number >= 0. `author_date` and
+         *     `committer_date`, when present, must be valid date-times. `ref` is the
+         *     branch (the read endpoints filter `branch` against it). Validation
+         *     failures return 400.
+         */
+        post: operations["createProjectCommit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1820,6 +1837,25 @@ export interface components {
             /** Format: uri */
             url?: string;
             ref?: string;
+        };
+        CommitInput: {
+            hash: string;
+            message?: string;
+            author_name?: string;
+            /** Format: email */
+            author_email?: string;
+            /** Format: date-time */
+            author_date?: string;
+            committer_name?: string;
+            /** Format: email */
+            committer_email?: string;
+            /** Format: date-time */
+            committer_date?: string;
+            /** Format: double */
+            total_seconds?: number;
+            ref?: string;
+            /** Format: uri */
+            url?: string;
         };
         Organization: {
             id: string;
@@ -3409,6 +3445,36 @@ export interface operations {
                         data: components["schemas"]["Commit"][];
                         page: number;
                         total_pages: number;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createProjectCommit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommitInput"];
+            };
+        };
+        responses: {
+            /** @description Commit ingested */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Commit"];
                     };
                 };
             };
