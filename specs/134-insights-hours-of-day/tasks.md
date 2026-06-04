@@ -25,7 +25,7 @@
 - [x] **T-102**: Unit tests for `getHourForTimestamp` (UTC, a +/- offset zone, a DST boundary).
 
 ### Cron (same pass as summaries)
-- [x] **T-103**: `src/db/schema.sql` — add the `hourly_summaries` table + unique index.
+- [x] **T-103**: `src/db/schema.sql` and `migrations/0003_hourly_summaries.sql` — add the `hourly_summaries` table + unique index.
 - [x] **T-104**: `src/cron/aggregate.ts` — in `computeDurations`, also accumulate `(userId, date, hour)` totals; batch-UPSERT `hourly_summaries` in the same `db.batch()` as `summaries`; share the `last_aggregated_at` cursor.
 - [x] **T-105**: Aggregation tests `tests/aggregation/hourly-aggregate.test.ts` — hour bucketing in UTC and a non-UTC tz; hour-boundary attribution to the starting heartbeat; both aggregates advance together.
 

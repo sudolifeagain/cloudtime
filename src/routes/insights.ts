@@ -1,9 +1,9 @@
 /**
  * Coding activity insights (specs/103-insights/).
  *
- * Derives the requested insight_type over a range from the pre-aggregated
- * `summaries` table - one grouped SELECT, then pure in-memory shaping in
- * src/utils/insights.ts. No raw-heartbeat scan, no new table.
+ * Derives the requested insight_type over a range from pre-aggregates:
+ * most types read `summaries`, while `hours` reads `hourly_summaries`.
+ * No raw-heartbeat scan at request time.
  */
 import { Hono } from "hono";
 import type { AuthEnv } from "../types";
@@ -15,7 +15,7 @@ import {
   INSIGHT_TYPES,
   parseWeekday,
   type HourlyRow,
-  type InsightType,
+  type SummaryInsightType,
 } from "../utils/insights";
 import type { SummaryRow } from "../utils/summary-builder";
 
@@ -83,7 +83,7 @@ insights.get("/insights/:insight_type/:range", async (c) => {
       .bind(userId, resolved.start, resolved.end)
       .all<SummaryRow>();
 
-    return c.json({ data: buildInsight(insightType as InsightType, results, resolved, tz, weekdayFilter) });
+    return c.json({ data: buildInsight(insightType as SummaryInsightType, results, resolved, tz, weekdayFilter) });
   } catch (err) {
     console.error("GET /insights error:", err);
     return c.json({ error: "Internal server error" }, 500);

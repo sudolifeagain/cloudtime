@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS hourly_summaries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL,
   date TEXT NOT NULL,
-  hour INTEGER NOT NULL,
+  hour INTEGER NOT NULL CHECK (hour >= 0 AND hour <= 23),
   total_seconds REAL NOT NULL DEFAULT 0,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

@@ -27,9 +27,10 @@ export const INSIGHT_TYPES = [
   "operating_systems",
 ] as const;
 export type InsightType = (typeof INSIGHT_TYPES)[number];
+export type SummaryInsightType = Exclude<InsightType, "hours">;
 
 /** insight_type -> the `summaries` column it groups by. */
-const DIMENSION_INSIGHTS: Partial<Record<InsightType, Dimension>> = {
+const DIMENSION_INSIGHTS: Partial<Record<SummaryInsightType, Dimension>> = {
   projects: "project",
   languages: "language",
   editors: "editor",
@@ -105,7 +106,7 @@ function insightBase(type: InsightType, range: ResolvedRange, tz: string): Insig
 }
 
 export function buildInsight(
-  type: InsightType,
+  type: SummaryInsightType,
   rows: SummaryRow[],
   range: ResolvedRange,
   tz: string,
