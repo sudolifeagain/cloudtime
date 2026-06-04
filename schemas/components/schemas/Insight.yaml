@@ -36,6 +36,20 @@ properties:
         format: double
       text:
         type: string
+  hours:
+    type: array
+    items:
+      type: object
+      properties:
+        hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+        total_seconds:
+          type: number
+          format: double
+        text:
+          type: string
   items:
     type: array
     items:
