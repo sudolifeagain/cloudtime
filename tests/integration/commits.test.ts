@@ -267,6 +267,8 @@ describe("POST .../commits (ingestion)", () => {
     expect((await postCommit(PROJECT, { hash: "" }, user.apiKey)).status).toBe(400);
     expect((await postCommit(PROJECT, { hash: "x", total_seconds: -5 }, user.apiKey)).status).toBe(400);
     expect((await postCommit(PROJECT, { hash: "x", author_date: "nope" }, user.apiKey)).status).toBe(400);
+    expect((await postCommit(PROJECT, { hash: "x", author_date: "2026-06-05" }, user.apiKey)).status).toBe(400);
+    expect((await postCommit(PROJECT, { hash: "x", author_date: "2026-02-31T00:00:00Z" }, user.apiKey)).status).toBe(400);
   });
 
   it("401s when unauthenticated", async () => {

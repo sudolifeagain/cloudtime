@@ -25,7 +25,7 @@
 - [x] **T-102b**: Integration tests `tests/integration/commits.test.ts` (extend) — create + read-back, idempotent re-post (single row, updated fields), omitted total_seconds → "0 secs", validation 400s, 401, project-from-path, cross-user isolation.
 - [x] **T-103**: `npm run typecheck` — zero errors.
 - [x] **T-104**: `npm test` — full suite green (323 tests) incl. new unit + integration.
-- [ ] **T-105**: Commit with `feat:` prefix, push, open PR against `develop` referencing PR1 and issue #135.
+- [x] **T-105**: Commit with `feat:` prefix, push, open PR against `develop` referencing PR1 and issue #135.
 
 ## Dependencies
 
