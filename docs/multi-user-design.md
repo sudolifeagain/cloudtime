@@ -9,8 +9,8 @@ This document is the design for turning `INSTANCE_MODE=multi` into a usable foun
 
 A codebase survey established that most of the hard parts are done:
 
-- **User resolution is per-user.** API-key (`src/utils/auth.ts`) and session (`src/middleware/auth.ts`) auth both resolve a request to a `user_id` dynamically. There is no "first user" / `LIMIT 1` / hardcoded-owner shortcut anywhere.
-- **Data isolation is complete.** Every user-scoped query already filters `WHERE user_id = ?`. The only intentionally cross-user read is the public global stats (`GET /stats/{range}`, `src/routes/meta.ts`).
+- **Authenticated request handling is per-user.** API-key (`src/utils/auth.ts`) and session (`src/middleware/auth.ts`) auth both resolve a request to a `user_id` dynamically. The existing single-user `WHERE (SELECT COUNT(*) FROM users) = 0` gate is registration-only; it is not used to resolve current-user data.
+- **Authenticated data isolation is complete.** User-scoped route queries already filter by the resolved user (`WHERE user_id = ?` or equivalent user-owned rows). The only intentionally cross-user read is the public global stats (`GET /stats/{range}`, `src/routes/meta.ts`).
 - **Account-merge plumbing exists** and is gated on `INSTANCE_MODE=multi`: same-email → PendingLink → out-of-band email verification → approve (`src/routes/auth/login.ts`, `src/routes/auth/link.ts`).
 - **Schema is in place** for later milestones: `leaderboards`, `leaderboard_members`, `organizations`, `org_members`, `org_dashboards` already exist (`src/db/schema.sql`). Their endpoints are declared in the OpenAPI spec but have **no route handlers** (#136/#137).
 
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS invites (
 CREATE INDEX IF NOT EXISTS idx_invites_created_by ON invites(created_by);
 ```
 
-The plaintext invite code is shown once at creation (like the API key); only its hash is stored.
+The plaintext invite code is shown once at creation (like the API key); only its hash is stored. OAuth `state` should also store the hash, not the plaintext code.
 
 ### Issuing invites (owner/existing users)
 
@@ -63,10 +63,28 @@ A small authenticated surface (its own SpecKit feature):
 
 The code must ride along the OAuth round trip, which is stateful via `state` in KV:
 
-1. `GET /api/v1/auth/{provider}?invite=<code>` — the initiate handler stores the invite code (or its hash) alongside the existing PKCE/`state` entry in KV.
+1. `GET /api/v1/auth/{provider}?invite=<code>` — the initiate handler hashes the invite code and stores the hash alongside the existing PKCE/`state` entry in KV.
 2. On `…/callback`, in the **multi-user new-user branch** (`src/routes/auth/login.ts:409`), before inserting the user:
-   - look up the invite by `code_hash`; reject (403 "A valid invite is required") if missing, already used, expired, or `email`-bound to a different address than the verified provider email;
-   - create the user and **atomically** mark the invite consumed (`used_at`, `used_by`) in the same `db.batch()` as the user/oauth_account insert, so an invite cannot be double-spent under a race.
+   - treat a conditional consume as the authoritative admission check; a pre-read is only for diagnostics.
+   - in one D1 `db.batch()` transaction, first claim the invite with a conditional update, then insert the user only if that claim succeeded:
+
+     ```sql
+     UPDATE invites
+        SET used_at = datetime('now'), used_by = ?
+      WHERE code_hash = ?
+        AND used_at IS NULL
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+        AND (email IS NULL OR lower(email) = lower(?))
+      RETURNING id;
+
+     INSERT INTO users (...)
+     SELECT ...
+      WHERE EXISTS (
+        SELECT 1 FROM invites WHERE code_hash = ? AND used_by = ?
+      );
+     ```
+
+     The OAuth account insert then remains conditional on the user row existing, matching the single-user pattern. After the batch, require both the invite claim and user insert to have affected one row; otherwise return 403 "A valid invite is required" and do not create a session. This prevents double-spending under concurrent callbacks.
 3. Existing-account logins and the same-email PendingLink/merge flow are **unaffected** — an invite is required only when creating a brand-new user.
 
 Single-user mode ignores invites entirely (the single-user gate already governs the one owner).
