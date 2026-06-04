@@ -4,11 +4,10 @@ get:
     - insights
   summary: Coding activity insights
   description: |
-    Derives an insight of the requested `insight_type` over `range` from the
-    pre-aggregated `summaries` table (no raw-heartbeat scan). All listed
-    insight types ship in the first cut; an `hours`-of-day insight is
-    intentionally absent because `summaries` has day granularity only (it
-    would require an hourly aggregate - a future addition).
+    Derives an insight of the requested `insight_type` over `range`. Most types
+    read from the pre-aggregated `summaries` table (day granularity, no
+    raw-heartbeat scan); the `hours`-of-day type reads from the `hourly_summaries`
+    aggregate, which the same hourly cron maintains at hour-of-day granularity.
 
     `range` accepts `last_7_days`, `last_30_days`, `last_6_months`,
     `last_year`, `all_time`, or `YYYY` / `YYYY-MM`, interpreted in the user's
@@ -20,6 +19,10 @@ get:
       single weekday when the `weekday` query parameter is set).
     - `best_day` -> `best_day` (the single highest-total day).
     - `daily_average` -> `daily_average` (mean seconds per active day).
+    - `hours` -> `hours[]`, one bucket per hour of day (0-23, computed in the
+      user's profile timezone), `total_seconds` = mean coding time in that hour
+      across the active days in the range, ordered by hour ascending. Always 24
+      buckets; hours with no activity report `total_seconds` 0.
     - `weekday` -> `items[]`, one per weekday (`name` = Monday-Sunday),
       `total_seconds` = mean for that weekday, ordered most-active first.
     - `projects` / `languages` / `editors` / `categories` / `machines` /
@@ -43,6 +46,7 @@ get:
           - days
           - best_day
           - daily_average
+          - hours
           - projects
           - languages
           - editors
