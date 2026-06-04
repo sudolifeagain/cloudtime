@@ -21,23 +21,23 @@
 ## PR2 — Implementation (after PR1 merges)
 
 ### Timezone helper
-- [ ] **T-101**: `src/utils/time-format.ts` — add `getHourForTimestamp(epochSeconds, tz?) -> 0..23` mirroring `getDateForTimestamp` (reuse `Intl.DateTimeFormat` with `hourCycle: "h23"`; UTC fast path).
-- [ ] **T-102**: Unit tests for `getHourForTimestamp` (UTC, a +/- offset zone, a DST boundary).
+- [x] **T-101**: `src/utils/time-format.ts` — add `getHourForTimestamp(epochSeconds, tz?) -> 0..23` mirroring `getDateForTimestamp` (reuse `Intl.DateTimeFormat` with `hourCycle: "h23"`; UTC fast path).
+- [x] **T-102**: Unit tests for `getHourForTimestamp` (UTC, a +/- offset zone, a DST boundary).
 
 ### Cron (same pass as summaries)
-- [ ] **T-103**: `src/db/schema.sql` — add the `hourly_summaries` table + unique index.
-- [ ] **T-104**: `src/cron/aggregate.ts` — in `computeDurations`, also accumulate `(userId, date, hour)` totals; batch-UPSERT `hourly_summaries` in the same `db.batch()` as `summaries`; share the `last_aggregated_at` cursor.
-- [ ] **T-105**: Aggregation tests `tests/aggregation/` — hour bucketing in UTC and a non-UTC tz; hour-boundary attribution to the starting heartbeat; both aggregates advance together.
+- [x] **T-103**: `src/db/schema.sql` — add the `hourly_summaries` table + unique index.
+- [x] **T-104**: `src/cron/aggregate.ts` — in `computeDurations`, also accumulate `(userId, date, hour)` totals; batch-UPSERT `hourly_summaries` in the same `db.batch()` as `summaries`; share the `last_aggregated_at` cursor.
+- [x] **T-105**: Aggregation tests `tests/aggregation/hourly-aggregate.test.ts` — hour bucketing in UTC and a non-UTC tz; hour-boundary attribution to the starting heartbeat; both aggregates advance together.
 
 ### Builder + route
-- [ ] **T-106**: `src/utils/insights.ts` — add the `hours` branch: fold per-`(date,hour)` rows into 24 buckets, mean = sum/distinct-active-days, ascending by hour; add `hours` to `INSIGHT_TYPES`.
-- [ ] **T-107**: `src/routes/insights.ts` — for `insight_type === "hours"`, issue the `hourly_summaries` SELECT and pass its rows to the builder; other types unchanged.
-- [ ] **T-108**: Unit tests `tests/aggregation/insights.test.ts` (extend) — 24-bucket shape, mean math, empty → 24 zeros, sums-to-daily_average invariant.
+- [x] **T-106**: `src/utils/insights.ts` — add `buildHoursInsight`: fold per-`(date,hour)` rows into 24 buckets, mean = sum/distinct-active-days, ascending by hour; add `hours` to `INSIGHT_TYPES`.
+- [x] **T-107**: `src/routes/insights.ts` — for `insight_type === "hours"`, issue the `hourly_summaries` SELECT and pass its rows to the builder; other types unchanged.
+- [x] **T-108**: Unit tests `tests/aggregation/insights.test.ts` (extend) — 24-bucket shape, mean math, empty → 24 zeros, sums-to-daily_average invariant.
 
 ### Integration + verification
-- [ ] **T-109**: `tests/integration/insights.test.ts` (extend) — quickstart A–H: profile, daily_average equality, empty range, year/month + range names, 400, 401, timezone, reserved-params ignored, cross-user isolation.
-- [ ] **T-110**: `npm run typecheck` — zero errors.
-- [ ] **T-111**: `npm test` — full suite green incl. new/extended unit + aggregation + integration.
+- [x] **T-109**: `tests/integration/insights.test.ts` (extend) — profile, daily_average equality, empty range, year/month + range names, 400, 401, reserved-params ignored, cross-user isolation. (Timezone bucketing is covered at the cron layer in T-105.)
+- [x] **T-110**: `npm run typecheck` — zero errors.
+- [x] **T-111**: `npm test` — full suite green (308 tests) incl. new/extended unit + aggregation + integration.
 - [ ] **T-112**: Commit with `feat:` prefix, push, open PR against `develop` referencing PR1 and issue #134.
 
 ## Dependencies

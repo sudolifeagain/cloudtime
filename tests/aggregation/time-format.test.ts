@@ -4,6 +4,7 @@ import {
   formatHumanReadable,
   getDateForTimestamp,
   getEpochBoundsForDate,
+  getHourForTimestamp,
   isValidTimezone,
 } from "../../src/utils/time-format";
 
@@ -43,6 +44,39 @@ describe("getDateForTimestamp", () => {
   it("falls back to UTC when the timezone is unknown", () => {
     const epoch = Date.UTC(2026, 2, 14, 12, 0, 0) / 1000;
     expect(getDateForTimestamp(epoch, "Mars/Olympus")).toBe("2026-03-14");
+  });
+});
+
+describe("getHourForTimestamp", () => {
+  it("returns the UTC hour (0-23) when no timezone is given", () => {
+    expect(getHourForTimestamp(Date.UTC(2026, 2, 14, 0, 30, 0) / 1000)).toBe(0);
+    expect(getHourForTimestamp(Date.UTC(2026, 2, 14, 9, 0, 0) / 1000)).toBe(9);
+    expect(getHourForTimestamp(Date.UTC(2026, 2, 14, 23, 59, 0) / 1000)).toBe(23);
+  });
+
+  it("shifts the hour into the user's timezone — Asia/Tokyo (UTC+9)", () => {
+    // 2026-03-13 23:30 UTC = 2026-03-14 08:30 JST
+    const epoch = Date.UTC(2026, 2, 13, 23, 30, 0) / 1000;
+    expect(getHourForTimestamp(epoch, "Asia/Tokyo")).toBe(8);
+    expect(getHourForTimestamp(epoch, "UTC")).toBe(23);
+  });
+
+  it("shifts the hour for a negative-offset timezone — America/New_York", () => {
+    // 2026-03-14 02:00 UTC = 2026-03-13 22:00 EDT (UTC-4 in March, post spring-forward)
+    const epoch = Date.UTC(2026, 2, 14, 2, 0, 0) / 1000;
+    expect(getHourForTimestamp(epoch, "America/New_York")).toBe(22);
+  });
+
+  it("reflects the local hour right after a DST spring-forward", () => {
+    // 2026-03-08 07:30 UTC. New York springs forward at 02:00->03:00 local;
+    // by 07:30 UTC the offset is -4, so local time is 03:30 -> hour 3.
+    const epoch = Date.UTC(2026, 2, 8, 7, 30, 0) / 1000;
+    expect(getHourForTimestamp(epoch, "America/New_York")).toBe(3);
+  });
+
+  it("falls back to the UTC hour when the timezone is unknown", () => {
+    const epoch = Date.UTC(2026, 2, 14, 15, 0, 0) / 1000;
+    expect(getHourForTimestamp(epoch, "Mars/Olympus")).toBe(15);
   });
 });
 

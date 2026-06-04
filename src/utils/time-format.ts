@@ -56,6 +56,45 @@ export function getDateForTimestamp(epochSeconds: number, tz?: string): string {
   return `${y}-${m}-${d}`;
 }
 
+const hourFormatterCache = new Map<string, Intl.DateTimeFormat | null>();
+
+function getHourFormatter(tz: string): Intl.DateTimeFormat | null {
+  const cached = hourFormatterCache.get(tz);
+  if (cached !== undefined) return cached;
+  try {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "2-digit",
+      hourCycle: "h23",
+    });
+    hourFormatterCache.set(tz, fmt);
+    return fmt;
+  } catch {
+    hourFormatterCache.set(tz, null);
+    return null;
+  }
+}
+
+/**
+ * Convert a Unix epoch (seconds) to an hour-of-day (0-23) in the given timezone.
+ * Falls back to UTC if tz is not provided or invalid. Mirrors
+ * getDateForTimestamp so the daily and hourly aggregates bucket on the same basis.
+ */
+export function getHourForTimestamp(epochSeconds: number, tz?: string): number {
+  const date = new Date(epochSeconds * 1000);
+  if (!tz || tz === "UTC") {
+    return date.getUTCHours();
+  }
+  const fmt = getHourFormatter(tz);
+  if (!fmt) {
+    return date.getUTCHours();
+  }
+  const parts = fmt.formatToParts(date);
+  const h = Number(parts.find((p) => p.type === "hour")!.value);
+  // h23 yields 00-23; modulo guards against a locale rendering midnight as "24".
+  return h % 24;
+}
+
 /**
  * Get "today" as a Date anchored to midnight UTC, optionally shifted by IANA timezone.
  * When tz is provided, determines what date it is in that timezone, then returns

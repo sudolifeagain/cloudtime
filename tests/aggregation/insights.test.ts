@@ -3,7 +3,13 @@
  * (specs/103-insights/). No D1, no KV.
  */
 import { describe, expect, it } from "vitest";
-import { buildInsight, parseWeekday, type ResolvedRange } from "../../src/utils/insights";
+import {
+  buildHoursInsight,
+  buildInsight,
+  parseWeekday,
+  type HourlyRow,
+  type ResolvedRange,
+} from "../../src/utils/insights";
 import type { SummaryRow } from "../../src/utils/summary-builder";
 
 const RANGE: ResolvedRange = { start: "2026-05-01", end: "2026-05-31", text: "last 30 days" };
@@ -121,6 +127,56 @@ describe("buildInsight - temporal types", () => {
     // A non-null filter passed to a non-`days` type is ignored.
     const wd = buildInsight("weekday", rows, RANGE, "UTC", 1);
     expect(wd.items?.map((i) => i.name)).toEqual(["Monday", "Tuesday"]);
+  });
+});
+
+describe("buildHoursInsight", () => {
+  // Two active days; hour 9 split across both, hours 10 and 14 on one day each.
+  const rows: HourlyRow[] = [
+    { date: "2026-05-01", hour: 9, total_seconds: 3600 },
+    { date: "2026-05-01", hour: 10, total_seconds: 1800 },
+    { date: "2026-05-02", hour: 9, total_seconds: 1800 },
+    { date: "2026-05-02", hour: 14, total_seconds: 600 },
+  ];
+
+  it("returns 24 buckets, ascending by hour, with the envelope populated", () => {
+    const out = buildHoursInsight(rows, RANGE, "UTC");
+    expect(out.type).toBe("hours");
+    expect(out.range?.timezone).toBe("UTC");
+    expect(out.hours).toHaveLength(24);
+    expect(out.hours?.map((h) => h.hour)).toEqual(Array.from({ length: 24 }, (_, i) => i));
+  });
+
+  it("each bucket is the hour's total divided by distinct active days", () => {
+    const out = buildHoursInsight(rows, RANGE, "UTC");
+    const byHour = new Map(out.hours?.map((h) => [h.hour, h.total_seconds]));
+    // activeDays = 2
+    expect(byHour.get(9)).toBe(2700); // (3600 + 1800) / 2
+    expect(byHour.get(10)).toBe(900); // 1800 / 2
+    expect(byHour.get(14)).toBe(300); // 600 / 2
+    expect(byHour.get(0)).toBe(0);
+    expect(byHour.get(23)).toBe(0);
+  });
+
+  it("the 24 buckets sum to the daily_average for the same range", () => {
+    const hoursTotal = (buildHoursInsight(rows, RANGE, "UTC").hours ?? []).reduce(
+      (sum, h) => sum + (h.total_seconds ?? 0),
+      0,
+    );
+    // Same activity as daily summary rows: 2026-05-01 = 5400, 2026-05-02 = 2400.
+    const summaryRows: SummaryRow[] = [
+      row({ date: "2026-05-01", total_seconds: 5400 }),
+      row({ date: "2026-05-02", total_seconds: 2400 }),
+    ];
+    const avg = buildInsight("daily_average", summaryRows, RANGE, "UTC").daily_average?.seconds;
+    expect(hoursTotal).toBe(avg);
+    expect(hoursTotal).toBe(3900);
+  });
+
+  it("returns 24 zero buckets when there is no activity", () => {
+    const out = buildHoursInsight([], RANGE, "UTC");
+    expect(out.hours).toHaveLength(24);
+    expect(out.hours?.every((h) => h.total_seconds === 0)).toBe(true);
   });
 });
 

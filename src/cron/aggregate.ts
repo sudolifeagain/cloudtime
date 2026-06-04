@@ -1,4 +1,4 @@
-import { getDateForTimestamp } from "../utils/time-format";
+import { getDateForTimestamp, getHourForTimestamp } from "../utils/time-format";
 
 type HeartbeatForAggregation = {
   user_id: string;
@@ -23,6 +23,18 @@ type SummaryTuple = {
   branch: string;
   machine: string;
   seconds: number;
+};
+
+type HourlyTuple = {
+  userId: string;
+  date: string;
+  hour: number;
+  seconds: number;
+};
+
+type ComputedDurations = {
+  daily: Map<string, SummaryTuple>;
+  hourly: Map<string, HourlyTuple>;
 };
 
 const DEFAULT_TIMEOUT = 15 * 60; // 15 minutes in seconds
@@ -73,8 +85,11 @@ function computeDurations(
   heartbeats: HeartbeatForAggregation[],
   userSettings: Map<string, UserSettings>,
   lastAggregatedAt: number,
-): Map<string, SummaryTuple> {
+): ComputedDurations {
   const result = new Map<string, SummaryTuple>();
+  // Hour-of-day aggregate (Issue #134), bucketed in the same walk so a single
+  // heartbeat scan feeds both the daily and hourly summaries.
+  const hourly = new Map<string, HourlyTuple>();
 
   // Group heartbeats by user_id
   const byUser = new Map<string, HeartbeatForAggregation[]>();
@@ -133,10 +148,20 @@ function computeDurations(
           seconds: gap,
         });
       }
+
+      // Attribute the same interval to prev's hour-of-day (Issue #134).
+      const hour = getHourForTimestamp(prev.time, tz);
+      const hourKey = `${userId}|${date}|${hour}`;
+      const existingHour = hourly.get(hourKey);
+      if (existingHour) {
+        existingHour.seconds += gap;
+      } else {
+        hourly.set(hourKey, { userId, date, hour, seconds: gap });
+      }
     }
   }
 
-  return result;
+  return { daily: result, hourly };
 }
 
 export async function aggregateHeartbeats(db: D1Database): Promise<void> {
@@ -188,7 +213,7 @@ export async function aggregateHeartbeats(db: D1Database): Promise<void> {
   const uniqueUserIds = [...new Set(heartbeats.map((hb) => hb.user_id))];
   const userSettings = await getUserSettings(db, uniqueUserIds);
 
-  const durations = computeDurations(heartbeats, userSettings, lastAggregatedAt);
+  const { daily, hourly } = computeDurations(heartbeats, userSettings, lastAggregatedAt);
 
   // Build batch: all UPSERTs + meta update
   const statements: D1PreparedStatement[] = [];
@@ -198,7 +223,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (user_id, date, project, language, editor, operating_system, category, branch, machine)
 DO UPDATE SET total_seconds = total_seconds + excluded.total_seconds`;
 
-  for (const tuple of durations.values()) {
+  for (const tuple of daily.values()) {
     statements.push(
       db.prepare(upsertSql).bind(
         tuple.userId,
@@ -210,6 +235,24 @@ DO UPDATE SET total_seconds = total_seconds + excluded.total_seconds`;
         tuple.category,
         tuple.branch,
         tuple.machine,
+        Math.round(tuple.seconds),
+      ),
+    );
+  }
+
+  // Hour-of-day aggregate (Issue #134), UPSERTed in the same batch so both
+  // aggregates and the cursor advance atomically off one heartbeat scan.
+  const hourlyUpsertSql = `INSERT INTO hourly_summaries (user_id, date, hour, total_seconds)
+VALUES (?, ?, ?, ?)
+ON CONFLICT (user_id, date, hour)
+DO UPDATE SET total_seconds = total_seconds + excluded.total_seconds`;
+
+  for (const tuple of hourly.values()) {
+    statements.push(
+      db.prepare(hourlyUpsertSql).bind(
+        tuple.userId,
+        tuple.date,
+        tuple.hour,
         Math.round(tuple.seconds),
       ),
     );
