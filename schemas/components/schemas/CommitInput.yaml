@@ -1,0 +1,34 @@
+type: object
+required:
+  - hash
+properties:
+  hash:
+    type: string
+    minLength: 1
+  message:
+    type: string
+  author_name:
+    type: string
+  author_email:
+    type: string
+    format: email
+  author_date:
+    type: string
+    format: date-time
+  committer_name:
+    type: string
+  committer_email:
+    type: string
+    format: email
+  committer_date:
+    type: string
+    format: date-time
+  total_seconds:
+    type: number
+    format: double
+    minimum: 0
+  ref:
+    type: string
+  url:
+    type: string
+    format: uri
