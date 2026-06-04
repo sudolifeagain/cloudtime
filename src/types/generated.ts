@@ -770,11 +770,10 @@ export interface paths {
         };
         /**
          * Coding activity insights
-         * @description Derives an insight of the requested `insight_type` over `range` from the
-         *     pre-aggregated `summaries` table (no raw-heartbeat scan). All listed
-         *     insight types ship in the first cut; an `hours`-of-day insight is
-         *     intentionally absent because `summaries` has day granularity only (it
-         *     would require an hourly aggregate - a future addition).
+         * @description Derives an insight of the requested `insight_type` over `range`. Most types
+         *     read from the pre-aggregated `summaries` table (day granularity, no
+         *     raw-heartbeat scan); the `hours`-of-day type reads from the `hourly_summaries`
+         *     aggregate, which the same hourly cron maintains at hour-of-day granularity.
          *
          *     `range` accepts `last_7_days`, `last_30_days`, `last_6_months`,
          *     `last_year`, `all_time`, or `YYYY` / `YYYY-MM`, interpreted in the user's
@@ -786,6 +785,10 @@ export interface paths {
          *       single weekday when the `weekday` query parameter is set).
          *     - `best_day` -> `best_day` (the single highest-total day).
          *     - `daily_average` -> `daily_average` (mean seconds per active day).
+         *     - `hours` -> `hours[]`, one bucket per hour of day (0-23, computed in the
+         *       user's profile timezone), `total_seconds` = mean coding time in that hour
+         *       across the active days in the range, ordered by hour ascending. Always 24
+         *       buckets; hours with no activity report `total_seconds` 0.
          *     - `weekday` -> `items[]`, one per weekday (`name` = Monday-Sunday),
          *       `total_seconds` = mean for that weekday, ordered most-active first.
          *     - `projects` / `languages` / `editors` / `categories` / `machines` /
@@ -1670,6 +1673,12 @@ export interface components {
                 seconds?: number;
                 text?: string;
             };
+            hours?: {
+                hour?: number;
+                /** Format: double */
+                total_seconds?: number;
+                text?: string;
+            }[];
             items?: components["schemas"]["SummaryItem"][];
         };
         CustomRule: {
@@ -3119,7 +3128,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                insight_type: "weekday" | "days" | "best_day" | "daily_average" | "projects" | "languages" | "editors" | "categories" | "machines" | "operating_systems";
+                insight_type: "weekday" | "days" | "best_day" | "daily_average" | "hours" | "projects" | "languages" | "editors" | "categories" | "machines" | "operating_systems";
                 range: string;
             };
             cookie?: never;
