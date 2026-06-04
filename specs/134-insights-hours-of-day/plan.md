@@ -7,11 +7,9 @@
 
 Add the `hours`-of-day insight type, backed by a new `hourly_summaries` pre-aggregate maintained by the existing hourly cron (same pass, same `last_aggregated_at` cursor as `summaries`). The insight reports a stable 24-bucket profile of mean coding time per hour-of-day, computed in the user's profile timezone. Strategy (a) from #134 (a per-hour aggregate table) is chosen over scanning raw heartbeats at query time, which is rejected for large ranges under the Workers 10ms CPU budget.
 
-**PR1 (this PR)**: SpecKit artifacts + OpenAPI changes (`hours` enum value, operation prose, new `Insight.hours[]` field) + the `hourly_summaries` table in `src/db/schema.sql` + regenerated types. **No cron or route/business logic.**
+**PR1 (this PR)**: SpecKit artifacts + OpenAPI changes (`hours` enum value, operation prose, new `Insight.hours[]` field) + regenerated types. **No DB schema, cron, route, or business logic changes.**
 
-**PR2 (after PR1 merges)**: extend the cron to populate `hourly_summaries` in the same pass; add the `hours` read path + builder; unit + integration tests.
-
-> **Why `schema.sql` lands in PR1**: Issue #134 explicitly scopes "add the hourly aggregate table to `src/db/schema.sql`" to PR1. The table is part of the data-model contract that PR2's cron and read path depend on; it contains no business logic. This is a deliberate, issue-directed exception to the "schemas only" shorthand for PR1 — it stays SDD-compliant (data model defined before the code that uses it).
+**PR2 (after PR1 merges)**: add the `hourly_summaries` table to `src/db/schema.sql`; extend the cron to populate it in the same pass; add the `hours` read path + builder; unit + integration tests.
 
 ## Technical Context
 
@@ -26,7 +24,7 @@ Add the `hours`-of-day insight type, backed by a new `hourly_summaries` pre-aggr
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. SDD | PASS | Spec + OpenAPI + data model (schema.sql) land first (PR1); cron/route/builder follow in PR2. Types regenerated, never hand-edited. |
+| I. SDD | PASS | Spec + OpenAPI land first (PR1); DB schema, cron, route, and builder follow in PR2. Types regenerated, never hand-edited. |
 | II. Cloudflare-Native | PASS | Reuses the single hourly cron pass and one cursor for both aggregates (no second scan); request reads one pre-aggregate. D1 batch UPSERT for the new table (PR2). |
 | III. Type Safety | PASS | Handler will use `components["schemas"]["Insight"]`; the new `hours[]` field is generated, not hand-written. |
 | IV. Legal/Trademark | PASS | Semantics derived from our own `summaries`/`daily_average` model; no third-party source consulted. |
@@ -56,10 +54,10 @@ specs/134-insights-hours-of-day/
 # PR1
 schemas/paths/insights/insights.yaml      # CHANGE: add `hours` to enum; update operation prose + field mapping
 schemas/components/schemas/Insight.yaml   # CHANGE: add `hours[]` field
-src/db/schema.sql                         # CHANGE: add `hourly_summaries` table + unique index
 src/types/generated.ts                    # REGENERATED (npm run generate)
 
 # PR2 (after PR1 merges)
+src/db/schema.sql                         # CHANGE: add `hourly_summaries` table + unique index
 src/utils/time-format.ts                  # CHANGE: add getHourForTimestamp(epoch, tz) -> 0..23
 src/cron/aggregate.ts                      # CHANGE: also bucket each duration into (user, date, hour); batch-UPSERT hourly_summaries in the same pass
 src/utils/insights.ts                      # CHANGE: add the `hours` builder branch (24-bucket mean profile)
@@ -70,8 +68,8 @@ src/routes/insights.ts                     # CHANGE: for insight_type === "hours
 
 ## Phases
 
-- **PR1 — Spec + Design (this PR)**: author the SpecKit set; add `hours` to the enum and the `Insight.hours[]` field; document the operation prose; add `hourly_summaries` to `schema.sql`; `npm run generate`; `npm run typecheck`.
-- **PR2 — Implementation**: `getHourForTimestamp` helper + cron hour bucketing + `hours` builder + route read path + unit/aggregation/integration tests; `npm test` green; open PR referencing #134 and PR1.
+- **PR1 — Spec + Design (this PR)**: author the SpecKit set; add `hours` to the enum and the `Insight.hours[]` field; document the operation prose; `npm run generate`; `npm run typecheck`.
+- **PR2 — Implementation**: `hourly_summaries` DDL in `schema.sql` + `getHourForTimestamp` helper + cron hour bucketing + `hours` builder + route read path + unit/aggregation/integration tests; `npm test` green; open PR referencing #134 and PR1.
 
 ## Risks & Mitigations
 

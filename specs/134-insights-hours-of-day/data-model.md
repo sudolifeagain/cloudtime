@@ -2,7 +2,7 @@
 
 **Branch**: `134-insights-hours-of-day` | **Date**: 2026-06-05
 
-## New table: `hourly_summaries` (PR1, `src/db/schema.sql`)
+## New table: `hourly_summaries` (PR2, `src/db/schema.sql`)
 
 Hour-of-day pre-aggregate. One row per (`user_id`, local `date`, local `hour`), with an accumulating `total_seconds`. Maintained by the same hourly cron pass as `summaries`.
 
@@ -24,7 +24,7 @@ Mirrors the `summaries` shape (AUTOINCREMENT id + a unique index that backs the 
 
 **Granularity note**: at most 24 rows per active day per user — equal to or below `summaries`, which stores one row per dimension tuple (project/language/editor/…) per day. Acceptable for D1 at single-user scale.
 
-## Write path (PR2 — cron, same pass as `summaries`)
+## Write path (PR2 — schema + cron, same pass as `summaries`)
 
 The existing `computeDurations` walk in `src/cron/aggregate.ts` already attributes each interval `[prev, curr)` to the owning heartbeat `prev` and computes `date = getDateForTimestamp(prev.time, tz)`. PR2 additionally computes `hour = getHourForTimestamp(prev.time, tz)` (0–23) and accumulates a second map keyed by `${userId}|${date}|${hour}`. Both maps are flushed in the **same** `db.batch()` and the **same** `last_aggregated_at` cursor advance, so a single heartbeat scan feeds both aggregates (FR-008).
 

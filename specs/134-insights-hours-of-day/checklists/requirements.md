@@ -31,4 +31,4 @@ Quality gate for the spec before implementation. Each item is verifiable against
 - [x] No raw-heartbeat scan at request time (Cloudflare-Native) — FR-006, SC-004.
 - [x] One new narrow table; generated-types impact assessed (additive) in contracts/openapi-diff.md.
 - [x] Semantics derived from our own model; no third-party source consulted (Legal/Trademark) — research D-1/D-3.
-- [x] schema.sql-in-PR1 exception is documented and issue-directed (plan.md).
+- [x] DB schema changes are deferred to PR2 per the project PR1/PR2 workflow (plan.md, tasks.md).

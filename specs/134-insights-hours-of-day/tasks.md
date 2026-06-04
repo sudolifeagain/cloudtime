@@ -7,7 +7,7 @@
 ## PR1 — Spec + Design
 
 - [x] **T-001**: Author `spec.md` (US1 profile, US2 first-class type; FR-001..FR-010; edge cases; SC-001..SC-005).
-- [x] **T-002**: Author `plan.md` (Constitution Check; same-pass cron design; note schema.sql in PR1 per #134).
+- [x] **T-002**: Author `plan.md` (Constitution Check; same-pass cron design; schema.sql deferred to PR2 per project workflow).
 - [x] **T-003**: Author `research.md` (D-1 aggregate-table strategy, D-2 same-pass/cursor, D-3 mean-per-active-day, D-4 hour-boundary attribution, D-5 response shape, D-6 forward-only/backfill, D-7 numbering/timezone).
 - [x] **T-004**: Author `data-model.md` (`hourly_summaries` DDL; write/read paths; in-memory fold; daily_average invariant).
 - [x] **T-005**: Author `quickstart.md` (scenarios A–H).
@@ -15,9 +15,8 @@
 - [x] **T-007**: Author `checklists/requirements.md`.
 - [x] **T-008**: Update `schemas/paths/insights/insights.yaml` — add `hours` to the enum; rewrite the data-source paragraph; add the `hours` field-mapping bullet.
 - [x] **T-009**: Update `schemas/components/schemas/Insight.yaml` — add the `hours[]` field.
-- [x] **T-010**: Add `hourly_summaries` table + unique index to `src/db/schema.sql`.
-- [x] **T-011**: Run `npm run generate` (expect additive enum literal + `Insight.hours[]` in `src/types/generated.ts`); run `npm run typecheck`.
-- [ ] **T-012**: Commit PR1 in SDD order (spec/schemas + schema.sql, then regenerated types), push, open PR against `develop` referencing #134.
+- [x] **T-010**: Run `npm run generate` (expect additive enum literal + `Insight.hours[]` in `src/types/generated.ts`); run `npm run typecheck`.
+- [x] **T-011**: Commit PR1 in SDD order (spec/schemas, then regenerated types), push, open PR against `develop` referencing #134.
 
 ## PR2 — Implementation (after PR1 merges)
 
@@ -26,29 +25,30 @@
 - [ ] **T-102**: Unit tests for `getHourForTimestamp` (UTC, a +/- offset zone, a DST boundary).
 
 ### Cron (same pass as summaries)
-- [ ] **T-103**: `src/cron/aggregate.ts` — in `computeDurations`, also accumulate `(userId, date, hour)` totals; batch-UPSERT `hourly_summaries` in the same `db.batch()` as `summaries`; share the `last_aggregated_at` cursor.
-- [ ] **T-104**: Aggregation tests `tests/aggregation/` — hour bucketing in UTC and a non-UTC tz; hour-boundary attribution to the starting heartbeat; both aggregates advance together.
+- [ ] **T-103**: `src/db/schema.sql` — add the `hourly_summaries` table + unique index.
+- [ ] **T-104**: `src/cron/aggregate.ts` — in `computeDurations`, also accumulate `(userId, date, hour)` totals; batch-UPSERT `hourly_summaries` in the same `db.batch()` as `summaries`; share the `last_aggregated_at` cursor.
+- [ ] **T-105**: Aggregation tests `tests/aggregation/` — hour bucketing in UTC and a non-UTC tz; hour-boundary attribution to the starting heartbeat; both aggregates advance together.
 
 ### Builder + route
-- [ ] **T-105**: `src/utils/insights.ts` — add the `hours` branch: fold per-`(date,hour)` rows into 24 buckets, mean = sum/distinct-active-days, ascending by hour; add `hours` to `INSIGHT_TYPES`.
-- [ ] **T-106**: `src/routes/insights.ts` — for `insight_type === "hours"`, issue the `hourly_summaries` SELECT and pass its rows to the builder; other types unchanged.
-- [ ] **T-107**: Unit tests `tests/aggregation/insights.test.ts` (extend) — 24-bucket shape, mean math, empty → 24 zeros, sums-to-daily_average invariant.
+- [ ] **T-106**: `src/utils/insights.ts` — add the `hours` branch: fold per-`(date,hour)` rows into 24 buckets, mean = sum/distinct-active-days, ascending by hour; add `hours` to `INSIGHT_TYPES`.
+- [ ] **T-107**: `src/routes/insights.ts` — for `insight_type === "hours"`, issue the `hourly_summaries` SELECT and pass its rows to the builder; other types unchanged.
+- [ ] **T-108**: Unit tests `tests/aggregation/insights.test.ts` (extend) — 24-bucket shape, mean math, empty → 24 zeros, sums-to-daily_average invariant.
 
 ### Integration + verification
-- [ ] **T-108**: `tests/integration/insights.test.ts` (extend) — quickstart A–H: profile, daily_average equality, empty range, year/month + range names, 400, 401, timezone, reserved-params ignored, cross-user isolation.
-- [ ] **T-109**: `npm run typecheck` — zero errors.
-- [ ] **T-110**: `npm test` — full suite green incl. new/extended unit + aggregation + integration.
-- [ ] **T-111**: Commit with `feat:` prefix, push, open PR against `develop` referencing PR1 and issue #134.
+- [ ] **T-109**: `tests/integration/insights.test.ts` (extend) — quickstart A–H: profile, daily_average equality, empty range, year/month + range names, 400, 401, timezone, reserved-params ignored, cross-user isolation.
+- [ ] **T-110**: `npm run typecheck` — zero errors.
+- [ ] **T-111**: `npm test` — full suite green incl. new/extended unit + aggregation + integration.
+- [ ] **T-112**: Commit with `feat:` prefix, push, open PR against `develop` referencing PR1 and issue #134.
 
 ## Dependencies
 
 ```
-T-001 .. T-011 → T-012                  (PR1)
-T-012 → T-101 .. T-111                   (PR2 after PR1 merge)
+T-001 .. T-010 → T-011                  (PR1)
+T-011 → T-101 .. T-112                   (PR2 after PR1 merge)
 T-101 → T-102
-T-101 → T-103 → T-104
-T-105 → T-106 → T-107 → T-108
-T-104 / T-108 → T-109 → T-110 → T-111
+T-101 → T-103 → T-104 → T-105
+T-106 → T-107 → T-108 → T-109
+T-105 / T-109 → T-110 → T-111 → T-112
 ```
 
 ## Out of scope

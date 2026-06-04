@@ -151,24 +151,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_summaries_unique
   ON summaries(user_id, date, project, language, editor, operating_system, category, branch, machine);
 
 -- ============================================================
--- Hourly Summaries (hour-of-day aggregated, populated by cron)
--- Backs the `hours`-of-day insight (Issue #134). Maintained by the same hourly
--- cron pass as `summaries`, off the same last_aggregated_at cursor. One row per
--- (user, local date, local hour 0-23); total_seconds accumulates via UPSERT.
--- ============================================================
-CREATE TABLE IF NOT EXISTS hourly_summaries (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT NOT NULL,
-  date TEXT NOT NULL,
-  hour INTEGER NOT NULL,
-  total_seconds REAL NOT NULL DEFAULT 0,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_hourly_summaries_unique
-  ON hourly_summaries(user_id, date, hour);
-
--- ============================================================
 -- Goals
 -- ============================================================
 CREATE TABLE IF NOT EXISTS goals (
