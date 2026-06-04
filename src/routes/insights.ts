@@ -1,15 +1,22 @@
 /**
  * Coding activity insights (specs/103-insights/).
  *
- * Derives the requested insight_type over a range from the pre-aggregated
- * `summaries` table - one grouped SELECT, then pure in-memory shaping in
- * src/utils/insights.ts. No raw-heartbeat scan, no new table.
+ * Derives the requested insight_type over a range from pre-aggregates:
+ * most types read `summaries`, while `hours` reads `hourly_summaries`.
+ * No raw-heartbeat scan at request time.
  */
 import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import { authMiddleware, getUserTimezone } from "../middleware/auth";
 import { resolveStatsRange } from "../utils/stats-range";
-import { buildInsight, INSIGHT_TYPES, parseWeekday, type InsightType } from "../utils/insights";
+import {
+  buildHoursInsight,
+  buildInsight,
+  INSIGHT_TYPES,
+  parseWeekday,
+  type HourlyRow,
+  type SummaryInsightType,
+} from "../utils/insights";
 import type { SummaryRow } from "../utils/summary-builder";
 
 const VALID_INSIGHT_TYPES = new Set<string>(INSIGHT_TYPES);
@@ -52,6 +59,20 @@ insights.get("/insights/:insight_type/:range", async (c) => {
 
   const userId = c.get("userId");
   try {
+    // The `hours`-of-day type reads the hour-of-day pre-aggregate instead of
+    // `summaries` (day granularity can't answer it). Issue #134.
+    if (insightType === "hours") {
+      const { results } = await c.env.DB.prepare(
+        `SELECT date, hour, total_seconds
+           FROM hourly_summaries
+          WHERE user_id = ? AND date BETWEEN ? AND ?`,
+      )
+        .bind(userId, resolved.start, resolved.end)
+        .all<HourlyRow>();
+
+      return c.json({ data: buildHoursInsight(results, resolved, tz) });
+    }
+
     const { results } = await c.env.DB.prepare(
       `SELECT date, project, language, editor, operating_system, category, branch, machine,
               SUM(total_seconds) AS total_seconds
@@ -62,7 +83,7 @@ insights.get("/insights/:insight_type/:range", async (c) => {
       .bind(userId, resolved.start, resolved.end)
       .all<SummaryRow>();
 
-    return c.json({ data: buildInsight(insightType as InsightType, results, resolved, tz, weekdayFilter) });
+    return c.json({ data: buildInsight(insightType as SummaryInsightType, results, resolved, tz, weekdayFilter) });
   } catch (err) {
     console.error("GET /insights error:", err);
     return c.json({ error: "Internal server error" }, 500);

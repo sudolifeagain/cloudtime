@@ -18,6 +18,7 @@ export const INSIGHT_TYPES = [
   "days",
   "best_day",
   "daily_average",
+  "hours",
   "projects",
   "languages",
   "editors",
@@ -26,9 +27,10 @@ export const INSIGHT_TYPES = [
   "operating_systems",
 ] as const;
 export type InsightType = (typeof INSIGHT_TYPES)[number];
+export type SummaryInsightType = Exclude<InsightType, "hours">;
 
 /** insight_type -> the `summaries` column it groups by. */
-const DIMENSION_INSIGHTS: Partial<Record<InsightType, Dimension>> = {
+const DIMENSION_INSIGHTS: Partial<Record<SummaryInsightType, Dimension>> = {
   projects: "project",
   languages: "language",
   editors: "editor",
@@ -90,15 +92,9 @@ function dailyTotals(rows: SummaryRow[]): Map<string, number> {
   return totals;
 }
 
-export function buildInsight(
-  type: InsightType,
-  rows: SummaryRow[],
-  range: ResolvedRange,
-  tz: string,
-  weekdayFilter: number | null = null,
-): Insight {
-  const grandTotal = rows.reduce((sum, r) => sum + r.total_seconds, 0);
-  const base: Insight = {
+/** The common `{ type, range }` envelope shared by every insight type. */
+function insightBase(type: InsightType, range: ResolvedRange, tz: string): Insight {
+  return {
     type,
     range: {
       start: `${range.start}T00:00:00Z`,
@@ -107,6 +103,17 @@ export function buildInsight(
       timezone: tz,
     },
   };
+}
+
+export function buildInsight(
+  type: SummaryInsightType,
+  rows: SummaryRow[],
+  range: ResolvedRange,
+  tz: string,
+  weekdayFilter: number | null = null,
+): Insight {
+  const grandTotal = rows.reduce((sum, r) => sum + r.total_seconds, 0);
+  const base = insightBase(type, range, tz);
 
   const dimension = DIMENSION_INSIGHTS[type];
   if (dimension) {
@@ -173,4 +180,40 @@ export function buildInsight(
     default:
       return base;
   }
+}
+
+/** A row of the `hourly_summaries` aggregate, as read for the `hours` insight. */
+export interface HourlyRow {
+  date: string;
+  hour: number;
+  total_seconds: number;
+}
+
+/**
+ * Build the `hours`-of-day insight: a stable 24-bucket profile (hours 0-23,
+ * ascending) where each bucket's `total_seconds` is the mean coding time in
+ * that hour across the active days in the range — the sum of that hour's
+ * seconds divided by the number of distinct active dates. The 24 buckets
+ * therefore sum to the `daily_average` insight's `seconds` for the same range.
+ *
+ * Reads the pre-aggregated `hourly_summaries` rows (date + local hour already
+ * bucketed in the user's timezone by the cron); no raw-heartbeat scan.
+ */
+export function buildHoursInsight(rows: HourlyRow[], range: ResolvedRange, tz: string): Insight {
+  const perHour = new Array<number>(24).fill(0);
+  const activeDates = new Set<string>();
+  for (const r of rows) {
+    if (r.hour >= 0 && r.hour < 24) {
+      perHour[r.hour] += r.total_seconds;
+      activeDates.add(r.date);
+    }
+  }
+
+  const activeDays = activeDates.size;
+  const hours = perHour.map((sum, hour) => {
+    const mean = activeDays > 0 ? sum / activeDays : 0;
+    return { hour, total_seconds: mean, text: formatHumanReadable(Math.round(mean)) };
+  });
+
+  return { ...insightBase("hours", range, tz), hours };
 }

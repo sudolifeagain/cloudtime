@@ -22,7 +22,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await truncate("summaries", "users");
+  await truncate("hourly_summaries", "summaries", "users");
   await env.KV.delete(`apikey:${user.apiKeyHash}`);
 });
 
@@ -57,6 +57,19 @@ async function seedSummary(opts: {
       opts.editor ?? null,
       opts.totalSeconds,
     )
+    .run();
+}
+
+async function seedHourly(opts: {
+  userId: string;
+  date: string;
+  hour: number;
+  totalSeconds: number;
+}): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO hourly_summaries (user_id, date, hour, total_seconds) VALUES (?, ?, ?, ?)`,
+  )
+    .bind(opts.userId, opts.date, opts.hour, opts.totalSeconds)
     .run();
 }
 
@@ -193,5 +206,92 @@ describe("GET /insights/days/:range?weekday= (filter)", () => {
     expect(bogus.status).toBe(200);
     expect(filtered.names).toEqual(plain.names);
     expect(bogus.names).toEqual(plain.names);
+  });
+});
+
+describe("GET /insights/hours/:range", () => {
+  type HoursBucket = { hour: number; total_seconds: number; text: string };
+
+  // Two active days: hour 9 spans both, hours 10 and 14 on one day each.
+  async function seedHoursFixture(): Promise<void> {
+    await seedHourly({ userId: user.userId, date: "2026-03-01", hour: 9, totalSeconds: 3600 });
+    await seedHourly({ userId: user.userId, date: "2026-03-01", hour: 10, totalSeconds: 1800 });
+    await seedHourly({ userId: user.userId, date: "2026-03-02", hour: 9, totalSeconds: 1800 });
+    await seedHourly({ userId: user.userId, date: "2026-03-02", hour: 14, totalSeconds: 600 });
+  }
+
+  async function getHours(path: string): Promise<{ status: number; buckets: HoursBucket[] }> {
+    const res = await call(path, { headers: bearer(user.apiKey) });
+    if (res.status !== 200) return { status: res.status, buckets: [] };
+    const { data } = (await res.json()) as { data: { type: string; hours: HoursBucket[] } };
+    return { status: res.status, buckets: data.hours };
+  }
+
+  it("returns a 24-bucket profile of mean coding time per hour", async () => {
+    await seedHoursFixture();
+    const { status, buckets } = await getHours(`${INSIGHTS}/hours/${YEAR}`);
+    expect(status).toBe(200);
+    expect(buckets).toHaveLength(24);
+    expect(buckets.map((b) => b.hour)).toEqual(Array.from({ length: 24 }, (_, i) => i));
+    const byHour = new Map(buckets.map((b) => [b.hour, b.total_seconds]));
+    expect(byHour.get(9)).toBe(2700); // (3600 + 1800) / 2 active days
+    expect(byHour.get(10)).toBe(900); // 1800 / 2
+    expect(byHour.get(14)).toBe(300); // 600 / 2
+    expect(byHour.get(0)).toBe(0);
+  });
+
+  it("the 24 buckets sum to the daily_average for the same range", async () => {
+    await seedHoursFixture();
+    // Same activity expressed as daily summaries: 2026-03-01 = 5400, 2026-03-02 = 2400.
+    await seedSummary({ userId: user.userId, date: "2026-03-01", project: "p", totalSeconds: 5400 });
+    await seedSummary({ userId: user.userId, date: "2026-03-02", project: "p", totalSeconds: 2400 });
+
+    const { buckets } = await getHours(`${INSIGHTS}/hours/${YEAR}`);
+    const sum = buckets.reduce((acc, b) => acc + b.total_seconds, 0);
+
+    const avgRes = await call(`${INSIGHTS}/daily_average/${YEAR}`, { headers: bearer(user.apiKey) });
+    const avg = ((await avgRes.json()) as { data: { daily_average: { seconds: number } } }).data.daily_average.seconds;
+    expect(sum).toBe(avg);
+    expect(sum).toBe(3900);
+  });
+
+  it("returns 24 zero buckets for an empty range", async () => {
+    const { status, buckets } = await getHours(`${INSIGHTS}/hours/2099`);
+    expect(status).toBe(200);
+    expect(buckets).toHaveLength(24);
+    expect(buckets.every((b) => b.total_seconds === 0)).toBe(true);
+  });
+
+  it("accepts year, month, and named ranges", async () => {
+    await seedHoursFixture();
+    expect((await getHours(`${INSIGHTS}/hours/2026-03`)).status).toBe(200);
+    expect((await getHours(`${INSIGHTS}/hours/last_7_days`)).status).toBe(200);
+    expect((await getHours(`${INSIGHTS}/hours/2026-03`)).buckets).toHaveLength(24);
+  });
+
+  it("400s on an invalid range and 401s when unauthenticated", async () => {
+    const bad = await call(`${INSIGHTS}/hours/since_forever`, { headers: bearer(user.apiKey) });
+    expect(bad.status).toBe(400);
+    const unauth = await call(`${INSIGHTS}/hours/${YEAR}`);
+    expect(unauth.status).toBe(401);
+  });
+
+  it("ignores the weekday / timeout / writes_only query params", async () => {
+    await seedHoursFixture();
+    const plain = await getHours(`${INSIGHTS}/hours/${YEAR}`);
+    const withParams = await getHours(`${INSIGHTS}/hours/${YEAR}?weekday=monday&timeout=30&writes_only=true`);
+    expect(withParams.status).toBe(200);
+    expect(withParams.buckets).toEqual(plain.buckets);
+  });
+
+  it("isolates results per user", async () => {
+    await seedHoursFixture();
+    const bob = await seedUser({ username: "bob_hours", email: "bobhours@example.test" });
+    await seedHourly({ userId: bob.userId, date: "2026-03-01", hour: 3, totalSeconds: 9999 });
+
+    const { buckets } = await getHours(`${INSIGHTS}/hours/${YEAR}`);
+    // Bob's hour-3 activity must not leak into Alice's profile.
+    expect(buckets.find((b) => b.hour === 3)?.total_seconds).toBe(0);
+    await env.KV.delete(`apikey:${bob.apiKeyHash}`);
   });
 });
