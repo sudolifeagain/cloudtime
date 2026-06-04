@@ -41,6 +41,22 @@ const WEEKDAY_NAMES = [
   "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 ];
 
+/** Lowercase weekday name -> index (0=Sunday), derived from WEEKDAY_NAMES. */
+const WEEKDAY_INDEX: Record<string, number> = Object.fromEntries(
+  WEEKDAY_NAMES.map((name, i) => [name.toLowerCase(), i]),
+);
+
+/**
+ * Parse a `weekday` query value to a day index (0=Sunday … 6=Saturday), or
+ * `null` if it is neither an integer 0-6 nor a case-insensitive English weekday
+ * name. Used to filter the `days` insight; the same convention as `weekdayOf`.
+ */
+export function parseWeekday(raw: string): number | null {
+  const v = raw.trim().toLowerCase();
+  if (/^[0-6]$/.test(v)) return Number(v);
+  return v in WEEKDAY_INDEX ? WEEKDAY_INDEX[v] : null;
+}
+
 export interface ResolvedRange {
   start: string;
   end: string;
@@ -79,6 +95,7 @@ export function buildInsight(
   rows: SummaryRow[],
   range: ResolvedRange,
   tz: string,
+  weekdayFilter: number | null = null,
 ): Insight {
   const grandTotal = rows.reduce((sum, r) => sum + r.total_seconds, 0);
   const base: Insight = {
@@ -101,6 +118,7 @@ export function buildInsight(
   switch (type) {
     case "days": {
       const days = Array.from(totals.entries())
+        .filter(([date]) => weekdayFilter === null || weekdayOf(date) === weekdayFilter)
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([date, total_seconds]) => ({
           date,
