@@ -30,4 +30,4 @@ Quality gate for the spec before implementation. Each item is verifiable against
 
 - [x] No schema change; single-row D1 upsert on the existing UNIQUE index (Cloudflare-Native, Simplicity).
 - [x] Generated-types impact assessed (additive `createProjectCommit` + `CommitInput`) in contracts/openapi-diff.md.
-- [x] Original first-party endpoint; no WakaTime source consulted, no provider payload copied (Legal/Trademark).
+- [x] Original first-party endpoint; no third-party source consulted, no provider payload copied (Legal/Trademark).

@@ -27,7 +27,7 @@ Add a dedicated authenticated `POST /users/current/projects/{project}/commits` t
 | I. SDD | PASS | OpenAPI operation + request schema land first (PR1); handler follows in PR2. Types regenerated, never hand-edited. |
 | II. Cloudflare-Native | PASS | Single-row D1 upsert keyed on the existing UNIQUE index; no scan, no extra binding. Fast handler, nothing offloaded to cron. |
 | III. Type Safety | PASS | Handler uses `components["schemas"]["CommitInput"]` / `["Commit"]` from generated types. |
-| IV. Legal/Trademark | PASS | Original first-party endpoint; no WakaTime source consulted, no provider-specific payload copied. |
+| IV. Legal/Trademark | PASS | Original first-party endpoint; no third-party source consulted, no provider-specific payload copied. |
 | V. Simplicity First | PASS | One operation, one new request schema, no schema change, no heartbeat correlation. Single commit per request; bulk and server-side timing deferred. |
 
 ## Project Structure

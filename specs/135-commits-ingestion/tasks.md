@@ -16,7 +16,7 @@
 - [x] **T-008**: Add `schemas/components/schemas/CommitInput.yaml`.
 - [x] **T-009**: Update `schemas/paths/commits/commits.yaml` — add the `post` (`createProjectCommit`) operation; note ingestion in the `get` description.
 - [x] **T-010**: Run `npm run generate` (expect additive `createProjectCommit` + `CommitInput` in `src/types/generated.ts`); run `npm run typecheck`.
-- [ ] **T-011**: Commit PR1 in SDD order (spec/schemas, then regenerated types), push, open PR against `develop` referencing #135.
+- [x] **T-011**: Commit PR1 in SDD order (spec/schemas, then regenerated types), push, open PR against `develop` referencing #135.
 
 ## PR2 — Implementation (after PR1 merges)
 
