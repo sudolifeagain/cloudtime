@@ -46,3 +46,8 @@
   - `tests/integration/` — endpoint tests with real in-memory D1 (`SELF` / `worker.fetch`).
 - The Workers test pool runs `tests/setup.ts` once per file to load `src/db/schema.sql`. Helpers in `tests/helpers/fixtures.ts` mint users + API keys without going through OAuth.
 - CI runs both `typecheck` and `test` on every PR (`.github/workflows/test.yml`).
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->
