@@ -57,7 +57,7 @@ specs/064-email-verified-pendinglink/
 ├── data-model.md        # Phase 1 output
 ├── quickstart.md        # Phase 1 output
 ├── contracts/           # Phase 1 output
-└── tasks.md             # Phase 2 output (/speckit.tasks)
+└── tasks.md             # Phase 2 output (/speckit-tasks)
 ```
 
 ### Source Code (repository root)

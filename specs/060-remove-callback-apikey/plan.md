@@ -44,7 +44,7 @@ specs/060-remove-callback-apikey/
 │   └── callback-response.md
 ├── checklists/
 │   └── requirements.md
-└── tasks.md             # Phase 2 output (/speckit.tasks)
+└── tasks.md             # Phase 2 output (/speckit-tasks)
 ```
 
 ### Source Code (repository root)

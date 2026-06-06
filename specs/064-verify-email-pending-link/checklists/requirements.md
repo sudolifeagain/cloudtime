@@ -31,6 +31,6 @@
 
 ## Notes
 
-- All items pass. Spec is ready for `/speckit.clarify` or `/speckit.plan`.
+- All items pass. Spec is ready for `/speckit-clarify` or `/speckit-plan`.
 - Assumptions section documents decisions about provider trust and migration strategy.
 - No [NEEDS CLARIFICATION] markers — all decisions were made based on issue context and codebase analysis.

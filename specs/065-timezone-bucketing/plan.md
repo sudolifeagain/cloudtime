@@ -44,7 +44,7 @@ specs/065-timezone-bucketing/
 ├── data-model.md        # Phase 1 output
 ├── quickstart.md        # Phase 1 output
 ├── contracts/           # Phase 1 output (OpenAPI changes)
-└── tasks.md             # Phase 2 output (/speckit.tasks)
+└── tasks.md             # Phase 2 output (/speckit-tasks)
 ```
 
 ### Source Code (repository root)
