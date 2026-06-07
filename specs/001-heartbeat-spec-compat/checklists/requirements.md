@@ -31,5 +31,5 @@
 
 ## Notes
 
-- All items pass. Spec is ready for `/speckit.clarify` or `/speckit.plan`.
+- All items pass. Spec is ready for `/speckit-clarify` or `/speckit-plan`.
 - Assumptions section documents decisions about DB storage format, header priority, and derived fields.

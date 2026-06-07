@@ -31,4 +31,4 @@
 
 ## Notes
 
-- All items pass. Spec is ready for `/speckit.plan`.
+- All items pass. Spec is ready for `/speckit-plan`.

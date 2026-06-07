@@ -31,5 +31,5 @@
 
 ## Notes
 
-- All items pass. Spec is ready for `/speckit.clarify` or `/speckit.plan`.
+- All items pass. Spec is ready for `/speckit-clarify` or `/speckit-plan`.
 - Assumptions section documents the backfill rationale and scope boundary (no out-of-band email verification).

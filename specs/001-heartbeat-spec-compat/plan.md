@@ -46,7 +46,7 @@ specs/001-heartbeat-spec-compat/
 │   └── heartbeat-bulk-response.md
 ├── checklists/
 │   └── requirements.md
-└── tasks.md             # Phase 2 output (/speckit.tasks)
+└── tasks.md             # Phase 2 output (/speckit-tasks)
 ```
 
 ### Source Code (repository root)
