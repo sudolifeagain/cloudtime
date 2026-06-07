@@ -1,2 +1,3 @@
 src/types/generated.ts linguist-generated=true
 schemas/_bundled/** linguist-generated=true
+*.sh text eol=lf

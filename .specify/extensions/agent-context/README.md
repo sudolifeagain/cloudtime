@@ -10,7 +10,7 @@ Not every Spec Kit user wants Spec Kit to write into the coding agent's context 
 
 - **Opt out** entirely with `specify extension disable agent-context` — Spec Kit will then never create or modify the agent context file.
 - **Customize the markers** by editing `.specify/extensions/agent-context/agent-context-config.yml` — both the Python layer and the bundled scripts honor the same `context_markers` value.
-- **Refresh on demand** with `/speckit.agent-context.update`, or automatically through the hooks declared in `extension.yml` (`after_specify`, `after_plan`).
+- **Refresh on demand** with `/speckit-agent-context-update`, or automatically through the hooks declared in `extension.yml` (`after_specify`, `after_plan`).
 
 ## Commands
 

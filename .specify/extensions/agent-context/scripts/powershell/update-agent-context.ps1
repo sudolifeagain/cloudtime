@@ -88,7 +88,7 @@ if ($null -eq $Options) {
 
     if ($pythonCmd) {
         try {
-            $jsonOut = & $pythonCmd -c @'
+            $pythonScript = @'
 import json
 import sys
 try:
@@ -114,7 +114,14 @@ if not isinstance(data, dict):
     data = {}
 
 print(json.dumps(data))
-'@ $ExtConfig
+'@
+            $tmpScript = [System.IO.Path]::ChangeExtension([System.IO.Path]::GetTempFileName(), '.py')
+            try {
+                [System.IO.File]::WriteAllText($tmpScript, $pythonScript, (New-Object System.Text.UTF8Encoding($false)))
+                $jsonOut = & $pythonCmd $tmpScript $ExtConfig
+            } finally {
+                Remove-Item -LiteralPath $tmpScript -ErrorAction SilentlyContinue
+            }
             if ($LASTEXITCODE -eq 0 -and $jsonOut) {
                 $Options = $jsonOut | ConvertFrom-Json -ErrorAction Stop
             }
