@@ -27,6 +27,13 @@ export interface Env {
   // value, or unset, leaves it enabled.
   PUBLIC_STATS?: string;
 
+  // Optional owner allowlist for the single-user first-login bootstrap
+  // (Issue #157). When non-blank, only an OAuth identity whose
+  // provider-verified email equals this value (trimmed, case-insensitive)
+  // can create the owner; everyone else gets the registration-closed 403.
+  // Unset or blank = gate inactive. Inert after bootstrap and in multi mode.
+  ALLOWED_OWNER_EMAIL?: string;
+
   // Optional raw-heartbeat retention window in days (Issue #108). Unset or
   // non-positive = retain forever. When set, the hourly cron purges raw
   // heartbeats older than this many days; pre-aggregated `summaries` are
