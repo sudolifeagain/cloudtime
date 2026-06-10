@@ -249,3 +249,99 @@ describe("GET /api/v1/users/current/heartbeats", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("write-input length caps (#158)", () => {
+  afterEach(async () => {
+    await truncate("machine_names", "user_agents");
+  });
+
+  const base = { type: "file" as const, time: TIME_2026_03_14_10_00_UTC };
+
+  function post(body: unknown, headers: Record<string, string> = {}): Promise<Response> {
+    return callWorker("/api/v1/users/current/heartbeats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader(user.apiKey), ...headers },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function heartbeatCount(): Promise<number> {
+    const row = await env.DB.prepare("SELECT COUNT(*) AS c FROM heartbeats").first<{ c: number }>();
+    return row?.c ?? 0;
+  }
+
+  it("rejects an oversized entity with 400 and stores nothing (US1)", async () => {
+    const res = await post({ ...base, entity: "x".repeat(4097) });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("entity must be at most 4096 characters");
+    expect(await heartbeatCount()).toBe(0);
+  });
+
+  it("accepts values at exactly the cap — limits are inclusive (FR-003)", async () => {
+    const res = await post({
+      ...base,
+      entity: "x".repeat(4096),
+      project: "p".repeat(255),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("bulk: an oversized item reports its per-item 400 while valid items persist (US1)", async () => {
+    const res = await callWorker("/api/v1/users/current/heartbeats.bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader(user.apiKey) },
+      body: JSON.stringify([
+        { ...base, entity: "ok.ts" },
+        { ...base, entity: "big.ts", branch: "b".repeat(256) },
+      ]),
+    });
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { responses: [{ data: unknown; error: string | null }, number][] };
+    expect(body.responses[0][1]).toBe(201);
+    expect(body.responses[1][1]).toBe(400);
+    expect(body.responses[1][0].error).toBe("branch must be at most 255 characters");
+    expect(await heartbeatCount()).toBe(1);
+  });
+
+  it("rejects dependencies beyond the item/count caps (FR-005)", async () => {
+    const tooMany = await post({
+      ...base,
+      entity: "a.ts",
+      dependencies: Array.from({ length: 101 }, (_, i) => `dep${i}`),
+    });
+    expect(tooMany.status).toBe(400);
+
+    const tooLongItem = await post({
+      ...base,
+      entity: "a.ts",
+      dependencies: ["d".repeat(256)],
+    });
+    expect(tooLongItem.status).toBe(400);
+  });
+
+  it("truncates an oversized User-Agent header and accepts the heartbeat (US3)", async () => {
+    const res = await post({ ...base, entity: "a.ts" }, { "User-Agent": "u".repeat(600) });
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare(
+      "SELECT value FROM user_agents WHERE user_id = ?",
+    ).bind(user.userId).first<{ value: string }>();
+    expect(row?.value).toHaveLength(512);
+  });
+
+  it("truncates an oversized X-Machine-Name header and accepts the heartbeat (US3)", async () => {
+    const res = await post({ ...base, entity: "a.ts" }, { "X-Machine-Name": "m".repeat(300) });
+    expect(res.status).toBe(201);
+    const row = await env.DB.prepare(
+      "SELECT value FROM machine_names WHERE user_id = ?",
+    ).bind(user.userId).first<{ value: string }>();
+    expect(row?.value).toHaveLength(255);
+  });
+
+  it("rejects oversized body user_agent and machine with 400 (US3 contrast)", async () => {
+    const ua = await post({ ...base, entity: "a.ts", user_agent: "u".repeat(513) });
+    expect(ua.status).toBe(400);
+    const machine = await post({ ...base, entity: "a.ts", machine: "m".repeat(256) });
+    expect(machine.status).toBe(400);
+  });
+});
