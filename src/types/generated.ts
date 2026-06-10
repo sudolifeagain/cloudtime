@@ -252,6 +252,10 @@ export interface paths {
          *     behaviour is documented in the operator runbook).
          *
          *     See specs/080-out-of-band-email-verification/.
+         *
+         *     Rate limited at the edge (5 requests per 60-second window per truncated
+         *     client IP, /24 IPv4 or /48 IPv6) after the method check and before any
+         *     token processing (#159).
          */
         get: operations["verifyLinkEmailToken"];
         put?: never;
@@ -1206,6 +1210,7 @@ export interface paths {
          * Aggregate stats of all users
          * @description Aggregates activity across all users over the requested range. This endpoint is unauthenticated and **always aggregates in UTC** — it does not accept a timezone. Fixing UTC keeps the response cacheable under a single key per range (a client-supplied timezone would otherwise fragment the cache on an unauthenticated endpoint) and avoids ambiguous cross-user date boundaries when `summaries.date` is bucketed per user timezone (#29).
          *     Operators can disable this endpoint entirely by setting the instance variable `PUBLIC_STATS` to `false`; a disabled instance responds `404` to every request, regardless of the range value (#156).
+         *     Rate limited at the edge (30 requests per 60-second window per truncated client IP); on instances with `PUBLIC_STATS=false` the disabled `404` takes precedence and the limiter is never consulted (#159).
          */
         get: operations["getGlobalStats"];
         put?: never;
@@ -2288,6 +2293,7 @@ export interface operations {
                 content?: never;
             };
             410: components["responses"]["Gone"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     getLinkedProviders: {
@@ -3754,6 +3760,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
 }
