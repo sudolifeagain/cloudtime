@@ -48,7 +48,10 @@ export async function getUserId(
     .first<{ id: string }>();
 
   if (row) {
-    await env.KV.put(`apikey:${keyHash}`, row.id, { expirationTtl: 3600 });
+    // 300s matches SESSION_CACHE_TTL in utils/session.ts: bounds how long a
+    // rotated-away key can keep authenticating if the rotation-time KV delete
+    // is lost or delayed by KV eventual consistency (Issue #151).
+    await env.KV.put(`apikey:${keyHash}`, row.id, { expirationTtl: 300 });
   }
 
   return row?.id ?? null;
