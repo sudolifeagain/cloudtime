@@ -30,6 +30,7 @@ import {
   getStateCookie,
   clearStateCookie,
 } from "../../utils/session";
+import { rateLimitExceeded, tooManyRequests } from "../../middleware/rate-limit";
 import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../../utils/user";
 import { sessionMw } from "./middleware";
 import { getRedirectUri, noCacheHeaders } from "./helpers";
@@ -59,6 +60,14 @@ link.all("/link/verify/:token", async (c) => {
       "Cache-Control": "no-store",
     });
   }
+
+  // Edge rate limit (Issue #159): after the free 405 branch — method probes
+  // must not consume the budget of a user's real click — and before any
+  // mode/token processing so rejected requests cost no D1 work.
+  if (await rateLimitExceeded(c.env.RATE_LIMIT_LINK_VERIFY, c.req.raw.headers, "link-verify", "RATE_LIMIT_LINK_VERIFY")) {
+    return tooManyRequests(c);
+  }
+
   if (c.env.INSTANCE_MODE !== "multi") {
     return c.json({ error: "Token not found" }, 410, noCacheHeaders());
   }

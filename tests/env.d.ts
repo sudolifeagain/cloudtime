@@ -29,6 +29,8 @@ declare global {
       GOOGLE_HOSTED_DOMAIN?: string;
       RATE_LIMIT_OAUTH_INITIATE?: import("../src/types").RateLimit;
       RATE_LIMIT_OAUTH_CALLBACK?: import("../src/types").RateLimit;
+      RATE_LIMIT_LINK_VERIFY?: import("../src/types").RateLimit;
+      RATE_LIMIT_PUBLIC_STATS?: import("../src/types").RateLimit;
     }
   }
 }

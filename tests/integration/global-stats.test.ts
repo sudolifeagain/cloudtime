@@ -160,3 +160,41 @@ describe("PUBLIC_STATS instance switch (#156)", () => {
     }
   });
 });
+
+describe("rate limiting on GET /api/v1/stats/:range (#159)", () => {
+  it("returns 429 and does no cache/D1 work when the limiter rejects (US1)", async () => {
+    const res = await call("/api/v1/stats/last_7_days", {}, {
+      RATE_LIMIT_PUBLIC_STATS: { limit: async () => ({ success: false }) },
+    });
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    expect(await res.json()).toEqual({ error: "Too many requests" });
+    expect(await env.KV.get("global-stats:last_7_days", "json")).toBeNull();
+  });
+
+  it("passes through unchanged when the limiter allows (US2)", async () => {
+    const res = await call("/api/v1/stats/last_7_days", {}, {
+      RATE_LIMIT_PUBLIC_STATS: { limit: async () => ({ success: true }) },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await env.KV.get("global-stats:last_7_days", "json")).not.toBeNull();
+  });
+
+  it("disabled instance: the 404 gate wins and the limiter is never consulted (US3/SC-004)", async () => {
+    let calls = 0;
+    const res = await call("/api/v1/stats/last_7_days", {}, {
+      PUBLIC_STATS: "false",
+      RATE_LIMIT_PUBLIC_STATS: {
+        limit: async () => {
+          calls++;
+          return { success: false };
+        },
+      },
+    });
+
+    expect(res.status).toBe(404);
+    expect(calls).toBe(0);
+  });
+});

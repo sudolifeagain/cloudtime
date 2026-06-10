@@ -124,29 +124,48 @@ Queues are paid-only ($0.40/million messages) but provide reliable async process
 | Caching | KV for auth + status bar | KV for auth + status bar + heartbeat buffer |
 | CPU budget | Keep per-request under 10ms | 30s budget, more room |
 
-## Rate Limiting on OAuth Endpoints
+## Rate Limiting on Unauthenticated Endpoints
 
-Cloudflare Workers' native Rate Limiting binding protects the OAuth login surface
-from abuse (KV exhaustion, CPU floods). Two bindings are declared in `wrangler.toml`:
+Cloudflare Workers' native Rate Limiting binding protects the unauthenticated
+surface from abuse (KV exhaustion, CPU floods, anonymous D1 work). Four
+bindings are declared in `wrangler.toml`:
 
 | Binding | Endpoint | Limit | Window | Key |
 |---|---|---|---|---|
 | `RATE_LIMIT_OAUTH_INITIATE` | `GET /api/v1/auth/:provider` | 10 | 60s | client IP truncated to /24 (IPv4) or /48 (IPv6) |
 | `RATE_LIMIT_OAUTH_CALLBACK` | `GET /api/v1/auth/:provider/callback` | 5 | 60s | same key derivation |
+| `RATE_LIMIT_LINK_VERIFY` | `GET /api/v1/auth/link/verify/:token` | 5 | 60s | same key derivation |
+| `RATE_LIMIT_PUBLIC_STATS` | `GET /api/v1/stats/:range` | 30 | 60s | same key derivation |
 
 The middleware (`src/middleware/rate-limit.ts`) reads `CF-Connecting-IP`,
-falls back to `X-Forwarded-For` first hop, and finally to `"unknown"`. When the
-binding is unconfigured (typical for `wrangler dev --local`), the middleware
+falls back to `X-Forwarded-For` first hop, and finally to `"unknown"`. When a
+binding is unconfigured (typical for `wrangler dev --local`), the check
 fails open and emits a single warning per isolate.
+
+Evaluation-order guarantees (Issue #159): on the verify route the limiter
+runs after the free `405` method check (method probes never consume a real
+user's budget) and before any token/D1 work; on the public stats route the
+`PUBLIC_STATS = "false"` gate runs first, so a disabled instance answers a
+uniform `404`, never `429`, and spends no limiter budget.
 
 **Operator action before production deploy**: confirm the current Cloudflare
 plan supports the configured Rate Limiting bindings. The free tier includes
 a usage-capped allowance for the Workers Rate Limiting API; commercial
 deployments may need a paid plan. Adjust `limit`/`period` in `wrangler.toml`
-without code changes.
+without code changes (`period` must be 10 or 60; `namespace_id` values must
+stay unique per Cloudflare account).
 
-See `specs/058-oauth-rate-limiting/` for the full spec, design, and
-verification scenarios.
+**Why there is no blanket limiter on failed API-key auth (401s)**: the
+auth-failure path costs a single indexed D1 point-read; the binding counts
+per edge location and is intentionally approximate, which fits a
+low-and-slow distributed pattern across ~30 operations poorly; and wiring it
+into `authMiddleware` would add a `429` to every documented operation for
+marginal benefit. Operators who want broad-spectrum throttling should use
+zone-level WAF rate-limiting rules, which run before the Worker is invoked
+at all (see `specs/159-rate-limit-expansion/research.md` D-4).
+
+See `specs/058-oauth-rate-limiting/` and `specs/159-rate-limit-expansion/`
+for the full specs, designs, and verification scenarios.
 
 ## Implementation Notes
 
