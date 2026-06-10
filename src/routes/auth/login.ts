@@ -40,6 +40,7 @@ import {
   getStateCookie,
   clearStateCookie,
 } from "../../utils/session";
+import { ownerAllowlistRejects } from "../../utils/owner-allowlist";
 import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../../utils/user";
 import { getRedirectUri, noCacheHeaders } from "./helpers";
 
@@ -345,6 +346,22 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
 
     // No existing account — new user creation
     const isSingleUser = c.env.INSTANCE_MODE !== "multi";
+
+    // Owner allowlist (Issue #157): when configured, the single-user
+    // bootstrap only accepts the matching provider-verified email. The
+    // response reuses the registration-closed literal so probing cannot
+    // reveal whether an allowlist exists (specs/157-owner-allowlist/).
+    if (isSingleUser && ownerAllowlistRejects(c.env.ALLOWED_OWNER_EMAIL, userInfo.providerEmail)) {
+      const email = userInfo.providerEmail;
+      const reason = email ? "email-mismatch" : "email-missing";
+      const domain = email?.includes("@") ? email.slice(email.indexOf("@") + 1) : "(none)";
+      console.warn(`[owner-allowlist] rejected provider=${provider} reason=${reason} candidate_domain=${domain}`);
+      return c.json(
+        { error: "Registration closed. This instance only allows one user." },
+        403,
+        noCacheHeaders(),
+      );
+    }
 
     // Single-user guard: don't clear email if we can't create a new user to take it
     if (isSingleUser && unverifiedUserId) {

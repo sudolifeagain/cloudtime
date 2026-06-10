@@ -23,6 +23,7 @@ declare global {
       ENCRYPTION_KEY: string;
       INSTANCE_MODE?: string;
       PUBLIC_STATS?: string;
+      ALLOWED_OWNER_EMAIL?: string;
       ENVIRONMENT?: string;
       APP_URL?: string;
       GOOGLE_HOSTED_DOMAIN?: string;
