@@ -20,7 +20,18 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const sessions = new Hono<SessionAuthEnv>();
 
-sessions.use("*", sessionMw);
+// Session auth is scoped to this sub-app's own paths instead of a `use("*")`
+// wildcard: when mounted in auth/index.ts the wildcard would also run for the
+// public login routes registered after this sub-app (GET /:provider and
+// GET /:provider/callback, deliberately mounted last because they are
+// parameterized) and reject anonymous OAuth initiate/callback with 401
+// (Issue #163).
+sessions.use("/session", sessionMw);
+sessions.use("/sessions", sessionMw);
+sessions.use("/sessions/:session_id", sessionMw);
+sessions.use("/providers", sessionMw);
+sessions.use("/providers/:provider", sessionMw);
+sessions.use("/api-key", sessionMw);
 
 // GET /session
 sessions.get("/session", async (c) => {
