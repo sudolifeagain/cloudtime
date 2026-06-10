@@ -34,6 +34,12 @@ import { type UserRow, USER_COLUMNS, rowToUser, normalizeDateTime } from "../../
 import { sessionMw } from "./middleware";
 import { getRedirectUri, noCacheHeaders } from "./helpers";
 
+// Verification tokens are base64url(randomBytes(32)) — exactly 43 url-safe
+// characters (see generateVerificationToken). Rejecting anything else before
+// hashing keeps this unauthenticated route from issuing D1 queries for
+// arbitrary garbage input (Issue #152).
+const VERIFY_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+
 const VERIFY_SUCCESS_HTML =
   `<!doctype html><html><head><meta charset="utf-8"><title>Email verified — CloudTime</title></head>` +
   `<body><h1>Email verified</h1>` +
@@ -58,7 +64,7 @@ link.all("/link/verify/:token", async (c) => {
   }
 
   const token = c.req.param("token");
-  if (!token) {
+  if (!token || !VERIFY_TOKEN_RE.test(token)) {
     return c.json({ error: "Token not found" }, 410, noCacheHeaders());
   }
   let tokenHash: string;
