@@ -103,6 +103,13 @@ export interface paths {
          *        always requires manual PendingLink approval.
          *     6. **Session fixation prevention:** Always create a new session after successful
          *        authentication. Invalidate any pre-authentication session. Never reuse session IDs.
+         *     7. **Single-user owner allowlist (optional):** when the instance variable
+         *        `ALLOWED_OWNER_EMAIL` is set (non-blank) and the instance runs in
+         *        single-user mode, the first-login bootstrap only accepts an identity
+         *        whose provider-verified email equals the configured value (trimmed,
+         *        case-insensitive; a missing verified email is rejected). Any other
+         *        identity receives the same `403` used once registration is closed, so
+         *        responses do not reveal whether an allowlist is configured (#157).
          *
          *     **Token endpoint Content-Type:** All three providers require
          *     `application/x-www-form-urlencoded` (per RFC 6749 §4.1.3). Discord is notably strict —
