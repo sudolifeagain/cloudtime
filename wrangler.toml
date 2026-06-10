@@ -85,3 +85,23 @@ namespace_id = "1002"
   [ratelimits.simple]
   limit = 5
   period = 60
+
+# Issue #159 — out-of-band email verification route (one click per emailed
+# link is the entire legitimate flow; mirrors the OAuth callback limit).
+[[ratelimits]]
+name = "RATE_LIMIT_LINK_VERIFY"
+namespace_id = "1003"
+  [ratelimits.simple]
+  limit = 5
+  period = 60
+
+# Issue #159 — public global stats (responses are KV-cached for 5 minutes;
+# 30/min absorbs dashboards/badges and NAT-aggregated networks). On
+# PUBLIC_STATS = "false" instances the 404 gate runs first and this limiter
+# is never consulted.
+[[ratelimits]]
+name = "RATE_LIMIT_PUBLIC_STATS"
+namespace_id = "1004"
+  [ratelimits.simple]
+  limit = 30
+  period = 60

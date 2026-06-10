@@ -1,7 +1,9 @@
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { Env, RateLimit } from "../types";
 
 const warned = new WeakSet<object>();
+const warnedRules = new Set<string>();
 
 function stripIpDecoration(ip: string): string {
   const trimmed = ip.trim();
@@ -60,6 +62,44 @@ function getClientIp(headers: Headers): string {
   return "unknown";
 }
 
+/**
+ * Imperative form of the rate-limit check for handlers that need it inside
+ * an existing routing structure (Issue #159) — e.g. after a method check or
+ * the PUBLIC_STATS gate. Returns true when the request must be rejected with
+ * `tooManyRequests(c)`. Fails open (returns false) with one warning per rule
+ * when the binding is undefined, matching the middleware behavior.
+ */
+export async function rateLimitExceeded(
+  binding: RateLimit | undefined,
+  headers: Headers,
+  endpointName: string,
+  ruleName: string,
+): Promise<boolean> {
+  if (!binding) {
+    if (!warnedRules.has(ruleName)) {
+      warnedRules.add(ruleName);
+      console.warn(`[rate-limit] binding ${ruleName} is undefined; failing open for this isolate`);
+    }
+    return false;
+  }
+
+  const key = truncateIp(getClientIp(headers));
+  const { success } = await binding.limit({ key });
+  if (!success) {
+    console.warn(`[rate-limit] rejected endpoint=${endpointName} rule=${ruleName} key=${key}`);
+  }
+  return !success;
+}
+
+/** The shared 429 response shape used by every rate-limited endpoint. */
+export function tooManyRequests(c: Context): Response {
+  return c.json({ error: "Too many requests" }, 429, {
+    "Retry-After": "60",
+    "Cache-Control": "no-store",
+    Pragma: "no-cache",
+  });
+}
+
 export function rateLimitMiddleware(
   getBinding: (env: Env) => RateLimit | undefined,
   endpointName: string,
@@ -82,10 +122,6 @@ export function rateLimitMiddleware(
     if (success) return next();
 
     console.warn(`[rate-limit] rejected endpoint=${endpointName} rule=${ruleName} key=${key}`);
-    return c.json({ error: "Too many requests" }, 429, {
-      "Retry-After": "60",
-      "Cache-Control": "no-store",
-      Pragma: "no-cache",
-    });
+    return tooManyRequests(c);
   });
 }

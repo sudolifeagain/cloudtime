@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import type { components } from "../types/generated";
+import { rateLimitExceeded, tooManyRequests } from "../middleware/rate-limit";
 import { EDITORS } from "../data/editors";
 import { LANGUAGES } from "../data/languages";
 import { resolveStatsRange } from "../utils/stats-range";
@@ -44,6 +45,13 @@ meta.get("/stats/:range", async (c) => {
   // distinguish "disabled" from "absent" and generates no load.
   if ((c.env.PUBLIC_STATS ?? "").trim().toLowerCase() === "false") {
     return c.json({ error: "Not found" }, 404, { "Cache-Control": "no-store" });
+  }
+
+  // Edge rate limit (Issue #159): strictly after the disabled gate — a
+  // disabled instance never emits 429 and spends no limiter budget — and
+  // before range validation, the KV cache, and D1.
+  if (await rateLimitExceeded(c.env.RATE_LIMIT_PUBLIC_STATS, c.req.raw.headers, "global-stats", "RATE_LIMIT_PUBLIC_STATS")) {
+    return tooManyRequests(c);
   }
 
   const rangeParam = c.req.param("range");

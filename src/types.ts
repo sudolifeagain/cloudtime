@@ -57,6 +57,10 @@ export interface Env {
   // Rate-limit bindings (optional — middleware fails open when undefined)
   RATE_LIMIT_OAUTH_INITIATE?: RateLimit;
   RATE_LIMIT_OAUTH_CALLBACK?: RateLimit;
+  // Issue #159: out-of-band verify route (5/60s) and public global stats
+  // (30/60s); see specs/159-rate-limit-expansion/.
+  RATE_LIMIT_LINK_VERIFY?: RateLimit;
+  RATE_LIMIT_PUBLIC_STATS?: RateLimit;
 
   // Email delivery (Issue #80). Required in multi-user mode for the
   // out-of-band PendingLink verification flow. Single-user mode does not
