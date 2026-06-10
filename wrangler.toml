@@ -45,6 +45,14 @@ INSTANCE_MODE = "single"
 #                (backward-compatible default). Recommended "false" for
 #                single-user instances. See docs/deployment-guide.md (Issue #156).
 # PUBLIC_STATS = "false"
+# ALLOWED_OWNER_EMAIL - Optional but recommended. Binds the single-user
+#                first-login bootstrap to one identity: only an OAuth login
+#                whose provider-verified email equals this value (trimmed,
+#                case-insensitive) can become the instance owner. Everyone
+#                else gets the same 403 as a closed instance. Unset or blank
+#                = gate inactive. Set it BEFORE the first deploy to close the
+#                first-login owner race; see docs/deployment-guide.md (#157).
+# ALLOWED_OWNER_EMAIL = "you@example.com"
 
 # OAuth & Session secrets (set via `wrangler secret put <NAME>`)
 # GITHUB_CLIENT_ID

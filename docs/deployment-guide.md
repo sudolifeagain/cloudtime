@@ -135,6 +135,31 @@ WHERE (SELECT COUNT(*) FROM users) = 0
 
 Whoever completes OAuth login first becomes the permanent owner. The race window is **from the moment your Worker URL is reachable until you complete OAuth login from your own browser**.
 
+### Code-level mitigation: `ALLOWED_OWNER_EMAIL` (recommended)
+
+Set the owner identity **before** the Worker is first reachable and the race
+disappears: only an OAuth identity whose provider-verified email matches can
+claim the instance.
+
+```toml
+[vars]
+ALLOWED_OWNER_EMAIL = "you@example.com"
+```
+
+- Matching is trimmed and case-insensitive; the email must be **verified** at
+  the provider (GitHub primary verified email, Google, or Discord).
+- Everyone else receives the same `403 Registration closed` response the
+  instance returns once bootstrapped, so probes cannot tell an allowlist
+  exists. Rejections appear in `wrangler tail` as `[owner-allowlist]
+  rejected …` with the candidate's email domain only.
+- A typo cannot lock you out permanently: nothing has been claimed yet, so
+  fix the value and redeploy. An unset or blank value disables the gate.
+- The variable gates only the first-login bootstrap; it does not constrain
+  the owner's later logins or provider linking.
+
+The procedure below remains the universal baseline — and the only mitigation
+on instances that do not set the variable.
+
 ### What you must do
 
 1. **Do not share the Worker URL** in public channels, README files, status pages, or DM screenshots until step 2 is complete.
