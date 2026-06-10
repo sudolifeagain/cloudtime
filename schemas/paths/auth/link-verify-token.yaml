@@ -21,6 +21,10 @@ get:
     behaviour is documented in the operator runbook).
 
     See specs/080-out-of-band-email-verification/.
+
+    Rate limited at the edge (5 requests per 60-second window per truncated
+    client IP, /24 IPv4 or /48 IPv6) after the method check and before any
+    token processing (#159).
   security: []
   parameters:
     - name: token
@@ -45,3 +49,5 @@ get:
       description: Method Not Allowed — verify endpoint only accepts GET.
     '410':
       $ref: ../../components/responses/Gone.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml
