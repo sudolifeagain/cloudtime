@@ -81,6 +81,29 @@ In single-user mode the first OAuth login becomes the owner; all subsequent OAut
 
 For multi-user mode, set `INSTANCE_MODE=multi` in `wrangler.toml` `[vars]` and additionally configure the email provider (see [`email-setup.md`](./email-setup.md)).
 
+### Privacy: public global stats (`PUBLIC_STATS`)
+
+`GET /api/v1/stats/{range}` is unauthenticated and serves an instance-wide
+activity aggregate. On a single-user instance that aggregate is your entire
+coding profile — total time, daily average, language/editor/OS breakdowns —
+readable by anyone who knows your Worker URL.
+
+To disable the endpoint, add to `wrangler.toml` `[vars]`:
+
+```toml
+PUBLIC_STATS = "false"
+```
+
+A disabled instance answers `404` to every request on that path — the
+response does not reveal that the endpoint exists — and performs no cache or
+database work for it. Only the literal value `false` (trimmed,
+case-insensitive) disables; unset or any other value leaves the endpoint
+enabled, which is the backward-compatible default.
+
+**Recommended for single-user instances** unless you intentionally want a
+public activity profile. The setting takes effect on the next
+`wrangler deploy`.
+
 ## 7. Deploy
 
 ```bash
