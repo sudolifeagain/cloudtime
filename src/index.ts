@@ -24,6 +24,29 @@ import { processPendingDumps, purgeExpiredDumps } from "./cron/data-dumps";
 
 const app = new Hono<{ Bindings: Env }>();
 
+// ENVIRONMENT=development relaxes the __Host-/Secure cookie attributes, CSRF
+// origin checks, and OAuth redirect-URI validation. If such an instance is
+// serving non-local traffic the operator has almost certainly misconfigured a
+// production deployment — surface it loudly, once per isolate (Issue #153).
+// Log-only on purpose: intentional dev tunnels keep working.
+let warnedDevEnvironment = false;
+const LOCAL_HOSTNAME_RE = /^(localhost|127\.0\.0\.1|\[::1\]|.+\.localhost)$/;
+
+app.use("/*", async (c, next) => {
+  if (!warnedDevEnvironment && c.env.ENVIRONMENT === "development") {
+    const hostname = new URL(c.req.url).hostname;
+    if (!LOCAL_HOSTNAME_RE.test(hostname)) {
+      warnedDevEnvironment = true;
+      console.warn(
+        `[env] ENVIRONMENT=development is serving non-local host "${hostname}" — ` +
+          "cookie security attributes, CSRF origin checks, and OAuth redirect-URI " +
+          "validation are relaxed in this mode. Unset ENVIRONMENT for production deployments.",
+      );
+    }
+  }
+  return next();
+});
+
 app.use(
   "/*",
   secureHeaders({

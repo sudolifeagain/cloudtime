@@ -121,6 +121,20 @@ describe("GET /api/v1/auth/link/verify/:token", () => {
     expect(await res.json()).toEqual({ error: "Token not found" });
   });
 
+  it("returns 410 'Token not found' for malformed tokens (format pre-check)", async () => {
+    // Real tokens are exactly 43 url-safe base64 chars (Issue #152). A wrong
+    // length or an out-of-alphabet character must produce the same response
+    // as an unknown token so the pre-check is not distinguishable.
+    const wrongLength = "A".repeat(42);
+    const badCharset = "x".repeat(42) + "!";
+
+    for (const bad of [wrongLength, badCharset]) {
+      const res = await call(`/api/v1/auth/link/verify/${bad}`);
+      expect(res.status).toBe(410);
+      expect(await res.json()).toEqual({ error: "Token not found" });
+    }
+  });
+
   it("returns 410 'Token expired' when the underlying row has expired", async () => {
     const { token, pendingLinkId } = await seedPendingLink({ ownerId: owner.userId });
     // Force expiry by editing the row.

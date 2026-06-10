@@ -152,13 +152,26 @@ change is required.
 ## API Key Format
 
 ```
-ck_<32 random hex characters>
-Example: ck_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+ck_<43 url-safe base64 characters>
+Example: ck_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
 ```
 
-- Generated via Web Crypto API
+- Generated via Web Crypto API: `ck_` + base64url of 32 random bytes (256-bit entropy)
 - Stored as SHA-256 hash in DB (`api_key_hash` column); plaintext shown only once
 - Can be regenerated via POST /auth/api-key (old key immediately invalidated)
+
+### API Key Transport
+
+Three transport methods are accepted for WakaTime compatibility
+(`src/utils/auth.ts`):
+
+1. `Authorization: Basic <base64(api_key)>` — what wakatime-cli sends. Preferred.
+2. `Authorization: Bearer <api_key>` — equivalent; also preferred.
+3. `?api_key=<api_key>` query parameter — **compatibility fallback only.**
+   Query strings are recorded in access logs, proxy logs, and browser
+   history, so a key sent this way is more likely to leak. Use an
+   `Authorization` header anywhere a header can be set, and rotate the key
+   via `POST /auth/api-key` if it was ever pasted into a shared URL.
 
 ## Token Encryption at Rest
 
