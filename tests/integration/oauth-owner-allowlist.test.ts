@@ -51,7 +51,11 @@ beforeEach(() => {
     const req = new Request(input, init);
     const u = new URL(req.url);
     const key = `${req.method} ${u.origin}${u.pathname}`;
-    const route = routes.find((r) => `${r.method} ${r.url}` === key);
+    // Prefer a not-yet-consumed registration so a flow stubbed twice in one
+    // test (e.g. two login attempts) serves each registration once.
+    const route =
+      routes.find((r) => `${r.method} ${r.url}` === key && r.hits === 0) ??
+      routes.find((r) => `${r.method} ${r.url}` === key);
     if (!route) {
       throw new Error(`Unexpected outbound fetch in test: ${key}`);
     }
@@ -65,10 +69,12 @@ beforeEach(() => {
 
 afterEach(async () => {
   globalThis.fetch = originalFetch;
+  // Truncate before asserting so a failed assertion cannot leak DB state
+  // into the next test.
+  await truncate("sessions", "oauth_accounts", "users");
   for (const r of routes) {
     expect(r.hits, `stubbed route never hit: ${r.method} ${r.url}`).toBeGreaterThan(0);
   }
-  await truncate("sessions", "oauth_accounts", "users");
 });
 
 // ─── Flow helpers ────────────────────────────────────────
