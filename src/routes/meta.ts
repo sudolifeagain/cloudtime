@@ -39,6 +39,13 @@ meta.get("/program_languages", (c) => {
 // ─── GET /stats/:range (global stats) ────────────────────
 
 meta.get("/stats/:range", async (c) => {
+  // Instance-level opt-out (Issue #156): a disabled instance answers 404
+  // before range validation, the KV cache, and D1, so probing cannot
+  // distinguish "disabled" from "absent" and generates no load.
+  if ((c.env.PUBLIC_STATS ?? "").trim().toLowerCase() === "false") {
+    return c.json({ error: "Not found" }, 404, { "Cache-Control": "no-store" });
+  }
+
   const rangeParam = c.req.param("range");
   // Global stats always aggregate in UTC (Issue #29): no timezone is accepted.
   // This keeps the cache key un-fragmentable on this unauthenticated endpoint

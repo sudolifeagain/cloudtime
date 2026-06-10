@@ -21,6 +21,12 @@ export interface Env {
   // Instance mode: "single" (default) or "multi" (future)
   INSTANCE_MODE?: string;
 
+  // Instance-level switch for the unauthenticated global stats endpoint
+  // (Issue #156). Trimmed, case-insensitive "false" disables
+  // GET /api/v1/stats/{range} (blanket 404, no cache/D1 work); any other
+  // value, or unset, leaves it enabled.
+  PUBLIC_STATS?: string;
+
   // Optional raw-heartbeat retention window in days (Issue #108). Unset or
   // non-positive = retain forever. When set, the hourly cron purges raw
   // heartbeats older than this many days; pre-aggregated `summaries` are

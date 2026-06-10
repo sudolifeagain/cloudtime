@@ -10,7 +10,7 @@ import {
 } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/index";
-import { truncate } from "../helpers/fixtures";
+import { seedUser, truncate } from "../helpers/fixtures";
 
 const BASE = "https://test.cloudtime.dev";
 const CACHE_KEYS = [
@@ -40,9 +40,14 @@ afterEach(async () => {
   await clearGlobalStatsCache();
 });
 
-async function call(path: string): Promise<Response> {
+async function call(
+  path: string,
+  init: RequestInit = {},
+  envOverrides: Partial<Cloudflare.Env> = {},
+): Promise<Response> {
   const ctx = createExecutionContext();
-  const res = await worker.fetch(new Request(`${BASE}${path}`, {}), env, ctx);
+  const testEnv = { ...env, ...envOverrides };
+  const res = await worker.fetch(new Request(`${BASE}${path}`, init), testEnv, ctx);
   await waitOnExecutionContext(ctx);
   return res;
 }
@@ -82,5 +87,76 @@ describe("GET /api/v1/stats/:range (global, UTC)", () => {
   it("still 400s on an invalid range", async () => {
     const res = await call("/api/v1/stats/since_forever");
     expect(res.status).toBe(400);
+  });
+});
+
+describe("PUBLIC_STATS instance switch (#156)", () => {
+  const DISABLED = { PUBLIC_STATS: "false" };
+
+  it("disabled: returns 404 for a valid range and writes no cache entry", async () => {
+    const res = await call("/api/v1/stats/last_7_days", {}, DISABLED);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Not found" });
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(await env.KV.get("global-stats:last_7_days", "json")).toBeNull();
+  });
+
+  it("disabled: invalid range returns an identical 404, not 400 (FR-002)", async () => {
+    const valid = await call("/api/v1/stats/last_7_days", {}, DISABLED);
+    const invalid = await call("/api/v1/stats/since_forever", {}, DISABLED);
+    expect(valid.status).toBe(404);
+    expect(invalid.status).toBe(404);
+    // Identical bodies so probing cannot distinguish disabled from absent.
+    expect(await invalid.json()).toEqual(await valid.json());
+  });
+
+  it("disabled: does not serve an entry cached while enabled (FR-003)", async () => {
+    // Populate the cache via an enabled request, then flip the switch.
+    expect((await call("/api/v1/stats/last_7_days")).status).toBe(200);
+    expect(await env.KV.get("global-stats:last_7_days", "json")).not.toBeNull();
+
+    const res = await call("/api/v1/stats/last_7_days", {}, DISABLED);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Not found" });
+  });
+
+  it("enabled explicitly or with an unrecognized value: behavior unchanged (FR-001/FR-005)", async () => {
+    for (const value of ["true", "no", " FALSE-ish "]) {
+      await clearGlobalStatsCache();
+      const ok = await call("/api/v1/stats/last_7_days", {}, { PUBLIC_STATS: value });
+      expect(ok.status).toBe(200);
+      expect(((await ok.json()) as GlobalStatsBody).data.range.timezone).toBe("UTC");
+      expect(await env.KV.get("global-stats:last_7_days", "json")).not.toBeNull();
+
+      const bad = await call("/api/v1/stats/since_forever", {}, { PUBLIC_STATS: value });
+      expect(bad.status).toBe(400);
+    }
+  });
+
+  it("disabled: case-insensitive with surrounding whitespace", async () => {
+    const res = await call("/api/v1/stats/last_7_days", {}, { PUBLIC_STATS: " False " });
+    expect(res.status).toBe(404);
+  });
+
+  it("disabled: other public endpoints are unaffected (FR-006)", async () => {
+    for (const path of ["/api/v1/health", "/api/v1/meta", "/api/v1/editors", "/api/v1/program_languages"]) {
+      const res = await call(path, {}, DISABLED);
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it("disabled: authenticated per-user stats are unaffected (FR-006)", async () => {
+    const user = await seedUser();
+    try {
+      const res = await call(
+        "/api/v1/users/current/stats/last_7_days",
+        { headers: { Authorization: `Bearer ${user.apiKey}` } },
+        DISABLED,
+      );
+      expect(res.status).toBe(200);
+    } finally {
+      await env.KV.delete(`apikey:${user.apiKeyHash}`);
+      await truncate("users");
+    }
   });
 });

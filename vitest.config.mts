@@ -2,6 +2,11 @@ import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // Mirrors the [define] block in wrangler.toml; without it /api/v1/meta
+  // throws a ReferenceError (500) inside the test workers pool.
+  define: {
+    __APP_VERSION__: JSON.stringify("0.0.0-test"),
+  },
   plugins: [
     cloudflareTest({
       main: "./src/index.ts",

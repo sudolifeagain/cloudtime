@@ -22,6 +22,7 @@ declare global {
       DISCORD_CLIENT_SECRET: string;
       ENCRYPTION_KEY: string;
       INSTANCE_MODE?: string;
+      PUBLIC_STATS?: string;
       ENVIRONMENT?: string;
       APP_URL?: string;
       GOOGLE_HOSTED_DOMAIN?: string;
