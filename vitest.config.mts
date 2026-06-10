@@ -32,5 +32,9 @@ export default defineConfig({
   ],
   test: {
     setupFiles: ["./tests/setup.ts"],
+    // Agent worktrees under .claude/worktrees/ contain a full repo copy;
+    // without this exclude vitest discovers their tests too and runs the
+    // whole suite twice (against potentially stale sources).
+    exclude: ["**/node_modules/**", "**/.claude/**"],
   },
 });

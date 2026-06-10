@@ -6,6 +6,7 @@
  * path by the route, not the body. Dates are normalised to the same SQLite
  * datetime format `created_at` uses, so the read path renders them schema-valid.
  */
+import { INPUT_LIMITS, tooLong } from "./input-limits";
 import { toSqliteDateTime } from "./user";
 
 export interface ValidatedCommit {
@@ -84,6 +85,9 @@ export function validateCommitInput(body: unknown): ValidationResult<ValidatedCo
   if (typeof r.hash !== "string" || r.hash.length === 0) {
     return fail("hash is required and must be a non-empty string");
   }
+  if (tooLong(r.hash, INPUT_LIMITS.commitHash)) {
+    return fail(`hash must be at most ${INPUT_LIMITS.commitHash} characters`);
+  }
 
   if (r.total_seconds !== undefined && r.total_seconds !== null) {
     if (typeof r.total_seconds !== "number" || !Number.isFinite(r.total_seconds) || r.total_seconds < 0) {
@@ -91,9 +95,25 @@ export function validateCommitInput(body: unknown): ValidationResult<ValidatedCo
     }
   }
 
+  // Length caps mirror the OpenAPI maxLength constraints (Issue #158;
+  // values from src/utils/input-limits.ts).
+  const caps = {
+    message: INPUT_LIMITS.commitMessage,
+    author_name: INPUT_LIMITS.name,
+    author_email: INPUT_LIMITS.email,
+    committer_name: INPUT_LIMITS.name,
+    committer_email: INPUT_LIMITS.email,
+    ref: INPUT_LIMITS.name,
+    url: INPUT_LIMITS.url,
+  } as const;
   for (const field of ["message", "author_name", "author_email", "committer_name", "committer_email", "ref", "url"] as const) {
-    if (r[field] !== undefined && r[field] !== null && typeof r[field] !== "string") {
+    const val = r[field];
+    if (val === undefined || val === null) continue;
+    if (typeof val !== "string") {
       return fail(`${field} must be a string`);
+    }
+    if (tooLong(val, caps[field])) {
+      return fail(`${field} must be at most ${caps[field]} characters`);
     }
   }
 
