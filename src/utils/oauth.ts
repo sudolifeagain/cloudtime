@@ -37,9 +37,17 @@ export interface ProviderUserInfo {
 /** Timeout for all outbound OAuth/provider HTTP requests. */
 const FETCH_TIMEOUT = 10_000;
 
-/** Shared fetch options for outbound provider requests (SSRF defense-in-depth). */
-const PROVIDER_FETCH_OPTS = {
-  redirect: "error" as const,
+/**
+ * Shared fetch options for outbound provider requests (SSRF defense-in-depth).
+ * Workers does not implement redirect: "error" — workerd throws a TypeError on
+ * any fetch/Request carrying it (Issue #165) — so redirects are refused with
+ * "manual": a 3xx comes back as-is and every call site's `!res.ok` /
+ * JSON-parse handling treats it as a failure, preserving the
+ * never-follow-redirects intent. Exported for the workerd-validity
+ * regression test.
+ */
+export const PROVIDER_FETCH_OPTS = {
+  redirect: "manual" as const,
   get signal(): AbortSignal {
     return AbortSignal.timeout(FETCH_TIMEOUT);
   },
