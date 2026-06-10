@@ -37,6 +37,7 @@ properties:
   source_value:
     type: string
     minLength: 1
+    maxLength: 1024
   destination:
     type: string
     description: Required for `change` actions; ignored for `hide`.
@@ -49,6 +50,7 @@ properties:
       - entity
   destination_value:
     type: string
+    maxLength: 1024
     description: Required (non-empty) for `change` actions; ignored for `hide`.
   priority:
     type: integer
