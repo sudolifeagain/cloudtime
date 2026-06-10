@@ -6,6 +6,7 @@ required:
 properties:
   entity:
     type: string
+    maxLength: 4096
     description: File path, app name, or domain
   type:
     type: string
@@ -23,20 +24,26 @@ properties:
     $ref: ./Category.yaml
   project:
     type: string
+    maxLength: 255
   project_root_count:
     type: integer
   branch:
     type: string
+    maxLength: 255
   language:
     type: string
+    maxLength: 255
   dependencies:
     description: Dependency names, as comma-separated string or array
     oneOf:
       - type: string
+        maxLength: 8192
         description: Comma-separated dependency names
       - type: array
+        maxItems: 100
         items:
           type: string
+          maxLength: 255
         description: Array of dependency names
   lines:
     type: integer
@@ -52,11 +59,15 @@ properties:
     type: boolean
   editor:
     type: string
+    maxLength: 255
   operating_system:
     type: string
+    maxLength: 255
   machine:
     type: string
+    maxLength: 255
     description: Machine/device name
   user_agent:
     type: string
+    maxLength: 512
     description: User agent string from editor plugin

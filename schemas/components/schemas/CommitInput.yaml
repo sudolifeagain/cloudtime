@@ -5,21 +5,27 @@ properties:
   hash:
     type: string
     minLength: 1
+    maxLength: 64
   message:
     type: string
+    maxLength: 4096
   author_name:
     type: string
+    maxLength: 255
   author_email:
     type: string
     format: email
+    maxLength: 254
   author_date:
     type: string
     format: date-time
   committer_name:
     type: string
+    maxLength: 255
   committer_email:
     type: string
     format: email
+    maxLength: 254
   committer_date:
     type: string
     format: date-time
@@ -29,6 +35,8 @@ properties:
     minimum: 0
   ref:
     type: string
+    maxLength: 255
   url:
     type: string
     format: uri
+    maxLength: 2048
