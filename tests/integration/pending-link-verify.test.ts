@@ -276,3 +276,53 @@ describe("POST /api/v1/auth/link/approve/:pending_link_id email-verification gat
     expect(await res.json()).toEqual({ error: "Email verification required" });
   });
 });
+
+describe("rate limiting on GET /api/v1/auth/link/verify/:token (#159)", () => {
+  const EXCEEDED = {
+    RATE_LIMIT_LINK_VERIFY: { limit: async () => ({ success: false }) },
+  };
+
+  it("returns 429 with Retry-After and does not consume the token (US1)", async () => {
+    const { pendingLinkId, token } = await seedPendingLink({ ownerId: owner.userId });
+
+    const res = await call(`/api/v1/auth/link/verify/${token}`, {}, EXCEEDED);
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    expect(await res.json()).toEqual({ error: "Too many requests" });
+    const row = await env.DB.prepare(
+      "SELECT email_verified_at FROM pending_links WHERE id = ?",
+    )
+      .bind(pendingLinkId)
+      .first<{ email_verified_at: string | null }>();
+    expect(row?.email_verified_at).toBeNull();
+  });
+
+  it("non-GET probes still get 405 without consuming limiter budget (research D-2)", async () => {
+    let calls = 0;
+    const spy = {
+      RATE_LIMIT_LINK_VERIFY: {
+        limit: async () => {
+          calls++;
+          return { success: false };
+        },
+      },
+    };
+
+    const res = await call("/api/v1/auth/link/verify/anything", { method: "POST" }, spy);
+
+    expect(res.status).toBe(405);
+    expect(calls).toBe(0);
+  });
+
+  it("passes through unchanged when the limiter allows (US2)", async () => {
+    const { token } = await seedPendingLink({ ownerId: owner.userId });
+    const ok = {
+      RATE_LIMIT_LINK_VERIFY: { limit: async () => ({ success: true }) },
+    };
+
+    const res = await call(`/api/v1/auth/link/verify/${token}`, {}, ok);
+
+    expect(res.status).toBe(200);
+  });
+});
