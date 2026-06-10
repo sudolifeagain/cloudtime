@@ -13,6 +13,7 @@ import {
   type RuleField,
   type RuleOperation,
 } from "./custom-rules";
+import { INPUT_LIMITS, tooLong } from "./input-limits";
 
 export const MAX_RULES = 50;
 
@@ -71,6 +72,9 @@ export function validateCustomRules(body: unknown): ValidationResult<ValidatedRu
     if (typeof r.source_value !== "string" || r.source_value.length === 0) {
       return fail(`${at}.source_value must be a non-empty string`);
     }
+    if (tooLong(r.source_value, INPUT_LIMITS.ruleValue)) {
+      return fail(`${at}.source_value must be at most ${INPUT_LIMITS.ruleValue} characters`);
+    }
 
     const action = r.action as RuleAction;
     let destination: RuleField | "" = "";
@@ -81,6 +85,9 @@ export function validateCustomRules(body: unknown): ValidationResult<ValidatedRu
       }
       if (typeof r.destination_value !== "string" || r.destination_value.length === 0) {
         return fail(`${at}.destination_value must be a non-empty string for a change rule`);
+      }
+      if (tooLong(r.destination_value, INPUT_LIMITS.ruleValue)) {
+        return fail(`${at}.destination_value must be at most ${INPUT_LIMITS.ruleValue} characters`);
       }
       destination = r.destination as RuleField;
       destinationValue = r.destination_value;

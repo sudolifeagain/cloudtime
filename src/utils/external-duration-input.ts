@@ -5,6 +5,7 @@
  * upsert, or a 400-worthy error. No D1, no I/O.
  */
 import type { components } from "../types/generated";
+import { INPUT_LIMITS, tooLong } from "./input-limits";
 
 export type ExternalDurationType = "file" | "app" | "domain";
 type Category = components["schemas"]["Category"];
@@ -68,8 +69,14 @@ export function validateExternalDuration(body: unknown): ValidationResult<Valida
   if (typeof r.external_id !== "string" || r.external_id.length === 0) {
     return fail("external_id is required and must be a non-empty string");
   }
+  if (tooLong(r.external_id, INPUT_LIMITS.externalId)) {
+    return fail(`external_id must be at most ${INPUT_LIMITS.externalId} characters`);
+  }
   if (typeof r.entity !== "string" || r.entity.length === 0) {
     return fail("entity is required and must be a non-empty string");
+  }
+  if (tooLong(r.entity, INPUT_LIMITS.entity)) {
+    return fail(`entity must be at most ${INPUT_LIMITS.entity} characters`);
   }
   if (!TYPES.has(r.type as string)) {
     return fail("type must be one of file, app, domain");
@@ -91,9 +98,22 @@ export function validateExternalDuration(body: unknown): ValidationResult<Valida
       return fail(`category must be one of: ${[...VALID_CATEGORIES].join(", ")}`);
     }
   }
+  // Length caps mirror the OpenAPI maxLength constraints (Issue #158;
+  // values from src/utils/input-limits.ts).
+  const caps = {
+    project: INPUT_LIMITS.name,
+    branch: INPUT_LIMITS.name,
+    language: INPUT_LIMITS.name,
+    meta: INPUT_LIMITS.meta,
+  } as const;
   for (const field of ["project", "branch", "language", "meta"] as const) {
-    if (r[field] !== undefined && r[field] !== null && typeof r[field] !== "string") {
+    const val = r[field];
+    if (val === undefined || val === null) continue;
+    if (typeof val !== "string") {
       return fail(`${field} must be a string`);
+    }
+    if (tooLong(val, caps[field])) {
+      return fail(`${field} must be at most ${caps[field]} characters`);
     }
   }
 

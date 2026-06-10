@@ -5,6 +5,7 @@ import { authMiddleware, getUserTimeout, getUserTimezone } from "../middleware/a
 import { getEpochBoundsForDate } from "../utils/time-format";
 import { resolveUserAgentId } from "../utils/user-agent";
 import { applyRules, loadRules } from "../utils/custom-rules";
+import { INPUT_LIMITS, tooLong, truncateTo } from "../utils/input-limits";
 import { machineUpsertStmt } from "../utils/machine";
 
 type HeartbeatInput = components["schemas"]["HeartbeatInput"];
@@ -137,7 +138,12 @@ heartbeats.post("/heartbeats", async (c) => {
     return c.json({ error: err }, 400);
   }
 
-  const machine = input.machine ?? c.req.header("X-Machine-Name") ?? undefined;
+  // Header-derived ambient values truncate to the contract caps instead of
+  // failing the heartbeat (Issue #158, research R-5); body values were
+  // validated above. The User-Agent value is capped inside resolveUserAgentId.
+  const rawHeaderMachine = c.req.header("X-Machine-Name");
+  const machine = input.machine
+    ?? (rawHeaderMachine !== undefined ? truncateTo(rawHeaderMachine, INPUT_LIMITS.name) : undefined);
   const userAgent = input.user_agent ?? c.req.header("User-Agent") ?? undefined;
   const ip = c.req.header("CF-Connecting-IP") ?? null;
 
@@ -176,8 +182,13 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
     return c.json({ error: "Maximum 25 heartbeats per request" }, 400);
   }
 
-  // Resolve machine/user_agent: body field > header > undefined
-  const headerMachine = c.req.header("X-Machine-Name") ?? undefined;
+  // Resolve machine/user_agent: body field > header > undefined.
+  // Header values truncate to the contract caps (Issue #158, research R-5);
+  // the User-Agent value is capped inside resolveUserAgentId.
+  const rawHeaderMachine = c.req.header("X-Machine-Name");
+  const headerMachine = rawHeaderMachine !== undefined
+    ? truncateTo(rawHeaderMachine, INPUT_LIMITS.name)
+    : undefined;
   const headerUserAgent = c.req.header("User-Agent") ?? undefined;
   const ip = c.req.header("CF-Connecting-IP") ?? null;
   const now = new Date().toISOString();
@@ -386,10 +397,33 @@ function normalizeDependencies(deps: string | string[] | undefined): string | nu
 function validateHeartbeatInput(input: HeartbeatInput): string | null {
   if (!input || typeof input !== "object") return "must be an object";
   if (typeof input.entity !== "string" || input.entity.length === 0) return "entity is required";
+  if (tooLong(input.entity, INPUT_LIMITS.entity)) {
+    return `entity must be at most ${INPUT_LIMITS.entity} characters`;
+  }
   if (!VALID_TYPES.has(input.type)) return `type must be one of: ${[...VALID_TYPES].join(", ")}`;
   if (typeof input.time !== "number" || !Number.isFinite(input.time)) return "time must be a valid number";
   if (input.category !== undefined && !VALID_CATEGORIES.has(input.category)) {
     return `category must be one of: ${[...VALID_CATEGORIES].join(", ")}`;
+  }
+
+  // Length caps on optional body string fields (Issue #158; values from
+  // src/utils/input-limits.ts, mirroring the OpenAPI maxLength constraints).
+  // Header-derived machine/user_agent values are truncated at ingestion
+  // instead — these checks cover only what the client put in the body.
+  const cappedFields = [
+    ["project", INPUT_LIMITS.name],
+    ["branch", INPUT_LIMITS.name],
+    ["language", INPUT_LIMITS.name],
+    ["editor", INPUT_LIMITS.name],
+    ["operating_system", INPUT_LIMITS.name],
+    ["machine", INPUT_LIMITS.name],
+    ["user_agent", INPUT_LIMITS.userAgent],
+  ] as const;
+  for (const [field, cap] of cappedFields) {
+    const val = input[field];
+    if (val === undefined || val === null) continue;
+    if (typeof val !== "string") return `${field} must be a string`;
+    if (tooLong(val, cap)) return `${field} must be at most ${cap} characters`;
   }
 
   // Validate optional numeric fields when present
@@ -405,10 +439,28 @@ function validateHeartbeatInput(input: HeartbeatInput): string | null {
     return "is_write must be a boolean";
   }
 
-  if (input.dependencies !== undefined
-      && typeof input.dependencies !== "string"
-      && !Array.isArray(input.dependencies)) {
-    return "dependencies must be a string or array of strings";
+  if (input.dependencies !== undefined) {
+    const isString = typeof input.dependencies === "string";
+    if (!isString && !Array.isArray(input.dependencies)) {
+      return "dependencies must be a string or array of strings";
+    }
+    if (isString && tooLong(input.dependencies as string, INPUT_LIMITS.dependenciesString)) {
+      return `dependencies must be at most ${INPUT_LIMITS.dependenciesString} characters`;
+    }
+    // Both forms normalize to a list (see normalizeDependencies); the count
+    // and per-item caps apply to that result (FR-005).
+    const items = isString
+      ? (input.dependencies as string).split(",").map((s) => s.trim()).filter(Boolean)
+      : (input.dependencies as unknown[]);
+    if (items.length > INPUT_LIMITS.dependenciesItems) {
+      return `dependencies must have at most ${INPUT_LIMITS.dependenciesItems} items`;
+    }
+    for (const dep of items) {
+      if (typeof dep !== "string") return "dependencies must be a string or array of strings";
+      if (tooLong(dep, INPUT_LIMITS.dependencyName)) {
+        return `each dependency must be at most ${INPUT_LIMITS.dependencyName} characters`;
+      }
+    }
   }
 
   return null;

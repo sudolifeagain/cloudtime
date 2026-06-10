@@ -13,6 +13,8 @@
  * shapes leave the optional columns NULL.
  */
 
+import { INPUT_LIMITS, truncateTo } from "./input-limits";
+
 export interface ParsedUserAgent {
   /** Editor or plugin name (e.g. "vscode-wakatime"). Best-effort. */
   editor: string | null;
@@ -87,6 +89,10 @@ export async function resolveUserAgentId(
   cache?: Map<string, string>,
 ): Promise<string | null> {
   if (!value) return null;
+  // Ambient User-Agent headers may exceed the contract cap; truncate rather
+  // than reject (Issue #158, research R-5). Body-supplied values are
+  // validated upstream, so this is a no-op for them.
+  value = truncateTo(value, INPUT_LIMITS.userAgent);
   const cached = cache?.get(value);
   if (cached) return cached;
 
