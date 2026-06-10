@@ -50,5 +50,5 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/158-input-maxlength/plan.md`
+`specs/159-rate-limit-expansion/plan.md`
 <!-- SPECKIT END -->

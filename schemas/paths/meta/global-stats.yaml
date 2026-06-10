@@ -14,6 +14,10 @@ get:
     Operators can disable this endpoint entirely by setting the instance
     variable `PUBLIC_STATS` to `false`; a disabled instance responds `404`
     to every request, regardless of the range value (#156).
+
+    Rate limited at the edge (30 requests per 60-second window per truncated
+    client IP); on instances with `PUBLIC_STATS=false` the disabled `404`
+    takes precedence and the limiter is never consulted (#159).
   security: []
   parameters:
     - name: range
@@ -51,3 +55,5 @@ get:
       $ref: ../../components/responses/BadRequest.yaml
     '404':
       $ref: ../../components/responses/NotFound.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml
