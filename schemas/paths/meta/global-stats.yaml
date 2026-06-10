@@ -10,6 +10,10 @@ get:
     key per range (a client-supplied timezone would otherwise fragment the
     cache on an unauthenticated endpoint) and avoids ambiguous cross-user date
     boundaries when `summaries.date` is bucketed per user timezone (#29).
+
+    Operators can disable this endpoint entirely by setting the instance
+    variable `PUBLIC_STATS` to `false`; a disabled instance responds `404`
+    to every request, regardless of the range value (#156).
   security: []
   parameters:
     - name: range
@@ -45,3 +49,5 @@ get:
                 type: string
     '400':
       $ref: ../../components/responses/BadRequest.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
