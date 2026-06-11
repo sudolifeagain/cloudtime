@@ -1,3 +1,5 @@
+Think in English, interact with the user in Japanese.
+
 # CloudTime - Development Rules
 
 - All code, comments, commit messages, docs, and PR descriptions must be in English
