@@ -18,6 +18,7 @@ import commits from "./routes/commits";
 import dataDumps from "./routes/data-dumps";
 import machines from "./routes/machines";
 import userAgents from "./routes/user-agents";
+import { cardsPublic, cardsSettings } from "./routes/cards";
 import { aggregateHeartbeats } from "./cron/aggregate";
 import { parseRetentionDays, purgeOldHeartbeats } from "./cron/purge";
 import { processPendingDumps, purgeExpiredDumps } from "./cron/data-dumps";
@@ -137,6 +138,9 @@ app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
 // Meta routes (public, no auth — /meta, /editors, /program_languages, /stats/:range)
 app.route("/api/v1", meta);
 
+// Public embeddable card images (no auth — /users/:username/cards/:type.svg, spec 160)
+app.route("/api/v1", cardsPublic);
+
 // Auth routes (OAuth, sessions, providers — before other authenticated routes)
 app.route("/api/v1/auth", auth);
 
@@ -175,6 +179,9 @@ app.route("/api/v1/users/current", machines);
 
 // User agents routes (mounted at /users/current, sub-app defines /user_agents)
 app.route("/api/v1/users/current", userAgents);
+
+// Embed settings routes (mounted at /users/current, sub-app defines /embed_settings, spec 160)
+app.route("/api/v1/users/current", cardsSettings);
 
 // Cron trigger handler for periodic aggregation + session cleanup
 export default {
