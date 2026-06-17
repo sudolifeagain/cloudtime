@@ -52,6 +52,8 @@ tags:
     description: External time entries (calendar integrations)
   - name: commits
     description: Git commit time tracking
+  - name: embeddable_cards
+    description: Public SVG stat cards and authenticated embed configuration
   - name: orgs
     description: Organization and team management
   - name: meta
@@ -92,6 +94,14 @@ paths:
     $ref: paths/users/projects.yaml
   /users/current/data_dumps:
     $ref: paths/users/data-dumps.yaml
+  /users/{username}/cards/{card_type}.svg:
+    $ref: paths/cards/public-card.yaml
+  /users/current/embed_settings:
+    $ref: paths/cards/embed-settings.yaml
+  /users/current/embed_templates:
+    $ref: paths/cards/embed-templates.yaml
+  /users/current/embed_templates/{template_id}:
+    $ref: paths/cards/embed-template.yaml
 
   # --- heartbeats ---
   /users/current/heartbeats:

@@ -1,0 +1,29 @@
+type: object
+required:
+  - enabled
+  - freshness_minutes
+  - default_theme
+properties:
+  enabled:
+    type: boolean
+    description: Whether public embeddable cards may return coding stats.
+    default: false
+  freshness_minutes:
+    type: integer
+    description: Cache freshness window for rendered public cards.
+    minimum: 1
+    maximum: 1440
+    default: 15
+  default_theme:
+    type: string
+    description: Default built-in visual theme used when a card URL omits or provides an unknown theme.
+    minLength: 1
+    maxLength: 32
+    pattern: ^[a-z0-9_-]+$
+    default: default
+  created_at:
+    type: string
+    format: date-time
+  modified_at:
+    type: string
+    format: date-time
