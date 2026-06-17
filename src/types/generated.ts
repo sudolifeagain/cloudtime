@@ -504,6 +504,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{username}/cards/{card_type}.svg": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Render a public embeddable stats card
+         * @description Returns an SVG image suitable for embedding in a GitHub README or any
+         *     page that displays remote images. This operation is intentionally public
+         *     (`security: []`) and MUST NOT require or accept an API key in the URL.
+         *
+         *     The target user is selected by a non-secret username. If embeds are
+         *     disabled for that user, the user does not exist, or the requested template
+         *     is unavailable, the response is `404` and no cached card image is served.
+         *
+         *     Successful responses include explicit cache headers derived from the
+         *     user's freshness window. The optional `v` parameter participates in cache
+         *     keys so a user can force a refetch, but it never changes card data or
+         *     visibility.
+         */
+        get: operations["getEmbeddableCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/current/embed_settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get current user's embed settings
+         * @description Returns the authenticated user's embeddable-card settings. When no stored
+         *     row exists, the server returns default-safe settings with embeds disabled.
+         */
+        get: operations["getEmbedSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update current user's embed settings */
+        patch: operations["updateEmbedSettings"];
+        trace?: never;
+    };
+    "/users/current/embed_templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List current user's embed templates */
+        get: operations["listEmbedTemplates"];
+        put?: never;
+        /**
+         * Create an embed template
+         * @description Stores a user-defined SVG template after validating it as a safe static SVG
+         *     subset. Templates containing scripts, event-handler attributes,
+         *     `foreignObject`, external references, data URLs, remote fonts, malformed
+         *     SVG, or unknown placeholders return `400` and are not stored.
+         */
+        post: operations["createEmbedTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/current/embed_templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Embed template id. */
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        /** Get an embed template */
+        get: operations["getEmbedTemplate"];
+        put?: never;
+        post?: never;
+        /** Delete an embed template */
+        delete: operations["deleteEmbedTemplate"];
+        options?: never;
+        head?: never;
+        /**
+         * Update an embed template
+         * @description Updates an owned template. If `template_svg` is supplied, it is validated
+         *     with the same safe-static-SVG policy as template creation before storage.
+         */
+        patch: operations["updateEmbedTemplate"];
+        trace?: never;
+    };
     "/users/current/heartbeats": {
         parameters: {
             query?: never;
@@ -1362,6 +1465,51 @@ export interface components {
              * @description When the dump (and its stored object) is purged. Defaults to 7 days after creation.
              */
             expires_at?: string;
+        };
+        EmbedSettings: {
+            /**
+             * @description Whether public embeddable cards may return coding stats.
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * @description Cache freshness window for rendered public cards.
+             * @default 15
+             */
+            freshness_minutes: number;
+            /**
+             * @description Default built-in visual theme used when a card URL omits or provides an unknown theme.
+             * @default default
+             */
+            default_theme: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            modified_at?: string;
+        };
+        EmbedSettingsUpdate: {
+            /** @description Whether public embeddable cards may return coding stats. */
+            enabled?: boolean;
+            /** @description Cache freshness window for rendered public cards. */
+            freshness_minutes?: number;
+            /** @description Default built-in visual theme used when a card URL omits or provides an unknown theme. */
+            default_theme?: string;
+        };
+        EmbedTemplate: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description Safe static SVG template containing recognized CloudTime placeholder tokens. */
+            template_svg: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            modified_at: string;
+        };
+        EmbedTemplateInput: {
+            name: string;
+            /** @description Safe static SVG template containing recognized CloudTime placeholder tokens. */
+            template_svg: string;
         };
         /** @enum {string} */
         Category: "coding" | "building" | "indexing" | "debugging" | "browsing" | "running tests" | "writing tests" | "manual testing" | "writing docs" | "communicating" | "code reviewing" | "notes" | "researching" | "learning" | "designing" | "ai coding" | "advising" | "meeting" | "planning" | "supporting" | "translating";
@@ -2636,6 +2784,235 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getEmbeddableCard: {
+        parameters: {
+            query?: {
+                /** @description Optional stats range. Unsupported or missing values use the card's default range where allowed. */
+                range?: string;
+                /** @description Built-in visual theme. Unknown themes fall back to the user's default theme. */
+                theme?: string;
+                /** @description Optional custom template owned by the target user. */
+                template_id?: string;
+                /** @description Optional cache-busting value. Changes the cache key only. */
+                v?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Public CloudTime username identifying the card owner. */
+                username: string;
+                /** @description Card type to render. */
+                card_type: "heatmap" | "summary" | "languages";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SVG card image */
+            200: {
+                headers: {
+                    /** @description Public cache policy derived from the user's freshness window. */
+                    "Cache-Control"?: string;
+                    /** @description Entity tag for the rendered SVG. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/svg+xml": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getEmbedSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Embed settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["EmbedSettings"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    updateEmbedSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmbedSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Embed settings updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["EmbedSettings"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listEmbedTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of embed templates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["EmbedTemplate"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createEmbedTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmbedTemplateInput"];
+            };
+        };
+        responses: {
+            /** @description Embed template created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["EmbedTemplate"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getEmbedTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Embed template id. */
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Embed template */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["EmbedTemplate"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteEmbedTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Embed template id. */
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Embed template deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateEmbedTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Embed template id. */
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    /** @description Safe static SVG template containing recognized CloudTime placeholder tokens. */
+                    template_svg?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Embed template updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["EmbedTemplate"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     getHeartbeats: {
