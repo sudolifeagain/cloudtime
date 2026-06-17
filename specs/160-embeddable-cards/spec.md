@@ -8,6 +8,28 @@
 
 **Input**: User description: "Embeddable stat cards — continuously-updated dynamic image cards that a user embeds in their GitHub profile README (and other sites), inspired by WakaTime-compatible embeddable charts. Card types: coding-time heatmap, stats summary, top-languages. Multiple selectable themes. User-supplied custom template/background. Public ON/OFF toggle. Short configurable freshness window so the image stays current."
 
+## Background
+
+CloudTime already stores aggregated daily and hourly coding summaries and runs
+incremental aggregation from raw heartbeats. Embeddable cards expose a narrow,
+read-only public image surface over that aggregated data so the instance owner
+can place current stats in a GitHub profile README or another page that embeds
+remote images.
+
+GitHub supports Markdown image embeds from online image URLs, but remote images
+may be fetched through GitHub's anonymizing image proxy and cached independently
+from the viewer's browser. Therefore, freshness is a best-effort contract: the
+card response must publish explicit cache headers, the server must be able to
+serve a current image after the configured freshness window, and the URL must
+support a caller-changeable cache-busting parameter for immediate refreshes
+when a proxy keeps an older copy.
+
+The first implementation delivers SVG cards because GitHub displays SVG images
+and SVG keeps edge rendering lightweight. User-defined templates are treated as
+untrusted SVG input and must be constrained to a safe static subset; image
+context restrictions are not enough by themselves because a card URL can also
+be opened directly.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Embed an always-current coding-time heatmap (Priority: P1)
@@ -32,11 +54,11 @@ The person operating the CloudTime instance decides whether their coding stats m
 
 **Why this priority**: Cards are served without authentication so they can be embedded on public pages; therefore the ability to keep them private is a prerequisite for shipping the feature safely. It must land together with the first card.
 
-**Independent Test**: Toggle embeds OFF and confirm every card URL returns a non-data response (403/404); toggle ON and confirm cards render.
+**Independent Test**: Toggle embeds OFF and confirm every card URL returns `404` with no coding data and no cached card image; toggle ON and confirm cards render.
 
 **Acceptance Scenarios**:
 
-1. **Given** embeds are turned OFF, **When** any card URL is requested, **Then** no coding data is returned (the request is refused).
+1. **Given** embeds are turned OFF, **When** any card URL is requested, **Then** the response is `404 Not Found` with no coding data.
 2. **Given** embeds are turned ON, **When** a card URL is requested, **Then** the card renders normally.
 3. **Given** any card URL, **When** it is inspected, **Then** it contains no API key or secret credential.
 
@@ -103,14 +125,15 @@ Beyond the built-in presets, a user supplies their own card template containing 
 
 ### Edge Cases
 
-- **Embeds OFF**: every card URL must refuse to return data (no leak), not merely hide the link.
+- **Embeds OFF**: every card URL must return `404` before cache lookup or data reads (no leak), not merely hide the link.
 - **No activity / new user**: cards must render a valid, readable "no activity yet" state — never a broken image.
 - **Invalid theme name**: fall back to the default theme instead of erroring.
 - **Today not yet aggregated**: today's column/number must still reflect activity recorded since the last aggregation run (freshness must not depend solely on the periodic aggregation cadence).
 - **Timezone**: day boundaries (which day a heartbeat counts toward, "best day", today's column) must use the user's configured timezone.
 - **Image proxy caching**: consumers like GitHub proxy and cache embedded images; the freshness window must be expressible so the proxy refetches on a reasonable cadence, while accepting the proxy's own cache as a best-effort upper bound on staleness.
 - **High view volume**: a popular README can drive many image requests; cards must be cacheable and rate-limitable so the instance stays within edge-platform limits.
-- **Oversized/malformed custom base**: must be validated and rejected within size limits.
+- **Oversized/malformed custom template or background**: must be validated and rejected within size limits.
+- **Direct SVG access**: opening the SVG URL directly must not execute user-supplied scripts or load user-supplied external resources.
 
 ## Requirements *(mandatory)*
 
@@ -122,19 +145,23 @@ Beyond the built-in presets, a user supplies their own card template containing 
 - **FR-004**: System MUST provide a **stats summary** card showing total time, daily average, best day, and top language for a selectable time range.
 - **FR-005**: System MUST provide a **top-languages** card showing each top language and its relative share of coding time.
 - **FR-006**: Users MUST be able to select among multiple built-in visual themes; an unknown or invalid theme MUST fall back to a default theme rather than fail.
-- **FR-007**: Users MUST be able to supply a custom card template containing recognized placeholder tokens; the system MUST fill those placeholders with the user's current stats and MUST reject templates that exceed size limits or contain unsupported/unsafe content (scripts, external resource references, or unknown placeholder tokens).
-- **FR-008**: Operators MUST be able to turn embeddable cards ON or OFF; when OFF, every card URL MUST refuse to return any coding data.
+- **FR-007**: Users MUST be able to supply a custom card template containing recognized placeholder tokens; the system MUST fill those placeholders with the user's current stats and MUST reject templates that exceed size limits or contain unsupported/unsafe content (scripts, event-handler attributes, external resource references, active document features, or unknown placeholder tokens).
+- **FR-008**: Operators MUST be able to turn embeddable cards ON or OFF; the default MUST be OFF, and when OFF every card URL MUST return `404` before any cached image or coding data can be returned.
 - **FR-009**: Card URLs MUST NOT require, contain, or expose the user's API key or any secret credential.
-- **FR-010**: System MUST provide a configurable freshness window controlling how current an embedded image is, so operators can trade staleness against load.
+- **FR-010**: System MUST provide a configurable freshness window controlling response cache directives and server-side card cache TTL, so operators can trade staleness against load.
 - **FR-011**: Cards MUST NOT expose data the operator has chosen to keep private; visibility settings MUST be honored consistently across all card types.
 - **FR-012**: Cards MUST render a valid, readable result when the user has zero recorded activity (no broken image).
 - **FR-013**: All day-boundary and time-of-day calculations underlying a card MUST use the user's configured timezone.
-- **FR-014**: Card data and any custom base MUST be scoped to a specific user, preserving the path to multi-user support even though single-user is the default.
-- **FR-015**: System MUST allow a card to be re-fetched on demand bypassing cached copies (e.g. via a changeable URL parameter) so a user can force an immediate update when needed.
+- **FR-014**: Card data and any custom template MUST be scoped to a specific user, preserving the path to multi-user support even though single-user is the default.
+- **FR-015**: System MUST allow a card to be re-fetched on demand bypassing cached copies via a changeable URL parameter that participates in cache keys but does not change the card's data or visibility.
+- **FR-016**: Public card responses MUST be valid SVG images served with an image media type, explicit cache headers derived from the freshness window, and no cookies or user-private headers.
+- **FR-017**: Custom templates MUST be restricted to a safe static SVG subset; the rendered SVG MUST NOT contain scripts, event-handler attributes, `foreignObject`, external `href`/`xlink:href` references, remote fonts, or data URLs supplied by the user.
+- **FR-018**: Public card URLs MUST identify the target user with a non-secret stable identifier, not with an API key or session-bound value.
 
 ### Key Entities *(include if feature involves data)*
 
 - **Embeddable Card**: a rendered image of a user's coding stats. Attributes: card type (heatmap / summary / top-languages), selected theme, time range, target user, and freshness metadata. Derived from aggregated data; not stored as user-editable content.
+- **Embed Settings**: per-user settings controlling public card visibility, freshness window, and default theme.
 - **Theme**: a named visual preset defining colors and typography only — never which data is shown.
 - **Custom Card Template**: a user-supplied template containing placeholder tokens for stat values. Scoped to a user; subject to size limits and a safe-content policy (no scripts or external references); only a defined set of placeholder tokens is recognized and substituted.
 - **Embed Visibility Setting**: configuration controlling whether cards are publicly retrievable for a user/instance.
@@ -152,20 +179,21 @@ Beyond the built-in presets, a user supplies their own card template containing 
 - **SC-006**: No card URL exposes an API key or secret credential (verifiable by inspection of any generated URL).
 - **SC-007**: Cards render a valid image in 100% of cases including zero-activity users (no broken images).
 - **SC-008**: A user can force an immediate refresh of a card and see updated data on the next view.
+- **SC-009**: A supplied unsafe template (script, event handler, external reference, `foreignObject`, data URL, or unknown placeholder) is rejected 100% of the time before it can be rendered.
 
 ## Assumptions
 
 - Cards intentionally present **aggregated** stats (totals, per-day intensity, per-language share), never raw individual heartbeats.
 - The data source is CloudTime's **existing aggregated summaries, hourly summaries, and commit data**; the current day is computed on demand so freshness does not depend solely on the periodic aggregation cadence.
 - **Single-user mode is the default**; user scoping is retained throughout for a future multi-user upgrade, but no multi-user logic is built now (per constitution Principle V).
-- The default **freshness window is short** (assumed ~15 minutes) and is configurable; an external image proxy's own caching is accepted as a best-effort upper bound on staleness, mitigated by a force-refresh mechanism (FR-015).
-- Cards are delivered as **vector images** suitable for README embedding; raster (PNG/JPG) output is out of scope for the first version.
+- The default **freshness window is short** (15 minutes) and is configurable; an external image proxy's own caching is accepted as a best-effort upper bound on staleness, mitigated by a force-refresh mechanism (FR-015).
+- Cards are delivered as **SVG vector images** suitable for README embedding; raster (PNG/JPG) output is out of scope for the first version.
 - **Themes are styling-only** (colors/typography) and apply uniformly across card types.
-- A user-supplied custom template is stored using the project's **existing object-storage capability** and is treated as untrusted input: only a defined set of stat placeholder tokens is substituted, and scripts/external references are stripped or rejected to satisfy image-proxy sanitization constraints.
+- A user-supplied custom template is durable user data managed by CloudTime and is treated as untrusted input: only a defined set of stat placeholder tokens is substituted, and unsafe SVG constructs are rejected before storage or rendering.
 - Access to cards is **read-only**; cards never mutate data.
 
 ## Dependencies
 
 - Existing aggregation pipeline (daily/hourly summaries) and commit data.
 - Existing per-user settings (timezone) and public-visibility settings.
-- Existing object storage for user-supplied custom templates.
+- Durable per-user storage for embed settings and user-supplied custom templates.

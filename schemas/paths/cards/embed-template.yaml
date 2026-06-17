@@ -1,0 +1,84 @@
+parameters:
+  - name: template_id
+    in: path
+    required: true
+    description: Embed template id.
+    schema:
+      type: string
+      format: uuid
+get:
+  operationId: getEmbedTemplate
+  tags:
+    - embeddable_cards
+  summary: Get an embed template
+  responses:
+    '200':
+      description: Embed template
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/EmbedTemplate.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
+patch:
+  operationId: updateEmbedTemplate
+  tags:
+    - embeddable_cards
+  summary: Update an embed template
+  description: |
+    Updates an owned template. If `template_svg` is supplied, it is validated
+    with the same safe-static-SVG policy as template creation before storage.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          minProperties: 1
+          properties:
+            name:
+              type: string
+              minLength: 1
+              maxLength: 64
+            template_svg:
+              type: string
+              description: Safe static SVG template containing recognized CloudTime placeholder tokens.
+              minLength: 1
+              maxLength: 20000
+  responses:
+    '200':
+      description: Embed template updated
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/EmbedTemplate.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
+delete:
+  operationId: deleteEmbedTemplate
+  tags:
+    - embeddable_cards
+  summary: Delete an embed template
+  responses:
+    '204':
+      description: Embed template deleted
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml

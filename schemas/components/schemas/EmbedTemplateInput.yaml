@@ -1,0 +1,14 @@
+type: object
+required:
+  - name
+  - template_svg
+properties:
+  name:
+    type: string
+    minLength: 1
+    maxLength: 64
+  template_svg:
+    type: string
+    description: Safe static SVG template containing recognized CloudTime placeholder tokens.
+    minLength: 1
+    maxLength: 20000

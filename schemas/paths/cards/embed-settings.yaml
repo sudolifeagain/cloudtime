@@ -1,0 +1,49 @@
+get:
+  operationId: getEmbedSettings
+  tags:
+    - embeddable_cards
+  summary: Get current user's embed settings
+  description: |
+    Returns the authenticated user's embeddable-card settings. When no stored
+    row exists, the server returns default-safe settings with embeds disabled.
+  responses:
+    '200':
+      description: Embed settings
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/EmbedSettings.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+patch:
+  operationId: updateEmbedSettings
+  tags:
+    - embeddable_cards
+  summary: Update current user's embed settings
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../../components/schemas/EmbedSettingsUpdate.yaml
+  responses:
+    '200':
+      description: Embed settings updated
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/EmbedSettings.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

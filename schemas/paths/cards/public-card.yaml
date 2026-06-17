@@ -1,0 +1,89 @@
+get:
+  operationId: getEmbeddableCard
+  tags:
+    - embeddable_cards
+  summary: Render a public embeddable stats card
+  description: |
+    Returns an SVG image suitable for embedding in a GitHub README or any
+    page that displays remote images. This operation is intentionally public
+    (`security: []`) and MUST NOT require or accept an API key in the URL.
+
+    The target user is selected by a non-secret username. If embeds are
+    disabled for that user, the user does not exist, or the requested template
+    is unavailable, the response is `404` and no cached card image is served.
+
+    Successful responses include explicit cache headers derived from the
+    user's freshness window. The optional `v` parameter participates in cache
+    keys so a user can force a refetch, but it never changes card data or
+    visibility.
+  security: []
+  parameters:
+    - name: username
+      in: path
+      required: true
+      description: Public CloudTime username identifying the card owner.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    - name: card_type
+      in: path
+      required: true
+      description: Card type to render.
+      schema:
+        type: string
+        enum:
+          - heatmap
+          - summary
+          - languages
+    - name: range
+      in: query
+      required: false
+      description: Optional stats range. Unsupported or missing values use the card's default range where allowed.
+      schema:
+        type: string
+        maxLength: 32
+    - name: theme
+      in: query
+      required: false
+      description: Built-in visual theme. Unknown themes fall back to the user's default theme.
+      schema:
+        type: string
+        maxLength: 32
+        pattern: ^[a-zA-Z0-9_-]+$
+    - name: template_id
+      in: query
+      required: false
+      description: Optional custom template owned by the target user.
+      schema:
+        type: string
+        format: uuid
+    - name: v
+      in: query
+      required: false
+      description: Optional cache-busting value. Changes the cache key only.
+      schema:
+        type: string
+        maxLength: 64
+  responses:
+    '200':
+      description: SVG card image
+      headers:
+        Cache-Control:
+          description: Public cache policy derived from the user's freshness window.
+          schema:
+            type: string
+        ETag:
+          description: Entity tag for the rendered SVG.
+          schema:
+            type: string
+      content:
+        image/svg+xml:
+          schema:
+            type: string
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
+    '429':
+      $ref: ../../components/responses/TooManyRequests.yaml

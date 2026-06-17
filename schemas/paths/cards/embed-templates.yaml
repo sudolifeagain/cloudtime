@@ -1,0 +1,53 @@
+get:
+  operationId: listEmbedTemplates
+  tags:
+    - embeddable_cards
+  summary: List current user's embed templates
+  responses:
+    '200':
+      description: List of embed templates
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/EmbedTemplate.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+post:
+  operationId: createEmbedTemplate
+  tags:
+    - embeddable_cards
+  summary: Create an embed template
+  description: |
+    Stores a user-defined SVG template after validating it as a safe static SVG
+    subset. Templates containing scripts, event-handler attributes,
+    `foreignObject`, external references, data URLs, remote fonts, malformed
+    SVG, or unknown placeholders return `400` and are not stored.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../../components/schemas/EmbedTemplateInput.yaml
+  responses:
+    '201':
+      description: Embed template created
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/EmbedTemplate.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
