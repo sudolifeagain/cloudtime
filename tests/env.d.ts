@@ -31,6 +31,7 @@ declare global {
       RATE_LIMIT_OAUTH_CALLBACK?: import("../src/types").RateLimit;
       RATE_LIMIT_LINK_VERIFY?: import("../src/types").RateLimit;
       RATE_LIMIT_PUBLIC_STATS?: import("../src/types").RateLimit;
+      RATE_LIMIT_EMBED_CARDS?: import("../src/types").RateLimit;
     }
   }
 }

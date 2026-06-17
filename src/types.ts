@@ -61,6 +61,9 @@ export interface Env {
   // (30/60s); see specs/159-rate-limit-expansion/.
   RATE_LIMIT_LINK_VERIFY?: RateLimit;
   RATE_LIMIT_PUBLIC_STATS?: RateLimit;
+  // Spec 160: unauthenticated public embeddable-card route. Optional —
+  // rate-limit middleware fails open when undefined.
+  RATE_LIMIT_EMBED_CARDS?: RateLimit;
 
   // Email delivery (Issue #80). Required in multi-user mode for the
   // out-of-band PendingLink verification flow. Single-user mode does not
