@@ -9,9 +9,9 @@
 
 CREATE TABLE IF NOT EXISTS embed_settings (
   user_id TEXT PRIMARY KEY,
-  enabled INTEGER NOT NULL DEFAULT 0,
-  freshness_minutes INTEGER NOT NULL DEFAULT 15,
-  default_theme TEXT NOT NULL DEFAULT 'default',
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  freshness_minutes INTEGER NOT NULL DEFAULT 15 CHECK (freshness_minutes BETWEEN 1 AND 1440),
+  default_theme TEXT NOT NULL DEFAULT 'default' CHECK (length(default_theme) BETWEEN 1 AND 32),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   modified_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

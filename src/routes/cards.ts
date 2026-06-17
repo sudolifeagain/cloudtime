@@ -27,6 +27,9 @@ const DEFAULT_SETTINGS: EmbedSettings = {
 const FRESHNESS_MIN = 1;
 const FRESHNESS_MAX = 1440; // one day
 const THEME_NAME_MAX = 32;
+const THEME_NAME_RE = /^[a-z0-9_-]+$/;
+const USERNAME_MAX = 64;
+const CACHE_BUSTER_MAX = 64;
 
 interface SettingsRow {
   enabled: number;
@@ -70,18 +73,20 @@ cardsSettings.get("/embed_settings", async (c) => {
 cardsSettings.patch("/embed_settings", async (c) => {
   const userId = c.get("userId");
   const body = (await c.req.json().catch(() => null)) as EmbedSettingsUpdate | null;
-  if (!body || typeof body !== "object") {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return c.json({ error: "Invalid request body" }, 400);
   }
 
   const current = await loadEmbedSettings(c.env.DB, userId);
   const next: EmbedSettings = { ...current };
+  let updates = 0;
 
   if ("enabled" in body) {
     if (typeof body.enabled !== "boolean") {
       return c.json({ error: "enabled must be a boolean" }, 400);
     }
     next.enabled = body.enabled;
+    updates++;
   }
   if ("freshness_minutes" in body) {
     const n = body.freshness_minutes;
@@ -97,13 +102,26 @@ cardsSettings.patch("/embed_settings", async (c) => {
       );
     }
     next.freshness_minutes = n;
+    updates++;
   }
   if ("default_theme" in body) {
     const t = body.default_theme;
-    if (typeof t !== "string" || t.length < 1 || t.length > THEME_NAME_MAX) {
-      return c.json({ error: `default_theme must be a string of 1-${THEME_NAME_MAX} characters` }, 400);
+    if (
+      typeof t !== "string" ||
+      t.length < 1 ||
+      t.length > THEME_NAME_MAX ||
+      !THEME_NAME_RE.test(t)
+    ) {
+      return c.json(
+        { error: `default_theme must be 1-${THEME_NAME_MAX} lowercase letters, numbers, hyphens, or underscores` },
+        400,
+      );
     }
-    next.default_theme = t;
+    next.default_theme = resolveThemeName(t);
+    updates++;
+  }
+  if (updates === 0) {
+    return c.json({ error: "No fields to update" }, 400);
   }
 
   await c.env.DB
@@ -140,6 +158,10 @@ function notFound(c: Context): Response {
   return c.json({ error: "Not found" }, 404, { "Cache-Control": "no-store" });
 }
 
+function badRequest(c: Context, error: string): Response {
+  return c.json({ error }, 400);
+}
+
 interface PublicUserRow {
   id: string;
   username: string;
@@ -150,6 +172,9 @@ interface PublicUserRow {
 cardsPublic.get("/users/:username/cards/:file", async (c) => {
   const username = c.req.param("username");
   const file = c.req.param("file");
+  if (username.length < 1 || username.length > USERNAME_MAX) {
+    return badRequest(c, `username must be 1-${USERNAME_MAX} characters`);
+  }
   if (!file.endsWith(".svg")) return notFound(c);
   const cardType = file.slice(0, -".svg".length);
   if (!IMPLEMENTED_CARD_TYPES.has(cardType)) return notFound(c);
@@ -178,6 +203,9 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
 
   const themeName = resolveThemeName(c.req.query("theme") ?? settings.default_theme);
   const v = c.req.query("v") ?? "";
+  if (v.length > CACHE_BUSTER_MAX) {
+    return badRequest(c, `v must be at most ${CACHE_BUSTER_MAX} characters`);
+  }
   const ifNoneMatch = c.req.raw.headers.get("If-None-Match");
 
   const cacheKey = buildCardCacheKey({
@@ -220,7 +248,7 @@ function svgResponse(
   ifNoneMatch: string | null,
 ): Response {
   const cacheControl = cardCacheControl(freshnessMinutes);
-  if (ifNoneMatch && ifNoneMatch === etag) {
+  if (ifNoneMatch && etagMatches(ifNoneMatch, etag)) {
     return new Response(null, {
       status: 304,
       headers: { ETag: etag, "Cache-Control": cacheControl },
@@ -234,4 +262,19 @@ function svgResponse(
       ETag: etag,
     },
   });
+}
+
+function normalizeEtagForComparison(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.startsWith("W/") ? trimmed.slice(2).trim() : trimmed;
+}
+
+function etagMatches(ifNoneMatch: string, etag: string): boolean {
+  const current = normalizeEtagForComparison(etag);
+  return ifNoneMatch
+    .split(",")
+    .some((candidate) => {
+      const normalized = normalizeEtagForComparison(candidate);
+      return normalized === "*" || normalized === current;
+    });
 }

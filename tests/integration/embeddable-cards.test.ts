@@ -62,6 +62,30 @@ describe("embeddable cards — public visibility", () => {
     expect(svg).not.toContain(user.apiKey);
   });
 
+  it("honors weak and listed If-None-Match validators", async () => {
+    const user = await seedUser({ username: "etag_user" });
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
+
+    const first = await call(`/api/v1/users/${user.username}/cards/heatmap.svg`);
+    expect(first.status).toBe(200);
+    const etag = first.headers.get("ETag");
+    expect(etag).toBeTruthy();
+
+    const revalidated = await call(`/api/v1/users/${user.username}/cards/heatmap.svg`, {
+      headers: { "If-None-Match": `"miss", W/${etag}` },
+    });
+    expect(revalidated.status).toBe(304);
+    expect(await revalidated.text()).toBe("");
+  });
+
+  it("rejects an overlong cache-busting value before building a KV key", async () => {
+    const user = await seedUser({ username: "cache_key" });
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
+
+    const res = await call(`/api/v1/users/${user.username}/cards/heatmap.svg?v=${"x".repeat(65)}`);
+    expect(res.status).toBe(400);
+  });
+
   it("returns 404 even with a warm cache after embeds are turned OFF", async () => {
     const user = await seedUser({ username: "bob" });
     await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
@@ -116,6 +140,26 @@ describe("embeddable cards — settings auth", () => {
     const user = await seedUser({ username: "erin" });
     const res = await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { freshness_minutes: 0 }));
     expect(res.status).toBe(400);
+  });
+
+  it("rejects an empty settings patch", async () => {
+    const user = await seedUser({ username: "grace" });
+    const res = await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, {}));
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects default_theme values outside the OpenAPI pattern", async () => {
+    const user = await seedUser({ username: "heidi" });
+    const res = await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { default_theme: "Dark Mode" }));
+    expect(res.status).toBe(400);
+  });
+
+  it("normalizes an unknown but syntactically valid default theme to default", async () => {
+    const user = await seedUser({ username: "ivan" });
+    const res = await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { default_theme: "future_theme" }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { default_theme: string } };
+    expect(body.data.default_theme).toBe("default");
   });
 
   it("defaults to OFF with a 15-minute freshness window", async () => {
