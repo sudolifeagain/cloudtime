@@ -9,8 +9,9 @@ Designed for **individual developers** who want full control over their coding m
 
 ## Features
 
-- Full API compatibility with WakaTime editor plugins (90+ editors)
+- Full API compatibility with WakaTime-compatible editor plugins
 - OAuth login (GitHub / Google / Discord) with multi-provider linking
+- Web dashboard for owner sign-in, API key rotation, and recent activity
 - Heartbeat tracking, summaries, stats, durations, goals, insights
 - Runs entirely on Cloudflare's free tier (Workers + D1 + KV)
 - Single-user by default, with multi-user/team mode planned
@@ -62,12 +63,18 @@ $key | npx wrangler secret put ENCRYPTION_KEY --config wrangler.local.toml
 
 ```powershell
 # Deploy to Cloudflare when using wrangler.local.toml
-npx wrangler deploy --config wrangler.local.toml
+npm run deploy -- --config wrangler.local.toml
+```
+
+Open the deployed dashboard:
+
+```text
+https://your-cloudtime-instance.workers.dev/app
 ```
 
 ### 4. Connect your editor
 
-After your first OAuth login, generate an API key from your authenticated session. Configure your WakaTime-compatible editor plugin to point to your instance:
+After your first OAuth login, generate an API key from the dashboard. Configure your WakaTime-compatible editor plugin to point to your instance:
 
 ```ini
 # ~/.wakatime.cfg
@@ -92,6 +99,7 @@ This project follows **Schema Driven Development (SDD)** with automated PR revie
 
 ```bash
 npm run generate   # Generate TypeScript types from OpenAPI schema
+npm run build:css  # Build Tailwind CSS + daisyUI assets
 npm run dev        # Run locally
 npm run deploy     # Deploy to Cloudflare
 ```
@@ -101,7 +109,7 @@ npm run deploy     # Deploy to Cloudflare
 | [docs/development-flow.md](docs/development-flow.md) | SDD workflow, milestones, branching strategy |
 | [docs/auth-design.md](docs/auth-design.md) | OAuth, sessions, security design |
 | [docs/cloudflare-constraints.md](docs/cloudflare-constraints.md) | Platform limits and mitigation strategies |
-| [docs/wakatime-feature-research.md](docs/wakatime-feature-research.md) | Feature research from WakaTime |
+| [docs/wakatime-feature-research.md](docs/wakatime-feature-research.md) | WakaTime-compatible feature research |
 | [schemas/openapi.yaml](schemas/openapi.yaml) | API specification (Single Source of Truth) |
 
 ## Project Structure
@@ -111,6 +119,7 @@ schemas/openapi.yaml         # OpenAPI 3.1 spec (SSoT)
 src/
   index.ts                   # App entry point
   routes/                    # API route handlers
+  ui/                        # Server-rendered web UI components and CSS input
   types.ts                   # Cloudflare Workers bindings (Env)
   types/generated.ts         # Auto-generated from schema (do not edit)
   utils/auth.ts              # Authentication
@@ -127,4 +136,4 @@ MIT
 
 ## Disclaimer
 
-cloudtime is not affiliated with or endorsed by WakaTime. WakaTime is a trademark of WakaTime.
+cloudtime is an independent WakaTime-compatible project.
