@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { csrf } from "hono/csrf";
 import { secureHeaders } from "hono/secure-headers";
 import type { Env } from "./types";
+import webApp from "./routes/app";
 import meta from "./routes/meta";
 import auth from "./routes/auth";
 import heartbeats from "./routes/heartbeats";
@@ -53,6 +54,9 @@ app.use(
   secureHeaders({
     contentSecurityPolicy: {
       defaultSrc: ["'none'"],
+      baseUri: ["'none'"],
+      formAction: ["'self'"],
+      styleSrc: ["'self'"],
       frameAncestors: ["'none'"],
     },
   }),
@@ -134,6 +138,9 @@ app.use("/*", async (c, next) => {
 
 // Health check
 app.get("/api/v1/health", (c) => c.json({ status: "ok" }));
+
+// Web UI
+app.route("/", webApp);
 
 // Meta routes (public, no auth — /meta, /editors, /program_languages, /stats/:range)
 app.route("/api/v1", meta);

@@ -1,0 +1,272 @@
+import { DataTable, EmptyState, MetricCard, Notice, Panel, ProgressRow } from "./components";
+
+export type ProviderLink = {
+  provider: string;
+  username: string | null;
+  email: string | null;
+};
+
+export type ProjectSummary = {
+  name: string;
+  totalSeconds: number;
+  lastHeartbeatAt: number | null;
+};
+
+export type CategorySummary = {
+  name: string;
+  totalSeconds: number;
+};
+
+export type RecentHeartbeat = {
+  entity: string;
+  type: string;
+  time: number;
+  project: string | null;
+  language: string | null;
+  category: string | null;
+  editor: string | null;
+  machine: string | null;
+  isWrite: boolean;
+};
+
+export type DashboardData = {
+  user: {
+    username: string;
+    displayName: string | null;
+    email: string | null;
+    timezone: string;
+    timeout: number;
+  };
+  today: {
+    date: string;
+    totalSeconds: number;
+  };
+  last30DaysSeconds: number;
+  allTimeSeconds: number;
+  heartbeatCount: number;
+  aiHeartbeatCount: number;
+  activeSessionCount: number;
+  machineCount: number;
+  userAgentCount: number;
+  apiBaseUrl: string;
+  providers: ProviderLink[];
+  projects: ProjectSummary[];
+  categories: CategorySummary[];
+  recentHeartbeats: RecentHeartbeat[];
+};
+
+export type LoginProvider = {
+  id: string;
+  label: string;
+  href: string;
+};
+
+export function LoginView({ providers }: { providers: LoginProvider[] }) {
+  return (
+    <div class="grid min-h-[calc(100vh-9rem)] place-items-center">
+      <Panel class="w-full max-w-md">
+        <div class="space-y-5">
+          <div>
+            <h1 class="text-2xl font-semibold tracking-normal">CloudTime</h1>
+            <p class="mt-2 text-sm text-base-content/60">
+              Sign in to manage your coding activity.
+            </p>
+          </div>
+          {providers.length > 0 ? (
+            <div class="grid gap-2">
+              {providers.map((provider) => (
+                <a class="btn btn-primary w-full" href={provider.href}>
+                  Continue with {provider.label}
+                </a>
+              ))}
+            </div>
+          ) : (
+            <Notice tone="warning">No OAuth provider is configured.</Notice>
+          )}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+export function DashboardView({
+  data,
+  generatedApiKey,
+}: {
+  data: DashboardData;
+  generatedApiKey?: string;
+}) {
+  const displayName = data.user.displayName || data.user.username;
+  const maxProjectSeconds = Math.max(...data.projects.map((p) => p.totalSeconds), 0);
+  const maxCategorySeconds = Math.max(...data.categories.map((c) => c.totalSeconds), 0);
+
+  return (
+    <>
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p class="text-sm font-medium text-primary">Dashboard</p>
+          <h1 class="mt-1 text-3xl font-semibold tracking-normal">{displayName}</h1>
+          <p class="mt-2 text-sm text-base-content/60">
+            {data.user.timezone} / {data.user.timeout} min timeout
+          </p>
+        </div>
+        <a class="btn btn-outline btn-sm" href="/api/v1/health">
+          API health
+        </a>
+      </div>
+
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard
+          label={`Today (${data.today.date})`}
+          value={formatSeconds(data.today.totalSeconds)}
+          detail="Aggregated coding time"
+        />
+        <MetricCard
+          label="Last 30 days"
+          value={formatSeconds(data.last30DaysSeconds)}
+          detail="From daily summaries"
+        />
+        <MetricCard
+          label="All time"
+          value={formatSeconds(data.allTimeSeconds)}
+          detail={`${data.heartbeatCount.toLocaleString()} heartbeats`}
+        />
+        <MetricCard
+          label="AI coding"
+          value={data.aiHeartbeatCount.toLocaleString()}
+          detail="Stored heartbeat count"
+        />
+      </section>
+
+      <div class="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <Panel title="API key">
+          <div class="space-y-4">
+            {generatedApiKey ? (
+              <Notice tone="success">A new API key was generated.</Notice>
+            ) : null}
+            <div class="rounded-lg bg-base-200 p-4">
+              <pre class="ct-mono whitespace-pre-wrap break-all">
+                {generatedApiKey
+                  ? generatedApiKey
+                  : `[settings]\napi_url = ${data.apiBaseUrl}\napi_key = <regenerate to reveal>`}
+              </pre>
+            </div>
+            <form method="post" action="/app/api-key">
+              <button class="btn btn-primary" type="submit">
+                Regenerate API key
+              </button>
+            </form>
+          </div>
+        </Panel>
+
+        <Panel title="Account">
+          <dl class="grid gap-3 text-sm">
+            <InfoRow label="Email" value={data.user.email ?? "Not set"} />
+            <InfoRow label="Providers" value={data.providers.length.toString()} />
+            <InfoRow label="Active sessions" value={data.activeSessionCount.toString()} />
+            <InfoRow label="Machines" value={data.machineCount.toString()} />
+            <InfoRow label="Clients" value={data.userAgentCount.toString()} />
+          </dl>
+        </Panel>
+      </div>
+
+      <div class="grid gap-6 lg:grid-cols-2">
+        <Panel title="Projects">
+          {data.projects.length > 0 ? (
+            <div class="space-y-4">
+              {data.projects.map((project) => (
+                <ProgressRow
+                  label={project.name}
+                  value={formatSeconds(project.totalSeconds)}
+                  percent={maxProjectSeconds > 0 ? (project.totalSeconds / maxProjectSeconds) * 100 : 0}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState>No project summaries yet.</EmptyState>
+          )}
+        </Panel>
+
+        <Panel title="Categories">
+          {data.categories.length > 0 ? (
+            <div class="space-y-4">
+              {data.categories.map((category) => (
+                <ProgressRow
+                  label={category.name}
+                  value={formatSeconds(category.totalSeconds)}
+                  percent={maxCategorySeconds > 0 ? (category.totalSeconds / maxCategorySeconds) * 100 : 0}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState>No category summaries yet.</EmptyState>
+          )}
+        </Panel>
+      </div>
+
+      <Panel title="Recent heartbeats">
+        <DataTable
+          headers={["Time", "Entity", "Project", "Language", "Category", "Client"]}
+          empty="No heartbeats received yet."
+          rows={data.recentHeartbeats.map((heartbeat) => [
+            formatDateTime(heartbeat.time, data.user.timezone),
+            <div class="min-w-56">
+              <div class="truncate font-medium">{heartbeat.entity}</div>
+              <div class="text-xs text-base-content/50">
+                {heartbeat.type}
+                {heartbeat.isWrite ? " / write" : ""}
+              </div>
+            </div>,
+            heartbeat.project ?? "Unknown",
+            heartbeat.language ?? "Unknown",
+            heartbeat.category ?? "coding",
+            <div>
+              <div>{heartbeat.editor ?? "Unknown"}</div>
+              <div class="text-xs text-base-content/50">{heartbeat.machine ?? "No machine"}</div>
+            </div>,
+          ])}
+        />
+      </Panel>
+
+      <Panel title="Linked providers">
+        <DataTable
+          headers={["Provider", "Username", "Email"]}
+          empty="No linked providers."
+          rows={data.providers.map((provider) => [
+            provider.provider,
+            provider.username ?? "Unknown",
+            provider.email ?? "Not shared",
+          ])}
+        />
+      </Panel>
+    </>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div class="flex items-center justify-between gap-4 border-b border-base-200 pb-2 last:border-b-0 last:pb-0">
+      <dt class="text-base-content/60">{label}</dt>
+      <dd class="min-w-0 truncate font-medium">{value}</dd>
+    </div>
+  );
+}
+
+function formatSeconds(totalSeconds: number): string {
+  if (totalSeconds <= 0) return "0 mins";
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours === 0) return `${minutes} min${minutes === 1 ? "" : "s"}`;
+  if (minutes === 0) return `${hours} hr${hours === 1 ? "" : "s"}`;
+  return `${hours} hr${hours === 1 ? "" : "s"} ${minutes} min${minutes === 1 ? "" : "s"}`;
+}
+
+function formatDateTime(epochSeconds: number, timezone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(epochSeconds * 1000));
+}

@@ -5,7 +5,8 @@
  */
 import { Hono } from "hono";
 import type { SessionAuthEnv } from "../../types";
-import { generateApiKey, decryptToken } from "../../utils/crypto";
+import { decryptToken } from "../../utils/crypto";
+import { rotateApiKey } from "../../utils/api-key";
 import { isValidProvider, revokeProviderToken, type OAuthProvider } from "../../utils/oauth";
 import {
   invalidateSession,
@@ -291,22 +292,8 @@ sessions.post("/api-key", async (c) => {
     const userId = c.get("userId");
     const currentTokenHash = c.get("sessionTokenHash");
 
-    const user = await c.env.DB.prepare("SELECT api_key_hash FROM users WHERE id = ?")
-      .bind(userId)
-      .first<{ api_key_hash: string }>();
-
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
-
-    const { plaintext, hash } = await generateApiKey();
-
-    // Delete old API key from KV cache before updating DB to prevent stale cache hits.
-    // If the DB update fails after this, the old key is still valid in D1 and will
-    // be re-cached on next use.
-    await c.env.KV.delete(`apikey:${user.api_key_hash}`);
-
-    await c.env.DB.prepare("UPDATE users SET api_key_hash = ?, modified_at = datetime('now') WHERE id = ?")
-      .bind(hash, userId)
-      .run();
+    const plaintext = await rotateApiKey(c.env.DB, c.env.KV, userId);
+    if (!plaintext) return c.json({ error: "Unauthorized" }, 401);
 
     await invalidateOtherSessions(c.env.DB, c.env.KV, userId, currentTokenHash);
 
