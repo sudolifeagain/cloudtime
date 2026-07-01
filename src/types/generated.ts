@@ -347,8 +347,9 @@ export interface paths {
          *     The new key is the only value returned; it cannot be retrieved again.
          *
          *     **Security measures:**
-         *     - New key: 32 bytes of cryptographic randomness, base64url-encoded, prefixed with `ck_`.
-         *       The `ck_` prefix enables secret scanning in Git repositories.
+         *     - New key: UUID v4 string generated from the Web Crypto CSPRNG.
+         *       The UUID shape is for client compatibility; security relies on
+         *       unguessable random output and hash-only storage.
          *     - Storage: only the SHA-256 hash of the key is stored in the database.
          *     - KV cache: the old key's cache entry is explicitly deleted (not relying on TTL expiry).
          *     - All other active sessions for this user are invalidated (forces re-authentication
@@ -2558,7 +2559,8 @@ export interface operations {
                     "application/json": {
                         data: {
                             /**
-                             * @description New API key (ck_...). This is the only time the plaintext is available.
+                             * Format: uuid
+                             * @description New UUID API key. This is the only time the plaintext is available.
                              *     Store it securely; it cannot be retrieved from the server.
                              */
                             api_key: string;

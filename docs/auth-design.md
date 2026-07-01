@@ -7,7 +7,7 @@ cloudtime uses OAuth 2.0 with PKCE for user authentication. Three providers are 
 - Google
 - Discord
 
-One user account can link multiple OAuth providers. Editor plugins use a permanent API key (`ck_` prefix).
+One user account can link multiple OAuth providers. Editor plugins use a permanent UUID API key.
 
 ## Instance Modes
 
@@ -32,7 +32,7 @@ Controlled by `INSTANCE_MODE` environment variable:
 
 | Context | Method | Lifetime |
 |---------|--------|----------|
-| Editor plugins | API key (`ck_...`) via Basic Auth / Bearer | Permanent (until regenerated) |
+| Editor plugins | UUID API key via Basic Auth / Bearer | Permanent (until regenerated) |
 | Web UI | Session cookie (`__Host-session`) | 24h idle / 7d absolute |
 | OAuth flow | PKCE + state parameter | One-time |
 
@@ -152,11 +152,11 @@ change is required.
 ## API Key Format
 
 ```
-ck_<43 url-safe base64 characters>
-Example: ck_Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWo
+UUID v4 string
+Example: 00000000-0000-4000-8000-000000000000
 ```
 
-- Generated via Web Crypto API: `ck_` + base64url of 32 random bytes (256-bit entropy)
+- Generated via Web Crypto API: random UUID v4. The UUID shape is for client compatibility; security relies on CSPRNG output and hash-only storage.
 - Stored as SHA-256 hash in DB (`api_key_hash` column); plaintext shown only once
 - Can be regenerated via POST /auth/api-key (old key immediately invalidated)
 

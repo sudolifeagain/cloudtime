@@ -71,9 +71,9 @@ describe("state / session / nonce / api-key generators", () => {
     expect(generateNonce()).not.toBe(generateNonce());
   });
 
-  it("generateApiKey returns ck_-prefixed plaintext and matching sha256 hash", async () => {
+  it("generateApiKey returns UUID plaintext and matching sha256 hash", async () => {
     const { plaintext, hash } = await generateApiKey();
-    expect(plaintext).toMatch(/^ck_[A-Za-z0-9_-]+$/);
+    expect(plaintext).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(hash).toBe(await sha256Hex(plaintext));
   });
 });

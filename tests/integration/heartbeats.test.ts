@@ -49,7 +49,7 @@ describe("POST /api/v1/users/current/heartbeats — single", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeader("ck_definitely_not_a_real_key"),
+        ...authHeader("definitely-not-a-real-api-key"),
       },
       body: JSON.stringify({ entity: "main.ts", type: "file", time: TIME_2026_03_14_10_00_UTC }),
     });

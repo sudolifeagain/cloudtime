@@ -237,7 +237,7 @@ on instances that do not set the variable.
      -H "Origin: https://your-worker.example.com" \
      https://your-worker.example.com/api/v1/auth/api-key
    ```
-   The plaintext `ck_…` value is shown **once**. Store it in your password manager and your `~/.wakatime.cfg`.
+   The plaintext UUID API key is shown **once**. Store it in your password manager and your `~/.wakatime.cfg`.
 
 ### Why this matters
 
@@ -271,7 +271,7 @@ Point your editor's WakaTime-compatible plugin at your Worker. In `~/.wakatime.c
 ```ini
 [settings]
 api_url = https://your-worker.example.com/api/v1
-api_key = ck_<your plaintext key from step 3 above>
+api_key = <your UUID API key from step 3 above>
 ```
 
 Restart your editor. Your IDE's status bar should start showing today's coding time within a few seconds of typing.

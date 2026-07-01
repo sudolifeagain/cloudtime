@@ -15,6 +15,7 @@ import worker from "../../src/index";
 import { seedUserWithSession, truncate } from "../helpers/fixtures";
 
 const BASE = "https://test.cloudtime.dev";
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 afterEach(async () => {
   await truncate("sessions", "oauth_accounts", "users");
@@ -69,5 +70,25 @@ describe("auth route mounting (#163)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { user: { id: string } } };
     expect(body.data.user.id).toBe(user.userId);
+  });
+
+  it("regenerates a UUID API key that authenticates", async () => {
+    const user = await seedUserWithSession({ username: "owner" });
+    const res = await call("/api/v1/auth/api-key", {
+      method: "POST",
+      headers: {
+        Cookie: `__Host-session=${user.sessionToken}`,
+        Origin: BASE,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { api_key: string } };
+    expect(body.data.api_key).toMatch(UUID_V4_RE);
+
+    const authenticated = await call("/api/v1/users/current", {
+      headers: { Authorization: `Bearer ${body.data.api_key}` },
+    });
+    expect(authenticated.status).toBe(200);
   });
 });
