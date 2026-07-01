@@ -20,6 +20,7 @@ import {
   buildAuthorizeUrl,
   exchangeCode,
   fetchUserInfo,
+  OAuthTokenExchangeError,
 } from "../../utils/oauth";
 import {
   validateSession,
@@ -388,6 +389,12 @@ link.get("/link/:provider/callback", async (c) => {
       noCacheHeaders(),
     );
   } catch (err) {
+    if (err instanceof OAuthTokenExchangeError) {
+      console.error(
+        `Link token exchange failed for ${err.provider}: ${err.providerError ?? `HTTP ${err.status ?? "unknown"}`}`,
+      );
+      return c.json({ error: "OAuth authorization failed" }, 400, noCacheHeaders());
+    }
     console.error("Link callback error:", err instanceof Error ? err.message : "Unknown error");
     return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }

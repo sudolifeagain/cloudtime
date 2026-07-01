@@ -16,6 +16,17 @@ export class HostedDomainError extends Error {
 
 export type OAuthProvider = "github" | "google" | "discord";
 
+export class OAuthTokenExchangeError extends Error {
+  constructor(
+    public readonly provider: OAuthProvider,
+    public readonly providerError?: string,
+    public readonly status?: number,
+  ) {
+    super("OAuth token exchange failed");
+    this.name = "OAuthTokenExchangeError";
+  }
+}
+
 const VALID_PROVIDERS = new Set<string>(["github", "google", "discord"]);
 
 export function isValidProvider(s: string): s is OAuthProvider {
@@ -222,18 +233,17 @@ export async function exchangeCode(
   });
 
   const json = await res.json().catch(() => {
-    throw new Error(`${provider} token endpoint returned non-JSON response (HTTP ${res.status})`);
+    throw new OAuthTokenExchangeError(provider, "non_json_response", res.status);
   });
 
   // GitHub returns 200 even on errors — try parsing as error response first
   const errorResult = tokenErrorSchema.safeParse(json);
   if (errorResult.success && errorResult.data.error) {
-    console.error(`OAuth token exchange failed for ${provider}: ${errorResult.data.error}`);
-    throw new Error("OAuth token exchange failed");
+    throw new OAuthTokenExchangeError(provider, errorResult.data.error, res.status);
   }
 
   if (!res.ok) {
-    throw new Error(`OAuth token exchange failed: HTTP ${res.status}`);
+    throw new OAuthTokenExchangeError(provider, undefined, res.status);
   }
 
   const result = tokenResponseSchema.safeParse(json);

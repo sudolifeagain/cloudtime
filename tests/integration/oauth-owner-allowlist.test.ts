@@ -35,14 +35,15 @@ interface StubRoute {
   method: string;
   url: string; // "<origin><pathname>"
   body: unknown;
+  status?: number;
   hits: number;
 }
 
 const originalFetch = globalThis.fetch;
 let routes: StubRoute[] = [];
 
-function stubRoute(method: string, url: string, body: unknown): void {
-  routes.push({ method, url, body, hits: 0 });
+function stubRoute(method: string, url: string, body: unknown, status?: number): void {
+  routes.push({ method, url, body, status, hits: 0 });
 }
 
 beforeEach(() => {
@@ -61,7 +62,7 @@ beforeEach(() => {
     }
     route.hits++;
     return new Response(JSON.stringify(route.body), {
-      status: 200,
+      status: route.status ?? 200,
       headers: { "Content-Type": "application/json" },
     });
   }) as typeof fetch;
@@ -117,6 +118,10 @@ function mockGitHub(opts: { id: number; login: string; email: string }): void {
   stubRoute("GET", "https://api.github.com/user/emails", [
     { email: opts.email, primary: true, verified: true },
   ]);
+}
+
+function mockGitHubTokenError(error = "bad_verification_code"): void {
+  stubRoute("POST", "https://github.com/login/oauth/access_token", { error });
 }
 
 async function completeLogin(
@@ -200,6 +205,20 @@ describe("single-user owner allowlist (#157)", () => {
     });
     expect(res.status).toBe(200);
     expect(await userCount()).toBe(1);
+  });
+
+  it("provider token exchange errors return 400 and do not create a user", async () => {
+    const { state, cookie } = await startLogin();
+    mockGitHubTokenError();
+
+    const res = await call(
+      `/api/v1/auth/github/callback?code=reused-code&state=${state}`,
+      { headers: { Cookie: cookie } },
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "OAuth authorization failed" });
+    expect(await userCount()).toBe(0);
   });
 
   it("owner already exists: a stranger gets the same 403 whether or not the allowlist is set (US2 scenario 3)", async () => {

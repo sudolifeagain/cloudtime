@@ -29,6 +29,7 @@ import {
   exchangeCode,
   fetchUserInfo,
   HostedDomainError,
+  OAuthTokenExchangeError,
   type OAuthProvider,
 } from "../../utils/oauth";
 import {
@@ -496,6 +497,12 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
   } catch (err) {
     if (err instanceof HostedDomainError) {
       return c.json({ error: "Account domain not allowed" }, 403, noCacheHeaders());
+    }
+    if (err instanceof OAuthTokenExchangeError) {
+      console.error(
+        `OAuth token exchange failed for ${err.provider}: ${err.providerError ?? `HTTP ${err.status ?? "unknown"}`}`,
+      );
+      return c.json({ error: "OAuth authorization failed" }, 400, noCacheHeaders());
     }
     console.error("OAuth callback error:", err instanceof Error ? err.message : "Unknown error");
     return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
