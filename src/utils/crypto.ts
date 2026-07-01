@@ -60,6 +60,7 @@ export function generateNonce(): string {
 }
 
 export async function generateApiKey(): Promise<{ plaintext: string; hash: string }> {
+  // UUID shape is for compatibility clients; security relies on Web Crypto CSPRNG output.
   const plaintext = crypto.randomUUID();
   const hash = await sha256Hex(plaintext);
   return { plaintext, hash };

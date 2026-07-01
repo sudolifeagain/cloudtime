@@ -8,8 +8,9 @@ post:
     The new key is the only value returned; it cannot be retrieved again.
 
     **Security measures:**
-    - New key: UUID v4 string generated from cryptographic randomness.
-      This matches the API key format accepted by WakaTime-compatible CLI tools.
+    - New key: UUID v4 string generated from the Web Crypto CSPRNG.
+      The UUID shape is for client compatibility; security relies on
+      unguessable random output and hash-only storage.
     - Storage: only the SHA-256 hash of the key is stored in the database.
     - KV cache: the old key's cache entry is explicitly deleted (not relying on TTL expiry).
     - All other active sessions for this user are invalidated (forces re-authentication

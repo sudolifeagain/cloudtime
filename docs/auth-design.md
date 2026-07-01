@@ -156,7 +156,7 @@ UUID v4 string
 Example: 00000000-0000-4000-8000-000000000000
 ```
 
-- Generated via Web Crypto API: random UUID v4, matching WakaTime-compatible CLI validation
+- Generated via Web Crypto API: random UUID v4. The UUID shape is for client compatibility; security relies on CSPRNG output and hash-only storage.
 - Stored as SHA-256 hash in DB (`api_key_hash` column); plaintext shown only once
 - Can be regenerated via POST /auth/api-key (old key immediately invalidated)
 

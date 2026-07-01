@@ -72,7 +72,7 @@ describe("auth route mounting (#163)", () => {
     expect(body.data.user.id).toBe(user.userId);
   });
 
-  it("regenerates a WakaTime-compatible UUID API key", async () => {
+  it("regenerates a UUID API key that authenticates", async () => {
     const user = await seedUserWithSession({ username: "owner" });
     const res = await call("/api/v1/auth/api-key", {
       method: "POST",

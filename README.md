@@ -67,7 +67,7 @@ npx wrangler deploy --config wrangler.local.toml
 
 ### 4. Connect your editor
 
-After your first OAuth login, generate an API key from your authenticated session. Configure your editor's WakaTime plugin to point to your instance:
+After your first OAuth login, generate an API key from your authenticated session. Configure your WakaTime-compatible editor plugin to point to your instance:
 
 ```ini
 # ~/.wakatime.cfg
