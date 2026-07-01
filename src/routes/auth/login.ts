@@ -4,6 +4,7 @@
  * GET /:provider/callback — handle OAuth callback, create user/session
  */
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { Env } from "../../types";
 import { rateLimitMiddleware } from "../../middleware/rate-limit";
 import {
@@ -60,7 +61,14 @@ const oauthCallbackRateLimit = rateLimitMiddleware(
 
 // GET /:provider (initiate OAuth login)
 login.get("/:provider", oauthInitiateRateLimit, async (c) => {
-  const provider = c.req.param("provider");
+  return startOAuthLogin(c, c.req.param("provider"));
+});
+
+export async function startOAuthLogin(
+  c: Context<{ Bindings: Env }>,
+  provider: string,
+  returnTo?: string,
+): Promise<Response> {
   if (!isValidProvider(provider)) return c.json({ error: "Invalid provider" }, 400, noCacheHeaders());
 
   try {
@@ -72,7 +80,7 @@ login.get("/:provider", oauthInitiateRateLimit, async (c) => {
     const redirectUri = getRedirectUri(c, provider);
     const authorizeUrl = buildAuthorizeUrl(provider, c.env, redirectUri, codeChallenge, state, nonce);
 
-    await storeOAuthState(c.env.KV, state, { codeVerifier, nonce });
+    await storeOAuthState(c.env.KV, state, { codeVerifier, nonce, returnTo: safeReturnTo(returnTo) });
     setStateCookie(c, state, c.env);
 
     return c.redirect(authorizeUrl, 302);
@@ -80,7 +88,7 @@ login.get("/:provider", oauthInitiateRateLimit, async (c) => {
     console.error("OAuth start error:", err instanceof Error ? err.message : "Unknown error");
     return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
-});
+}
 
 // GET /:provider/callback (OAuth callback — most complex)
 login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
@@ -175,6 +183,9 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
       const sessionTokenHash = await sha256Hex(sessionToken);
       await createSession(c.env.DB, c.env.KV, existingOAuth.user_id, sessionTokenHash, c.req.raw);
       setSessionCookie(c, sessionToken, c.env);
+
+      const redirectResponse = redirectAfterOAuth(c, stateData.returnTo);
+      if (redirectResponse) return redirectResponse;
 
       return c.json(
         { data: { user: rowToUser(userRow), is_new_user: false } },
@@ -484,6 +495,9 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
     await createSession(c.env.DB, c.env.KV, userId, sessionTokenHash, c.req.raw);
     setSessionCookie(c, sessionToken, c.env);
 
+    const redirectResponse = redirectAfterOAuth(c, stateData.returnTo);
+    if (redirectResponse) return redirectResponse;
+
     return c.json(
       {
         data: {
@@ -508,5 +522,16 @@ login.get("/:provider/callback", oauthCallbackRateLimit, async (c) => {
     return c.json({ error: "Internal server error" }, 500, noCacheHeaders());
   }
 });
+
+function safeReturnTo(returnTo: string | undefined): string | undefined {
+  if (!returnTo) return undefined;
+  if (returnTo === "/app" || returnTo.startsWith("/app?")) return returnTo;
+  return undefined;
+}
+
+function redirectAfterOAuth(c: Context, returnTo: string | undefined): Response | null {
+  const safe = safeReturnTo(returnTo);
+  return safe ? c.redirect(safe, 303) : null;
+}
 
 export default login;

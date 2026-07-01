@@ -133,6 +133,8 @@ Configure the provider callback URL to match `APP_URL`, for example:
 https://your-cloudtime-instance.workers.dev/api/v1/auth/github/callback
 ```
 
+The web dashboard uses the same callback URL.
+
 ## 7. Choose instance mode
 
 CloudTime defaults to **single-user mode** (`INSTANCE_MODE=single` in `wrangler.toml`). This is the right choice if:
@@ -170,19 +172,22 @@ public activity profile. The setting takes effect on the next
 ## 8. Deploy
 
 ```powershell
-npx wrangler deploy --config wrangler.local.toml
+npm run deploy -- --config wrangler.local.toml
 ```
 
-The Worker URL will be printed (something like `https://cloudtime.<your-subdomain>.workers.dev`). Add a custom domain via the Cloudflare dashboard if you want a stable URL.
+The npm script builds `public/assets/app.css` before running Wrangler. The Worker URL will be printed (something like `https://cloudtime.<your-subdomain>.workers.dev`). Add a custom domain via the Cloudflare dashboard if you want a stable URL.
 
 ## 9. Verify the deployment
 
 ```bash
 curl -i https://your-worker.example.com/api/v1/health
 # Expect: HTTP/2 200, body: {"status":"ok"}
+
+curl -I https://your-worker.example.com/assets/app.css
+# Expect: HTTP/2 200
 ```
 
-If the health check returns 200, the Worker is reachable. **Do not announce the URL yet**; complete the first-login owner claim below before sharing it.
+Open `https://your-worker.example.com/app` in a browser. If the health check and CSS asset both return 200, the Worker and web UI assets are reachable. **Do not announce the URL yet**; complete the first-login owner claim below before sharing it.
 
 ---
 
@@ -227,17 +232,20 @@ on instances that do not set the variable.
 
 1. **Do not share the Worker URL** in public channels, README files, status pages, or DM screenshots until step 2 is complete.
 2. **Immediately log in yourself** via an OAuth provider whose credentials you control:
-   - Open `https://your-worker.example.com/api/v1/auth/github` (or `/google` / `/discord`) in a private browser tab.
+   - Open `https://your-worker.example.com/app` in a private browser tab.
+   - Click the configured provider.
    - Complete the OAuth flow.
-   - Confirm you receive a `__Host-session` cookie and `GET /api/v1/auth/session` returns your user profile.
-3. **Generate your API key** (once):
+   - Confirm the dashboard loads under `/app`.
+3. **Generate your API key** from the dashboard. The plaintext UUID API key is shown **once**. Store it in your password manager and your `~/.wakatime.cfg`.
+
+For automation, the API route remains available:
+
    ```bash
    curl -X POST \
      -H "Cookie: __Host-session=<your session token>" \
      -H "Origin: https://your-worker.example.com" \
      https://your-worker.example.com/api/v1/auth/api-key
    ```
-   The plaintext UUID API key is shown **once**. Store it in your password manager and your `~/.wakatime.cfg`.
 
 ### Why this matters
 
@@ -293,6 +301,7 @@ Restart your editor. Your IDE's status bar should start showing today's coding t
 |---|---|
 | `403 Registration closed` on your own first OAuth login | Someone else completed login first. See "Re-bootstrap recovery". |
 | `400 OAuth authorization failed` | Provider's OAuth app redirect URI does not match `APP_URL`/`<worker URL>/api/v1/auth/<provider>/callback`. Update the OAuth app config. |
+| `/app` is unstyled or `/assets/app.css` is 404 | Deploy with `npm run deploy -- --config wrangler.local.toml` so Tailwind CSS + daisyUI assets are built and uploaded. |
 | `429 Too many requests` on OAuth | Rate limiter rejected your client IP. Wait 60 seconds; if recurring, widen the limit in `wrangler.toml`. |
 | Heartbeat 500 errors | Check `npx wrangler tail --config wrangler.local.toml` — usually D1 connectivity or a schema mismatch (re-run the remote schema command in step 5). |
 | `GET /heartbeats` returns the wrong day's data | Set your timezone via `PATCH /api/v1/users/current/profile` (`{"timezone": "Asia/Tokyo"}`). The endpoint defaults to your profile timezone since PR #112. |

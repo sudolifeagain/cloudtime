@@ -283,6 +283,7 @@ export interface OAuthStateData {
   codeVerifier: string;
   nonce?: string;
   linkUserId?: string;
+  returnTo?: string;
 }
 
 export async function storeOAuthState(
