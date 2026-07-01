@@ -2,6 +2,11 @@ node_modules/
 dist/
 .wrangler/
 .dev.vars
+.env
+.env.*
+!.env.example
+wrangler.local.toml
+wrangler.*.local.toml
 .playwright-mcp/
 _local-*
 schemas/_bundled/

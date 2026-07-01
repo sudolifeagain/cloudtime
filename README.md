@@ -35,26 +35,28 @@ npm install
 wrangler d1 create cloudtime-db
 wrangler kv namespace create CLOUDTIME_KV
 
-# Update wrangler.toml with the IDs from the commands above
+# Public contributors: copy wrangler.toml to ignored wrangler.local.toml,
+# then put the IDs from the commands above in the local copy.
+cp wrangler.toml wrangler.local.toml
 
-# Initialize database
-npm run db:init
+# Initialize the remote database when using wrangler.local.toml
+wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./src/db/schema.sql
 
 # Set secrets
-wrangler secret put GITHUB_CLIENT_ID
-wrangler secret put GITHUB_CLIENT_SECRET
-wrangler secret put ENCRYPTION_KEY
+wrangler secret put GITHUB_CLIENT_ID --config wrangler.local.toml
+wrangler secret put GITHUB_CLIENT_SECRET --config wrangler.local.toml
+wrangler secret put ENCRYPTION_KEY --config wrangler.local.toml
 # Repeat for Google/Discord if using those providers
 ```
 
 ### 3. Run
 
 ```bash
-# Local development
-npm run dev
+# Local development when using wrangler.local.toml
+wrangler dev --config wrangler.local.toml
 
-# Deploy to Cloudflare
-npm run deploy
+# Deploy to Cloudflare when using wrangler.local.toml
+wrangler deploy --config wrangler.local.toml
 ```
 
 ### 4. Connect your editor
