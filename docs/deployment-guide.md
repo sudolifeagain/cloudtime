@@ -24,15 +24,25 @@ npm ci
 
 ## 3. Provision Cloudflare resources
 
-Create the D1 database and KV namespace, then paste their IDs into `wrangler.toml`.
+Create the D1 database and KV namespace.
 
 ```bash
 wrangler d1 create cloudtime-db
-# → copy the database_id into wrangler.toml under [[d1_databases]]
 
 wrangler kv namespace create CLOUDTIME_KV
-# → copy the id into wrangler.toml under [[kv_namespaces]]
 ```
+
+If this checkout is used for public development, do not paste account-specific
+IDs into tracked files. Copy the template to an ignored local config and edit
+only that copy:
+
+```bash
+cp wrangler.toml wrangler.local.toml
+# → copy the D1 database_id and KV id into wrangler.local.toml
+```
+
+For a private deployment-only checkout, editing `wrangler.toml` directly is
+also acceptable. Public contributors should prefer `wrangler.local.toml`.
 
 ## 4. Initialise the schema
 
@@ -40,6 +50,13 @@ The schema lives in `src/db/schema.sql`. Run it against your new D1.
 
 ```bash
 npm run db:init:remote        # applies src/db/schema.sql to the remote D1
+```
+
+When using an ignored local config, run the underlying Wrangler command
+directly:
+
+```bash
+wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./src/db/schema.sql
 ```
 
 If you redeploy later and there are migration files in `migrations/`, apply them in order:
@@ -52,6 +69,8 @@ wrangler d1 execute cloudtime-db --remote --file=./migrations/0002_pending_link_
 ## 5. Configure secrets
 
 Set these via `wrangler secret put <NAME>` (each command will prompt for the value). All are required unless marked optional.
+When using an ignored local config, pass `--config wrangler.local.toml` to each
+`wrangler secret put` command.
 
 | Secret | Required | Notes |
 |---|---|---|
@@ -108,6 +127,12 @@ public activity profile. The setting takes effect on the next
 
 ```bash
 wrangler deploy
+```
+
+When using an ignored local config:
+
+```bash
+wrangler deploy --config wrangler.local.toml
 ```
 
 The Worker URL will be printed (something like `https://cloudtime.<your-subdomain>.workers.dev`). Add a custom domain via the Cloudflare dashboard if you want a stable URL.
