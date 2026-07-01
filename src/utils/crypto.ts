@@ -60,8 +60,7 @@ export function generateNonce(): string {
 }
 
 export async function generateApiKey(): Promise<{ plaintext: string; hash: string }> {
-  const raw = base64url(randomBytes(32));
-  const plaintext = `ck_${raw}`;
+  const plaintext = crypto.randomUUID();
   const hash = await sha256Hex(plaintext);
   return { plaintext, hash };
 }
