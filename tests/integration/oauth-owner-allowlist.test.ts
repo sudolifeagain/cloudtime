@@ -22,7 +22,7 @@ import {
 } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../../src/index";
-import { seedUser, truncate } from "../helpers/fixtures";
+import { seedUser, seedUserWithSession, truncate } from "../helpers/fixtures";
 
 const BASE = "https://test.cloudtime.dev";
 const REGISTRATION_CLOSED = {
@@ -35,14 +35,15 @@ interface StubRoute {
   method: string;
   url: string; // "<origin><pathname>"
   body: unknown;
+  status?: number;
   hits: number;
 }
 
 const originalFetch = globalThis.fetch;
 let routes: StubRoute[] = [];
 
-function stubRoute(method: string, url: string, body: unknown): void {
-  routes.push({ method, url, body, hits: 0 });
+function stubRoute(method: string, url: string, body: unknown, status?: number): void {
+  routes.push({ method, url, body, status, hits: 0 });
 }
 
 beforeEach(() => {
@@ -61,7 +62,7 @@ beforeEach(() => {
     }
     route.hits++;
     return new Response(JSON.stringify(route.body), {
-      status: 200,
+      status: route.status ?? 200,
       headers: { "Content-Type": "application/json" },
     });
   }) as typeof fetch;
@@ -106,6 +107,28 @@ async function startLogin(
   return { state: state as string, cookie: `__Host-oauth_state=${match![1]}` };
 }
 
+/** Start an account-link OAuth flow and capture state + combined cookies. */
+async function startLink(sessionToken: string): Promise<{ state: string; cookie: string }> {
+  const res = await call("/api/v1/auth/link/github", {
+    method: "POST",
+    headers: {
+      Cookie: `__Host-session=${sessionToken}`,
+      Origin: BASE,
+    },
+  });
+  expect(res.status).toBe(302);
+  const location = new URL(res.headers.get("Location") ?? "");
+  const state = location.searchParams.get("state");
+  const setCookie = res.headers.get("Set-Cookie") ?? "";
+  const match = setCookie.match(/__Host-oauth_state=([^;]+)/);
+  expect(state).toBeTruthy();
+  expect(match).toBeTruthy();
+  return {
+    state: state as string,
+    cookie: `__Host-session=${sessionToken}; __Host-oauth_state=${match![1]}`,
+  };
+}
+
 /** Stub the three GitHub endpoints one callback invocation hits. */
 function mockGitHub(opts: { id: number; login: string; email: string }): void {
   stubRoute("POST", "https://github.com/login/oauth/access_token", {
@@ -117,6 +140,10 @@ function mockGitHub(opts: { id: number; login: string; email: string }): void {
   stubRoute("GET", "https://api.github.com/user/emails", [
     { email: opts.email, primary: true, verified: true },
   ]);
+}
+
+function mockGitHubTokenError(error = "bad_verification_code"): void {
+  stubRoute("POST", "https://github.com/login/oauth/access_token", { error });
 }
 
 async function completeLogin(
@@ -134,6 +161,11 @@ async function completeLogin(
 
 async function userCount(): Promise<number> {
   const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+async function oauthAccountCount(): Promise<number> {
+  const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM oauth_accounts").first<{ n: number }>();
   return row?.n ?? 0;
 }
 
@@ -200,6 +232,36 @@ describe("single-user owner allowlist (#157)", () => {
     });
     expect(res.status).toBe(200);
     expect(await userCount()).toBe(1);
+  });
+
+  it("provider token exchange errors return 400 and do not create a user", async () => {
+    const { state, cookie } = await startLogin();
+    mockGitHubTokenError();
+
+    const res = await call(
+      `/api/v1/auth/github/callback?code=reused-code&state=${state}`,
+      { headers: { Cookie: cookie } },
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "OAuth authorization failed" });
+    expect(await userCount()).toBe(0);
+  });
+
+  it("link callback token exchange errors return 400 and do not create an oauth account", async () => {
+    const user = await seedUserWithSession({ username: "owner" });
+    const { state, cookie } = await startLink(user.sessionToken);
+    mockGitHubTokenError();
+
+    const res = await call(
+      `/api/v1/auth/link/github/callback?code=reused-code&state=${state}`,
+      { headers: { Cookie: cookie } },
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "OAuth authorization failed" });
+    expect(await userCount()).toBe(1);
+    expect(await oauthAccountCount()).toBe(0);
   });
 
   it("owner already exists: a stranger gets the same 403 whether or not the allowlist is set (US2 scenario 3)", async () => {

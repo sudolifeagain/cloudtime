@@ -1,6 +1,9 @@
 # Deployment Guide
 
-This guide walks an operator through deploying CloudTime to Cloudflare Workers from scratch. It assumes you have a Cloudflare account, the `wrangler` CLI installed, and Node.js 22+ locally.
+This guide walks an operator through deploying CloudTime to Cloudflare Workers
+from a local checkout. "Local" here means this PC is the deployment
+workstation; the application itself runs on Cloudflare Workers, D1, and KV.
+It assumes you have a Cloudflare account and Node.js 22+ on the workstation.
 
 > **Critical**: read the [First-login owner race](#critical-first-login-owner-race) section before you announce or share the deployment URL. The instance becomes "owned" by whoever completes OAuth login first.
 
@@ -9,64 +12,86 @@ This guide walks an operator through deploying CloudTime to Cloudflare Workers f
 ## 1. Prerequisites
 
 - Cloudflare account (free plan is sufficient for personal use)
-- `wrangler` CLI ≥ 4.0 (`npm install -g wrangler@latest`)
+- Wrangler via this project's npm dependency (`npx wrangler ...`)
 - Node.js 22+
 - A registered OAuth app on at least one provider (GitHub / Google / Discord) configured with a redirect URI matching your future Worker URL
 - For multi-user mode: a Resend API key and a verified sender domain (see [`email-setup.md`](./email-setup.md))
 
 ## 2. Clone and install
 
-```bash
+```powershell
 git clone https://github.com/sudolifeagain/cloudtime.git
 cd cloudtime
 npm ci
+```
+
+Authenticate this workstation with Cloudflare:
+
+```powershell
+npx wrangler login
+npx wrangler whoami
 ```
 
 ## 3. Provision Cloudflare resources
 
 Create the D1 database and KV namespace.
 
-```bash
-wrangler d1 create cloudtime-db
+```powershell
+npx wrangler d1 create cloudtime-db
 
-wrangler kv namespace create CLOUDTIME_KV
+npx wrangler kv namespace create CLOUDTIME_KV
 ```
 
 If this checkout is used for public development, do not paste account-specific
 IDs into tracked files. Copy the template to an ignored local config and edit
 only that copy:
 
-```bash
-cp wrangler.toml wrangler.local.toml
+```powershell
+Copy-Item wrangler.toml wrangler.local.toml
 # → copy the D1 database_id and KV id into wrangler.local.toml
 ```
 
 For a private deployment-only checkout, editing `wrangler.toml` directly is
 also acceptable. Public contributors should prefer `wrangler.local.toml`.
 
-## 4. Initialise the schema
+## 4. Configure deployment variables
+
+Set deployment-specific variables in the ignored `wrangler.local.toml` copy,
+not in tracked `wrangler.toml`.
+
+At minimum, set these under `[vars]`:
+
+```toml
+APP_URL = "https://your-cloudtime-instance.workers.dev"
+ALLOWED_OWNER_EMAIL = "you@example.com"
+PUBLIC_STATS = "false"
+```
+
+`APP_URL` must match the public Worker origin that OAuth providers redirect
+back to. `ALLOWED_OWNER_EMAIL` should be set before the first public deploy so
+only your provider-verified email can claim the single-user instance.
+`PUBLIC_STATS = "false"` is recommended for private single-user deployments.
+
+If the final `workers.dev` URL is not known yet, deploy once after configuring
+resources and secrets, copy the printed URL into `APP_URL`, then deploy again
+before opening any OAuth login URL.
+
+## 5. Initialise the schema
 
 The schema lives in `src/db/schema.sql`. Run it against your new D1.
 
-```bash
-npm run db:init:remote        # applies src/db/schema.sql to the remote D1
-```
-
-When using an ignored local config, run the underlying Wrangler command
-directly:
-
-```bash
-wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./src/db/schema.sql
+```powershell
+npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./src/db/schema.sql
 ```
 
 If you redeploy later and there are migration files in `migrations/`, apply them in order:
 
-```bash
-wrangler d1 execute cloudtime-db --remote --file=./migrations/0001_add_email_verified.sql
-wrangler d1 execute cloudtime-db --remote --file=./migrations/0002_pending_link_email_verification.sql
+```powershell
+npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0001_add_email_verified.sql
+npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0002_pending_link_email_verification.sql
 ```
 
-## 5. Configure secrets
+## 6. Configure secrets
 
 Set these via `wrangler secret put <NAME>` (each command will prompt for the value). All are required unless marked optional.
 When using an ignored local config, pass `--config wrangler.local.toml` to each
@@ -80,8 +105,7 @@ When using an ignored local config, pass `--config wrangler.local.toml` to each
 | `GOOGLE_CLIENT_SECRET` | for Google login | |
 | `DISCORD_CLIENT_ID` | for Discord login | from Discord Developer Portal |
 | `DISCORD_CLIENT_SECRET` | for Discord login | |
-| `ENCRYPTION_KEY` | **yes** | 64 hex characters (256 bits). Generate with `openssl rand -hex 32` |
-| `APP_URL` | **yes in production** | The public origin of your Worker (e.g. `https://time.example.com`). Required for OAuth redirect URI computation and CSRF origin checks outside local development. |
+| `ENCRYPTION_KEY` | **yes** | 64 hex characters (256 bits). Generate with the Node command below. |
 | `GOOGLE_HOSTED_DOMAIN` | optional | Restricts Google login to one Workspace domain. See `specs/037-google-hosted-domain/`. |
 | `EMAIL_PROVIDER` | multi-user only | `resend` is currently the only supported value. |
 | `EMAIL_FROM` | multi-user only | Sender address on a domain you control. |
@@ -89,7 +113,27 @@ When using an ignored local config, pass `--config wrangler.local.toml` to each
 
 You only need OAuth secrets for the providers you actually plan to enable; users can sign in with any provider that has credentials configured.
 
-## 6. Choose instance mode
+Generate and store `ENCRYPTION_KEY` from the workstation without printing it:
+
+```powershell
+$key = node -e "process.stdout.write(crypto.randomBytes(32).toString('hex'))"
+$key | npx wrangler secret put ENCRYPTION_KEY --config wrangler.local.toml
+```
+
+Set at least one OAuth provider before the first login. For example, for GitHub:
+
+```powershell
+npx wrangler secret put GITHUB_CLIENT_ID --config wrangler.local.toml
+npx wrangler secret put GITHUB_CLIENT_SECRET --config wrangler.local.toml
+```
+
+Configure the provider callback URL to match `APP_URL`, for example:
+
+```text
+https://your-cloudtime-instance.workers.dev/api/v1/auth/github/callback
+```
+
+## 7. Choose instance mode
 
 CloudTime defaults to **single-user mode** (`INSTANCE_MODE=single` in `wrangler.toml`). This is the right choice if:
 
@@ -121,30 +165,24 @@ enabled, which is the backward-compatible default.
 
 **Recommended for single-user instances** unless you intentionally want a
 public activity profile. The setting takes effect on the next
-`wrangler deploy`.
+`npx wrangler deploy --config wrangler.local.toml`.
 
-## 7. Deploy
+## 8. Deploy
 
-```bash
-wrangler deploy
-```
-
-When using an ignored local config:
-
-```bash
-wrangler deploy --config wrangler.local.toml
+```powershell
+npx wrangler deploy --config wrangler.local.toml
 ```
 
 The Worker URL will be printed (something like `https://cloudtime.<your-subdomain>.workers.dev`). Add a custom domain via the Cloudflare dashboard if you want a stable URL.
 
-## 8. Verify the deployment
+## 9. Verify the deployment
 
 ```bash
 curl -i https://your-worker.example.com/api/v1/health
 # Expect: HTTP/2 200, body: {"status":"ok"}
 ```
 
-If the health check returns 200, the Worker is reachable. **Do not announce the URL yet** — proceed to step 9 first.
+If the health check returns 200, the Worker is reachable. **Do not announce the URL yet**; complete the first-login owner claim below before sharing it.
 
 ---
 
@@ -175,7 +213,7 @@ ALLOWED_OWNER_EMAIL = "you@example.com"
   the provider (GitHub primary verified email, Google, or Discord).
 - Everyone else receives the same `403 Registration closed` response the
   instance returns once bootstrapped, so probes cannot tell an allowlist
-  exists. Rejections appear in `wrangler tail` as `[owner-allowlist]
+  exists. Rejections appear in `npx wrangler tail --config wrangler.local.toml` as `[owner-allowlist]
   rejected …` with the candidate's email domain only.
 - A typo cannot lock you out permanently: nothing has been claimed yet, so
   fix the value and redeploy. An unset or blank value disables the gate.
@@ -216,7 +254,7 @@ Cloudflare Workers default URLs (`*.workers.dev`) are technically enumerable by 
 If the race is lost, the only way back is to wipe the `users` table:
 
 ```bash
-wrangler d1 execute cloudtime-db --remote \
+npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml \
   --command "DELETE FROM users;"
 ```
 
@@ -226,7 +264,7 @@ If you want to keep accumulated heartbeats but kick out an unintended owner, con
 
 ---
 
-## 9. Configure your WakaTime-compatible editor plugin
+## 10. Configure your WakaTime-compatible editor plugin
 
 Point your editor's WakaTime-compatible plugin at your Worker. In `~/.wakatime.cfg`:
 
@@ -240,12 +278,12 @@ Restart your editor. Your IDE's status bar should start showing today's coding t
 
 ---
 
-## 10. Ongoing operations
+## 11. Ongoing operations
 
 - **Backups**: see [`backup-restore.md`](./backup-restore.md). Schedule periodic D1 exports — the Cloudflare account-level snapshots are not a substitute for operator-owned exports.
 - **Heartbeat retention** (when [Issue #108](https://github.com/sudolifeagain/cloudtime/issues/108) ships): consider setting `HEARTBEAT_RETENTION_DAYS` to bound table growth.
 - **Email deliverability**: if you've enabled multi-user mode, monitor Resend's bounce / complaint rate and the `[email]` log lines.
-- **Rate-limit metrics**: monitor `[rate-limit]` warnings in `wrangler tail` to detect abuse. Tune the `[[ratelimits]]` blocks in `wrangler.toml` if legitimate traffic gets rejected.
+- **Rate-limit metrics**: monitor `[rate-limit]` warnings in `npx wrangler tail --config wrangler.local.toml` to detect abuse. Tune the `[[ratelimits]]` blocks in `wrangler.toml` if legitimate traffic gets rejected.
 
 ---
 
@@ -256,6 +294,6 @@ Restart your editor. Your IDE's status bar should start showing today's coding t
 | `403 Registration closed` on your own first OAuth login | Someone else completed login first. See "Re-bootstrap recovery". |
 | `400 OAuth authorization failed` | Provider's OAuth app redirect URI does not match `APP_URL`/`<worker URL>/api/v1/auth/<provider>/callback`. Update the OAuth app config. |
 | `429 Too many requests` on OAuth | Rate limiter rejected your client IP. Wait 60 seconds; if recurring, widen the limit in `wrangler.toml`. |
-| Heartbeat 500 errors | Check `wrangler tail` — usually D1 connectivity or a schema mismatch (re-run `npm run db:init:remote`). |
+| Heartbeat 500 errors | Check `npx wrangler tail --config wrangler.local.toml` — usually D1 connectivity or a schema mismatch (re-run the remote schema command in step 5). |
 | `GET /heartbeats` returns the wrong day's data | Set your timezone via `PATCH /api/v1/users/current/profile` (`{"timezone": "Asia/Tokyo"}`). The endpoint defaults to your profile timezone since PR #112. |
 | Status bar in IDE shows 0 minutes | Confirm your `api_url` is exactly `<worker>/api/v1` (no trailing slash, no `/heartbeats`). |
