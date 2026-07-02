@@ -93,6 +93,9 @@ describe("web UI", () => {
     expect(html).toContain("docs");
     expect(html).toContain("README.md");
     expect(html).toContain("AI coding");
+    expect(html).toContain("AI coding activity");
+    expect(html).toContain("1 heartbeat");
+    expect(html).toContain("test-machine");
   });
 
   it("renders an API key regeneration confirmation screen", async () => {

@@ -23,6 +23,12 @@ export type DailySummary = {
   totalSeconds: number;
 };
 
+export type AiProjectSummary = {
+  name: string;
+  heartbeatCount: number;
+  lastHeartbeatAt: number | null;
+};
+
 export type RecentHeartbeat = {
   entity: string;
   type: string;
@@ -33,6 +39,13 @@ export type RecentHeartbeat = {
   editor: string | null;
   machine: string | null;
   isWrite: boolean;
+};
+
+export type AiCodingOverview = {
+  totalHeartbeats: number;
+  lastHeartbeatAt: number | null;
+  projects: AiProjectSummary[];
+  recentHeartbeats: RecentHeartbeat[];
 };
 
 export type DashboardData = {
@@ -50,7 +63,7 @@ export type DashboardData = {
   last30DaysSeconds: number;
   allTimeSeconds: number;
   heartbeatCount: number;
-  aiHeartbeatCount: number;
+  aiCoding: AiCodingOverview;
   activeSessionCount: number;
   machineCount: number;
   userAgentCount: number;
@@ -106,6 +119,11 @@ export function DashboardView({
   const displayName = data.user.displayName || data.user.username;
   const maxProjectSeconds = Math.max(...data.projects.map((p) => p.totalSeconds), 0);
   const maxCategorySeconds = Math.max(...data.categories.map((c) => c.totalSeconds), 0);
+  const aiProjectChartData: ChartDatum[] = data.aiCoding.projects.map((project) => ({
+    label: project.name,
+    value: project.heartbeatCount,
+    text: formatHeartbeatCount(project.heartbeatCount),
+  }));
   const dailyChartData: ChartDatum[] = data.dailySummaries.map((day) => ({
     label: day.date.slice(5),
     value: day.totalSeconds,
@@ -150,8 +168,12 @@ export function DashboardView({
         />
         <MetricCard
           label="AI coding"
-          value={data.aiHeartbeatCount.toLocaleString()}
-          detail="Stored heartbeat count"
+          value={data.aiCoding.totalHeartbeats.toLocaleString()}
+          detail={
+            data.aiCoding.lastHeartbeatAt
+              ? `Last seen ${formatDateTime(data.aiCoding.lastHeartbeatAt, data.user.timezone)}`
+              : "No AI coding heartbeats yet"
+          }
         />
       </section>
 
@@ -238,6 +260,48 @@ export function DashboardView({
         </Panel>
       </div>
 
+      <Panel title="AI coding activity">
+        <div class="grid gap-6 xl:grid-cols-[minmax(240px,0.75fr)_minmax(0,1.25fr)]">
+          <div class="space-y-5">
+            <dl class="grid gap-3 text-sm">
+              <InfoRow label="Stored heartbeats" value={formatHeartbeatCount(data.aiCoding.totalHeartbeats)} />
+              <InfoRow
+                label="Last seen"
+                value={
+                  data.aiCoding.lastHeartbeatAt
+                    ? formatDateTime(data.aiCoding.lastHeartbeatAt, data.user.timezone)
+                    : "Never"
+                }
+              />
+            </dl>
+            <RankedBarChart
+              data={aiProjectChartData}
+              empty="No AI coding project activity in the last 30 days."
+            />
+          </div>
+          <DataTable
+            headers={["Time", "Entity", "Project", "Language", "Client"]}
+            empty="No AI coding heartbeats received yet."
+            rows={data.aiCoding.recentHeartbeats.map((heartbeat) => [
+              formatDateTime(heartbeat.time, data.user.timezone),
+              <div class="min-w-56">
+                <div class="truncate font-medium">{heartbeat.entity}</div>
+                <div class="text-xs text-base-content/50">
+                  {heartbeat.type}
+                  {heartbeat.isWrite ? " / write" : ""}
+                </div>
+              </div>,
+              heartbeat.project ?? "Unknown",
+              heartbeat.language ?? "Unknown",
+              <div>
+                <div>{heartbeat.editor ?? "Unknown"}</div>
+                <div class="text-xs text-base-content/50">{heartbeat.machine ?? "No machine"}</div>
+              </div>,
+            ])}
+          />
+        </div>
+      </Panel>
+
       <Panel title="Recent heartbeats">
         <DataTable
           headers={["Time", "Entity", "Project", "Language", "Category", "Client"]}
@@ -293,6 +357,10 @@ function formatSeconds(totalSeconds: number): string {
   if (hours === 0) return `${minutes} min${minutes === 1 ? "" : "s"}`;
   if (minutes === 0) return `${hours} hr${hours === 1 ? "" : "s"}`;
   return `${hours} hr${hours === 1 ? "" : "s"} ${minutes} min${minutes === 1 ? "" : "s"}`;
+}
+
+function formatHeartbeatCount(count: number): string {
+  return `${count.toLocaleString()} heartbeat${count === 1 ? "" : "s"}`;
 }
 
 function formatDateTime(epochSeconds: number, timezone: string): string {

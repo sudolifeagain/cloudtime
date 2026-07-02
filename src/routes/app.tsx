@@ -19,6 +19,8 @@ import { AppLayout } from "../ui/components";
 import {
   DashboardView,
   LoginView,
+  type AiCodingOverview,
+  type AiProjectSummary,
   type CategorySummary,
   type DailySummary,
   type DashboardData,
@@ -247,7 +249,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     last30Seconds,
     allTimeSeconds,
     heartbeatCount,
-    aiHeartbeatCount,
+    aiCoding,
     activeSessionCount,
     machineCount,
     userAgentCount,
@@ -262,7 +264,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     scalarNumber(c.env.DB, "SELECT COALESCE(SUM(total_seconds), 0) AS value FROM summaries WHERE user_id = ? AND date >= ?", [userId, last30Start]),
     scalarNumber(c.env.DB, "SELECT COALESCE(SUM(total_seconds), 0) AS value FROM summaries WHERE user_id = ?", [userId]),
     scalarNumber(c.env.DB, "SELECT COUNT(*) AS value FROM heartbeats WHERE user_id = ?", [userId]),
-    scalarNumber(c.env.DB, "SELECT COUNT(*) AS value FROM heartbeats WHERE user_id = ? AND category = 'ai coding'", [userId]),
+    loadAiCodingOverview(c.env.DB, userId),
     scalarNumber(
       c.env.DB,
       "SELECT COUNT(*) AS value FROM sessions WHERE user_id = ? AND expires_at > datetime('now') AND last_active_at >= datetime('now', '-1 day')",
@@ -295,7 +297,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     last30DaysSeconds: last30Seconds,
     allTimeSeconds,
     heartbeatCount,
-    aiHeartbeatCount,
+    aiCoding,
     activeSessionCount,
     machineCount,
     userAgentCount,
@@ -306,6 +308,53 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     categories,
     recentHeartbeats,
   };
+}
+
+async function loadAiCodingOverview(db: D1Database, userId: string): Promise<AiCodingOverview> {
+  const since = Math.floor(Date.now() / 1000) - 30 * 86400;
+  const [summary, projects, recentHeartbeats] = await Promise.all([
+    db.prepare(
+      `SELECT COUNT(*) AS total_heartbeats, MAX(time) AS last_heartbeat_at
+       FROM heartbeats
+       WHERE user_id = ? AND category = 'ai coding'`,
+    )
+      .bind(userId)
+      .first<{ total_heartbeats: number; last_heartbeat_at: number | null }>(),
+    loadAiProjectSummaries(db, userId, since),
+    loadRecentAiHeartbeats(db, userId),
+  ]);
+
+  return {
+    totalHeartbeats: Number(summary?.total_heartbeats ?? 0),
+    lastHeartbeatAt: summary?.last_heartbeat_at ?? null,
+    projects,
+    recentHeartbeats,
+  };
+}
+
+async function loadAiProjectSummaries(
+  db: D1Database,
+  userId: string,
+  since: number,
+): Promise<AiProjectSummary[]> {
+  const { results } = await db.prepare(
+    `SELECT COALESCE(NULLIF(project, ''), 'Unknown') AS name,
+            COUNT(*) AS heartbeat_count,
+            MAX(time) AS last_heartbeat_at
+     FROM heartbeats
+     WHERE user_id = ? AND category = 'ai coding' AND time >= ?
+     GROUP BY COALESCE(NULLIF(project, ''), 'Unknown')
+     ORDER BY heartbeat_count DESC, last_heartbeat_at DESC, name ASC
+     LIMIT 6`,
+  )
+    .bind(userId, since)
+    .all<{ name: string; heartbeat_count: number; last_heartbeat_at: number | null }>();
+
+  return results.map((row) => ({
+    name: row.name,
+    heartbeatCount: row.heartbeat_count,
+    lastHeartbeatAt: row.last_heartbeat_at,
+  }));
 }
 
 async function loadDailySummaries(
@@ -414,15 +463,28 @@ async function loadCategorySummaries(db: D1Database, userId: string, startDate: 
   }));
 }
 
-async function loadRecentHeartbeats(db: D1Database, userId: string): Promise<RecentHeartbeat[]> {
+async function loadRecentAiHeartbeats(db: D1Database, userId: string): Promise<RecentHeartbeat[]> {
+  return loadRecentHeartbeats(db, userId, "ai coding", 8);
+}
+
+async function loadRecentHeartbeats(
+  db: D1Database,
+  userId: string,
+  category: string | null = null,
+  limit = 10,
+): Promise<RecentHeartbeat[]> {
+  const binds: Array<string | number> = [userId];
+  if (category) binds.push(category);
+  binds.push(limit);
+
   const { results } = await db.prepare(
     `SELECT entity, type, time, project, language, category, editor, machine, is_write
      FROM heartbeats
-     WHERE user_id = ?
+     WHERE user_id = ?${category ? " AND category = ?" : ""}
      ORDER BY time DESC
-     LIMIT 10`,
+     LIMIT ?`,
   )
-    .bind(userId)
+    .bind(...binds)
     .all<{
       entity: string;
       type: string;
