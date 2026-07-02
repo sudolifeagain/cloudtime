@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   escapeXml,
   renderHeatmapSvg,
+  renderStreakSvg,
   resolveTheme,
   resolveThemeName,
 } from "../../src/utils/cards/render";
@@ -66,6 +67,60 @@ describe("renderHeatmapSvg", () => {
     expect(svg).not.toMatch(/foreignObject/i);
     expect(svg).not.toMatch(/href=/i);
     expect(svg).not.toMatch(/on\w+=/i); // no event-handler attributes
+  });
+});
+
+describe("renderStreakSvg", () => {
+  it("produces a well-formed svg root with an image role", () => {
+    const svg = renderStreakSvg({
+      username: "alice",
+      currentStreak: 0,
+      longestStreak: 0,
+      trackedDays: 0,
+      totalSeconds: 0,
+    });
+    expect(svg.startsWith("<svg")).toBe(true);
+    expect(svg).toContain('xmlns="http://www.w3.org/2000/svg"');
+    expect(svg).toContain('role="img"');
+    expect(svg.trimEnd().endsWith("</svg>")).toBe(true);
+  });
+
+  it("renders a zero-activity user without throwing", () => {
+    const svg = renderStreakSvg({
+      username: "alice",
+      currentStreak: 0,
+      longestStreak: 0,
+      trackedDays: 0,
+      totalSeconds: 0,
+    });
+    expect(svg).toContain("0 days");
+    expect(svg).toContain("0 secs total coding time");
+  });
+
+  it("escapes the username to prevent markup injection", () => {
+    const svg = renderStreakSvg({
+      username: '<script>evil()</script>&"x',
+      currentStreak: 1,
+      longestStreak: 1,
+      trackedDays: 1,
+      totalSeconds: 60,
+    });
+    expect(svg).not.toContain("<script>");
+    expect(svg).toContain("&lt;script&gt;");
+  });
+
+  it("emits only a safe static subset (no script/foreignObject/href)", () => {
+    const svg = renderStreakSvg({
+      username: "a",
+      currentStreak: 3,
+      longestStreak: 5,
+      trackedDays: 12,
+      totalSeconds: 3600,
+    });
+    expect(svg).not.toMatch(/<script/i);
+    expect(svg).not.toMatch(/foreignObject/i);
+    expect(svg).not.toMatch(/href=/i);
+    expect(svg).not.toMatch(/on\w+=/i);
   });
 });
 
