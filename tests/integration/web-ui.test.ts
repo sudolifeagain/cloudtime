@@ -21,6 +21,7 @@ afterEach(async () => {
     "user_agents",
     "sessions",
     "oauth_accounts",
+    "embed_settings",
     "users",
   );
   const keys = await env.KV.list();
@@ -129,6 +130,13 @@ describe("web UI", () => {
     expect(html).toContain("Time tracking");
     expect(html).toContain("Asia/Tokyo");
     expect(html).toContain("Heartbeat timeout");
+    expect(html).toContain("GitHub profile cards");
+    expect(html).toContain("README snippets");
+    expect(html).toContain("Public cards are off");
+    expect(html).toContain("Copy Markdown");
+    expect(html).toContain("![CloudTime heatmap](https://test.cloudtime.dev/api/v1/users/owner/cards/heatmap.svg?theme=default)");
+    expect(html).toContain("![CloudTime streak](https://test.cloudtime.dev/api/v1/users/owner/cards/streak.svg?theme=default)");
+    expect(html).not.toContain(user.apiKey);
   });
 
   it("updates timezone and timeout from the settings form", async () => {
@@ -183,6 +191,71 @@ describe("web UI", () => {
       .bind(user.userId)
       .first<{ timezone: string; timeout: number }>();
     expect(row).toEqual({ timezone: "UTC", timeout: 15 });
+  });
+
+  it("updates GitHub profile card settings from the settings form", async () => {
+    const user = await seedUserWithSession({ username: "owner", timezone: "UTC" });
+
+    const res = await call("/app/settings/embed-cards", {
+      method: "POST",
+      headers: {
+        Cookie: `__Host-session=${user.sessionToken}`,
+        Origin: BASE,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        enabled: "on",
+        freshness_minutes: "30",
+        default_theme: "default",
+      }).toString(),
+    });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Card settings saved.");
+    expect(html).toContain("badge badge-success");
+    expect(html).toContain("https://test.cloudtime.dev/api/v1/users/owner/cards/heatmap.svg?theme=default");
+    expect(html).toContain("https://test.cloudtime.dev/api/v1/users/owner/cards/streak.svg?theme=default");
+    expect(html).not.toContain(user.apiKey);
+    expect(html).not.toContain(user.sessionToken);
+
+    const row = await env.DB.prepare(
+      "SELECT enabled, freshness_minutes, default_theme FROM embed_settings WHERE user_id = ?",
+    )
+      .bind(user.userId)
+      .first<{ enabled: number; freshness_minutes: number; default_theme: string }>();
+    expect(row).toEqual({ enabled: 1, freshness_minutes: 30, default_theme: "default" });
+
+    const preview = await call("/api/v1/users/owner/cards/heatmap.svg");
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get("Content-Type")).toContain("image/svg+xml");
+  });
+
+  it("rejects invalid GitHub profile card settings", async () => {
+    const user = await seedUserWithSession({ username: "owner", timezone: "UTC" });
+
+    const res = await call("/app/settings/embed-cards", {
+      method: "POST",
+      headers: {
+        Cookie: `__Host-session=${user.sessionToken}`,
+        Origin: BASE,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        enabled: "on",
+        freshness_minutes: "0",
+        default_theme: "default",
+      }).toString(),
+    });
+
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(html).toContain("freshness_minutes must be an integer between 1 and 1440");
+
+    const row = await env.DB.prepare("SELECT COUNT(*) AS value FROM embed_settings WHERE user_id = ?")
+      .bind(user.userId)
+      .first<{ value: number }>();
+    expect(row?.value).toBe(0);
   });
 
   it("regenerates an API key from the dashboard form", async () => {

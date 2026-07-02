@@ -1,11 +1,16 @@
 import { Hono } from "hono";
 import type { AuthEnv, Env } from "../types";
-import type { components } from "../types/generated";
 import type { Context } from "hono";
 import { authMiddleware } from "../middleware/auth";
 import { rateLimitExceeded, tooManyRequests } from "../middleware/rate-limit";
 import { getHeatmapData, getStreakData, resolveCardRange, type CardRange } from "../utils/cards/data";
 import { renderHeatmapSvg, renderStreakSvg, resolveThemeName } from "../utils/cards/render";
+import {
+  loadEmbedSettings,
+  prepareEmbedSettingsUpdate,
+  saveEmbedSettings,
+  type EmbedSettingsUpdate,
+} from "../utils/embed-settings";
 import {
   buildCardCacheKey,
   cardCacheControl,
@@ -14,48 +19,9 @@ import {
   type CardCacheValue,
 } from "../utils/cards/cache";
 
-type EmbedSettings = components["schemas"]["EmbedSettings"];
-type EmbedSettingsUpdate = components["schemas"]["EmbedSettingsUpdate"];
-
-// Defaults applied when a user has no embed_settings row (default-safe: OFF).
-const DEFAULT_SETTINGS: EmbedSettings = {
-  enabled: false,
-  freshness_minutes: 15,
-  default_theme: "default",
-};
-
-const FRESHNESS_MIN = 1;
-const FRESHNESS_MAX = 1440; // one day
-const THEME_NAME_MAX = 32;
-const THEME_NAME_RE = /^[a-z0-9_-]+$/;
 const USERNAME_MAX = 64;
 const RANGE_MAX = 32;
 const CACHE_BUSTER_MAX = 64;
-
-interface SettingsRow {
-  enabled: number;
-  freshness_minutes: number;
-  default_theme: string;
-  created_at: string;
-  modified_at: string;
-}
-
-async function loadEmbedSettings(db: D1Database, userId: string): Promise<EmbedSettings> {
-  const row = await db
-    .prepare(
-      "SELECT enabled, freshness_minutes, default_theme, created_at, modified_at FROM embed_settings WHERE user_id = ?",
-    )
-    .bind(userId)
-    .first<SettingsRow>();
-  if (!row) return { ...DEFAULT_SETTINGS };
-  return {
-    enabled: row.enabled === 1,
-    freshness_minutes: row.freshness_minutes,
-    default_theme: row.default_theme,
-    created_at: row.created_at,
-    modified_at: row.modified_at,
-  };
-}
 
 // ============================================================
 // Authenticated settings: /users/current/embed_settings
@@ -79,66 +45,12 @@ cardsSettings.patch("/embed_settings", async (c) => {
   }
 
   const current = await loadEmbedSettings(c.env.DB, userId);
-  const next: EmbedSettings = { ...current };
-  let updates = 0;
-
-  if ("enabled" in body) {
-    if (typeof body.enabled !== "boolean") {
-      return c.json({ error: "enabled must be a boolean" }, 400);
-    }
-    next.enabled = body.enabled;
-    updates++;
-  }
-  if ("freshness_minutes" in body) {
-    const n = body.freshness_minutes;
-    if (
-      typeof n !== "number" ||
-      !Number.isInteger(n) ||
-      n < FRESHNESS_MIN ||
-      n > FRESHNESS_MAX
-    ) {
-      return c.json(
-        { error: `freshness_minutes must be an integer between ${FRESHNESS_MIN} and ${FRESHNESS_MAX}` },
-        400,
-      );
-    }
-    next.freshness_minutes = n;
-    updates++;
-  }
-  if ("default_theme" in body) {
-    const t = body.default_theme;
-    if (
-      typeof t !== "string" ||
-      t.length < 1 ||
-      t.length > THEME_NAME_MAX ||
-      !THEME_NAME_RE.test(t)
-    ) {
-      return c.json(
-        { error: `default_theme must be 1-${THEME_NAME_MAX} lowercase letters, numbers, hyphens, or underscores` },
-        400,
-      );
-    }
-    next.default_theme = resolveThemeName(t);
-    updates++;
-  }
-  if (updates === 0) {
-    return c.json({ error: "No fields to update" }, 400);
+  const prepared = prepareEmbedSettingsUpdate(current, body);
+  if (!prepared.ok) {
+    return c.json({ error: prepared.error }, 400);
   }
 
-  await c.env.DB
-    .prepare(
-      `INSERT INTO embed_settings (user_id, enabled, freshness_minutes, default_theme, created_at, modified_at)
-       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
-       ON CONFLICT(user_id) DO UPDATE SET
-         enabled = excluded.enabled,
-         freshness_minutes = excluded.freshness_minutes,
-         default_theme = excluded.default_theme,
-         modified_at = datetime('now')`,
-    )
-    .bind(userId, next.enabled ? 1 : 0, next.freshness_minutes, next.default_theme)
-    .run();
-
-  const updated = await loadEmbedSettings(c.env.DB, userId);
+  const updated = await saveEmbedSettings(c.env.DB, userId, prepared.next);
   return c.json({ data: updated });
 });
 

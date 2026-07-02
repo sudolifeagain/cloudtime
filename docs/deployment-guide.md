@@ -319,9 +319,30 @@ curl -i \
 
 The dashboard updates recent heartbeats as soon as they are stored. Daily and project charts are based on aggregated summaries, so they may not show new activity until the hourly cron has run. The AI coding panel appears when incoming heartbeats use the `ai coding` category; it displays only stored heartbeat metadata such as time, project, entity, language, editor, and machine.
 
+## 11. Add cards to a GitHub profile README
+
+Open `https://your-worker.example.com/app/settings` and use the **GitHub
+profile cards** section to enable public cards, choose a freshness window, and
+copy the Markdown snippets.
+
+The snippets are public image URLs and must not contain an API key or session
+token. They look like:
+
+```markdown
+![CloudTime heatmap](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/heatmap.svg?theme=default)
+![CloudTime streak](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/streak.svg?theme=default)
+```
+
+Paste the snippets into the root `README.md` of the GitHub profile repository
+named exactly like your GitHub username. GitHub proxies remote images through
+its image proxy, so CloudTime controls its own `Cache-Control` and `ETag`
+headers, but GitHub may still refetch on its own cadence. If you need a new
+CloudTime URL for manual verification, append a short `v=` value from the
+settings page.
+
 ---
 
-## 11. Ongoing operations
+## 12. Ongoing operations
 
 - **Backups**: see [`backup-restore.md`](./backup-restore.md). Schedule periodic D1 exports — the Cloudflare account-level snapshots are not a substitute for operator-owned exports.
 - **Heartbeat retention**: consider setting `HEARTBEAT_RETENTION_DAYS` to bound raw heartbeat table growth. Aggregated summaries are retained.

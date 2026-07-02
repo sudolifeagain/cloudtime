@@ -15,6 +15,12 @@ import {
 import { addDays, formatDate, getToday } from "../utils/time-format";
 import { type UserRow, USER_COLUMNS } from "../utils/user";
 import { NoProfileFieldsError, updateUserProfile, validateProfileInput } from "../utils/profile";
+import {
+  loadEmbedSettings,
+  prepareEmbedSettingsUpdate,
+  saveEmbedSettings,
+  type EmbedSettingsUpdate,
+} from "../utils/embed-settings";
 import { AppLayout } from "../ui/components";
 import {
   DashboardView,
@@ -105,6 +111,32 @@ web.post("/app/settings", async (c) => {
   return renderSettings(c, data, { saved: true });
 });
 
+web.post("/app/settings/embed-cards", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+
+  const form = await c.req.formData();
+  const body: EmbedSettingsUpdate = {
+    enabled: form.get("enabled") === "on",
+    freshness_minutes: Number(String(form.get("freshness_minutes") ?? "")),
+    default_theme: String(form.get("default_theme") ?? ""),
+  };
+
+  const current = await loadEmbedSettings(c.env.DB, session.userId);
+  const prepared = prepareEmbedSettingsUpdate(current, body);
+  if (!prepared.ok) {
+    const data = await loadDashboardData(c, session.userId);
+    if (!data) return c.redirect("/app", 303);
+    return renderSettings(c, data, { embedError: prepared.error, status: 400 });
+  }
+
+  await saveEmbedSettings(c.env.DB, session.userId, prepared.next);
+
+  const data = await loadDashboardData(c, session.userId);
+  if (!data) return c.redirect("/app", 303);
+  return renderSettings(c, data, { embedSaved: true });
+});
+
 web.post("/app/api-key", async (c) => {
   const session = await readSession(c);
   if (!session) return c.redirect("/app", 303);
@@ -177,7 +209,7 @@ function renderDashboard(c: Context<WebEnv>, data: DashboardData, generatedApiKe
 function renderSettings(
   c: Context<WebEnv>,
   data: DashboardData,
-  options: { saved?: boolean; error?: string; status?: 200 | 400 } = {},
+  options: { saved?: boolean; error?: string; embedSaved?: boolean; embedError?: string; status?: 200 | 400 } = {},
 ) {
   return c.html(
     <AppLayout title="Settings" username={data.user.username} activePath="settings">
@@ -186,6 +218,8 @@ function renderSettings(
         timezones={timezoneOptions(data.user.timezone)}
         saved={options.saved}
         error={options.error}
+        embedSaved={options.embedSaved}
+        embedError={options.embedError}
       />
     </AppLayout>,
     options.status ?? 200,
@@ -259,6 +293,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     fallbackProjects,
     categories,
     recentHeartbeats,
+    embedSettings,
   ] = await Promise.all([
     scalarNumber(c.env.DB, "SELECT COALESCE(SUM(total_seconds), 0) AS value FROM summaries WHERE user_id = ? AND date = ?", [userId, today]),
     scalarNumber(c.env.DB, "SELECT COALESCE(SUM(total_seconds), 0) AS value FROM summaries WHERE user_id = ? AND date >= ?", [userId, last30Start]),
@@ -278,6 +313,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     loadFallbackProjects(c.env.DB, userId),
     loadCategorySummaries(c.env.DB, userId, last30Start),
     loadRecentHeartbeats(c.env.DB, userId),
+    loadEmbedSettings(c.env.DB, userId),
   ]);
 
   const projectData = projects.length > 0 ? projects : fallbackProjects;
@@ -302,6 +338,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     machineCount,
     userAgentCount,
     apiBaseUrl,
+    embedSettings,
     providers,
     dailySummaries,
     projects: projectData,

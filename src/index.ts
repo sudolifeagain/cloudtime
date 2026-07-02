@@ -56,6 +56,8 @@ app.use(
       defaultSrc: ["'none'"],
       baseUri: ["'none'"],
       formAction: ["'self'"],
+      imgSrc: ["'self'"],
+      scriptSrc: ["'self'"],
       styleSrc: ["'self'"],
       frameAncestors: ["'none'"],
     },

@@ -20,6 +20,7 @@ export function AppLayout({ title, username, activePath = "dashboard", children 
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>{pageTitle}</title>
         <link rel="stylesheet" href="/assets/app.css" />
+        <script src="/assets/app.js" defer></script>
       </head>
       <body class="ct-shell">
         <header class="border-b border-base-300 bg-base-100">
