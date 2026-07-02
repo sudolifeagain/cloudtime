@@ -14,6 +14,7 @@ import {
 } from "../utils/session";
 import { addDays, formatDate, getToday } from "../utils/time-format";
 import { type UserRow, USER_COLUMNS } from "../utils/user";
+import { NoProfileFieldsError, updateUserProfile, validateProfileInput } from "../utils/profile";
 import { AppLayout } from "../ui/components";
 import {
   DashboardView,
@@ -24,6 +25,7 @@ import {
   type ProjectSummary,
   type RecentHeartbeat,
 } from "../ui/dashboard";
+import { SettingsView, timezoneOptions } from "../ui/settings";
 
 type WebEnv = {
   Bindings: Env;
@@ -56,6 +58,47 @@ web.get("/app", async (c) => {
   if (!data) return renderLogin(c);
 
   return renderDashboard(c, data);
+});
+
+web.get("/app/settings", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+
+  const data = await loadDashboardData(c, session.userId);
+  if (!data) return c.redirect("/app", 303);
+
+  return renderSettings(c, data);
+});
+
+web.post("/app/settings", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+
+  const form = await c.req.formData();
+  const timezone = String(form.get("timezone") ?? "");
+  const timeoutRaw = String(form.get("timeout") ?? "");
+  const timeout = Number(timeoutRaw);
+  const input = { timezone, timeout };
+  const validationError = validateProfileInput(input);
+
+  if (validationError) {
+    const data = await loadDashboardData(c, session.userId);
+    if (!data) return c.redirect("/app", 303);
+    return renderSettings(c, data, { error: validationError, status: 400 });
+  }
+
+  try {
+    await updateUserProfile(c.env.DB, session.userId, input);
+  } catch (err) {
+    const data = await loadDashboardData(c, session.userId);
+    if (!data) return c.redirect("/app", 303);
+    const message = err instanceof NoProfileFieldsError ? "No fields to update" : "Unable to save settings";
+    return renderSettings(c, data, { error: message, status: 400 });
+  }
+
+  const data = await loadDashboardData(c, session.userId);
+  if (!data) return c.redirect("/app", 303);
+  return renderSettings(c, data, { saved: true });
 });
 
 web.post("/app/api-key", async (c) => {
@@ -109,10 +152,29 @@ function renderLogin(c: Context<WebEnv>) {
 
 function renderDashboard(c: Context<WebEnv>, data: DashboardData, generatedApiKey?: string) {
   return c.html(
-    <AppLayout title="Dashboard" username={data.user.username}>
+    <AppLayout title="Dashboard" username={data.user.username} activePath="dashboard">
       <DashboardView data={data} generatedApiKey={generatedApiKey} />
     </AppLayout>,
     200,
+    noStoreHeaders(),
+  );
+}
+
+function renderSettings(
+  c: Context<WebEnv>,
+  data: DashboardData,
+  options: { saved?: boolean; error?: string; status?: 200 | 400 } = {},
+) {
+  return c.html(
+    <AppLayout title="Settings" username={data.user.username} activePath="settings">
+      <SettingsView
+        data={data}
+        timezones={timezoneOptions(data.user.timezone)}
+        saved={options.saved}
+        error={options.error}
+      />
+    </AppLayout>,
+    options.status ?? 200,
     noStoreHeaders(),
   );
 }

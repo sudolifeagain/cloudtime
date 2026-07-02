@@ -7,9 +7,10 @@ export function cx(...values: Array<string | false | null | undefined>): string 
 type LayoutProps = PropsWithChildren<{
   title: string;
   username?: string;
+  activePath?: "dashboard" | "settings";
 }>;
 
-export function AppLayout({ title, username, children }: LayoutProps) {
+export function AppLayout({ title, username, activePath = "dashboard", children }: LayoutProps) {
   const pageTitle = title === "CloudTime" ? "CloudTime" : `${title} - CloudTime`;
 
   return (
@@ -26,9 +27,17 @@ export function AppLayout({ title, username, children }: LayoutProps) {
             <a class="text-lg font-semibold tracking-normal text-base-content" href="/app">
               CloudTime
             </a>
-            <div class="flex min-w-0 items-center gap-3">
+            <div class="flex min-w-0 items-center gap-2 sm:gap-3">
               {username ? (
                 <>
+                  <nav class="hidden items-center gap-1 sm:flex">
+                    <a class={cx("btn btn-ghost btn-sm", activePath === "dashboard" && "btn-active")} href="/app">
+                      Dashboard
+                    </a>
+                    <a class={cx("btn btn-ghost btn-sm", activePath === "settings" && "btn-active")} href="/app/settings">
+                      Settings
+                    </a>
+                  </nav>
                   <span class="hidden truncate text-sm text-base-content/70 sm:inline">
                     {username}
                   </span>
@@ -42,6 +51,18 @@ export function AppLayout({ title, username, children }: LayoutProps) {
             </div>
           </div>
         </header>
+        {username ? (
+          <nav class="border-b border-base-300 bg-base-100 px-4 py-2 sm:hidden">
+            <div class="mx-auto flex max-w-7xl gap-2">
+              <a class={cx("btn btn-ghost btn-sm flex-1", activePath === "dashboard" && "btn-active")} href="/app">
+                Dashboard
+              </a>
+              <a class={cx("btn btn-ghost btn-sm flex-1", activePath === "settings" && "btn-active")} href="/app/settings">
+                Settings
+              </a>
+            </div>
+          </nav>
+        ) : null}
         <main class="ct-page">{children}</main>
       </body>
     </html>

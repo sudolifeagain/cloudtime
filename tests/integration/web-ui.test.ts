@@ -92,6 +92,74 @@ describe("web UI", () => {
     expect(html).toContain("AI coding");
   });
 
+  it("renders settings for a session-authenticated user", async () => {
+    const user = await seedUserWithSession({ username: "owner", timezone: "Asia/Tokyo" });
+
+    const res = await call("/app/settings", {
+      headers: { Cookie: `__Host-session=${user.sessionToken}` },
+    });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Time tracking");
+    expect(html).toContain("Asia/Tokyo");
+    expect(html).toContain("Heartbeat timeout");
+  });
+
+  it("updates timezone and timeout from the settings form", async () => {
+    const user = await seedUserWithSession({ username: "owner", timezone: "UTC" });
+
+    const res = await call("/app/settings", {
+      method: "POST",
+      headers: {
+        Cookie: `__Host-session=${user.sessionToken}`,
+        Origin: BASE,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        timezone: "Asia/Tokyo",
+        timeout: "30",
+      }).toString(),
+    });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Settings saved.");
+    expect(html).toContain("Asia/Tokyo");
+    expect(html).toContain("30 minutes");
+
+    const row = await env.DB.prepare("SELECT timezone, timeout FROM users WHERE id = ?")
+      .bind(user.userId)
+      .first<{ timezone: string; timeout: number }>();
+    expect(row).toEqual({ timezone: "Asia/Tokyo", timeout: 30 });
+  });
+
+  it("rejects invalid settings form values", async () => {
+    const user = await seedUserWithSession({ username: "owner", timezone: "UTC" });
+
+    const res = await call("/app/settings", {
+      method: "POST",
+      headers: {
+        Cookie: `__Host-session=${user.sessionToken}`,
+        Origin: BASE,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        timezone: "UTC",
+        timeout: "90",
+      }).toString(),
+    });
+
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(html).toContain("timeout must be between 1 and 60");
+
+    const row = await env.DB.prepare("SELECT timezone, timeout FROM users WHERE id = ?")
+      .bind(user.userId)
+      .first<{ timezone: string; timeout: number }>();
+    expect(row).toEqual({ timezone: "UTC", timeout: 15 });
+  });
+
   it("regenerates an API key from the dashboard form", async () => {
     const user = await seedUserWithSession({ username: "owner" });
 
