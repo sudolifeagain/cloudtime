@@ -87,7 +87,10 @@ describe("web UI", () => {
     const html = await res.text();
     expect(html).toContain("owner");
     expect(html).toContain("API key");
+    expect(html).toContain("Daily activity");
+    expect(html).toContain("Project distribution");
     expect(html).toContain("cloudtime");
+    expect(html).toContain("docs");
     expect(html).toContain("README.md");
     expect(html).toContain("AI coding");
   });
@@ -191,12 +194,20 @@ async function seedDashboardRows(userId: string): Promise<void> {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(now * 1000));
+  const yesterday = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date((now - 86400) * 1000));
 
   await env.DB.prepare(
     `INSERT INTO summaries (user_id, date, project, language, editor, category, total_seconds)
-     VALUES (?, ?, 'cloudtime', 'TypeScript', 'Codex', 'coding', 3600)`,
+     VALUES
+       (?, ?, 'cloudtime', 'TypeScript', 'Codex', 'coding', 3600),
+       (?, ?, 'docs', 'Markdown', 'Codex', 'writing docs', 1800)`,
   )
-    .bind(userId, today)
+    .bind(userId, today, userId, yesterday)
     .run();
 
   await env.DB.prepare(

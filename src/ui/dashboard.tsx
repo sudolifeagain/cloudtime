@@ -1,4 +1,5 @@
 import { DataTable, EmptyState, MetricCard, Notice, Panel, ProgressRow } from "./components";
+import { RankedBarChart, VerticalBarChart, type ChartDatum } from "./charts";
 
 export type ProviderLink = {
   provider: string;
@@ -14,6 +15,11 @@ export type ProjectSummary = {
 
 export type CategorySummary = {
   name: string;
+  totalSeconds: number;
+};
+
+export type DailySummary = {
+  date: string;
   totalSeconds: number;
 };
 
@@ -50,6 +56,7 @@ export type DashboardData = {
   userAgentCount: number;
   apiBaseUrl: string;
   providers: ProviderLink[];
+  dailySummaries: DailySummary[];
   projects: ProjectSummary[];
   categories: CategorySummary[];
   recentHeartbeats: RecentHeartbeat[];
@@ -99,6 +106,16 @@ export function DashboardView({
   const displayName = data.user.displayName || data.user.username;
   const maxProjectSeconds = Math.max(...data.projects.map((p) => p.totalSeconds), 0);
   const maxCategorySeconds = Math.max(...data.categories.map((c) => c.totalSeconds), 0);
+  const dailyChartData: ChartDatum[] = data.dailySummaries.map((day) => ({
+    label: day.date.slice(5),
+    value: day.totalSeconds,
+    text: formatSeconds(day.totalSeconds),
+  }));
+  const projectChartData: ChartDatum[] = data.projects.map((project) => ({
+    label: project.name,
+    value: project.totalSeconds,
+    text: formatSeconds(project.totalSeconds),
+  }));
 
   return (
     <>
@@ -167,6 +184,25 @@ export function DashboardView({
             <InfoRow label="Machines" value={data.machineCount.toString()} />
             <InfoRow label="Clients" value={data.userAgentCount.toString()} />
           </dl>
+        </Panel>
+      </div>
+
+      <div class="grid gap-6 lg:grid-cols-2">
+        <Panel title="Daily activity">
+          <VerticalBarChart
+            id="daily-activity-chart"
+            title="Daily coding activity"
+            description="Coding time by day for the last 14 days."
+            data={dailyChartData}
+            empty="No daily summaries yet."
+          />
+        </Panel>
+
+        <Panel title="Project distribution">
+          <RankedBarChart
+            data={projectChartData}
+            empty="No project summaries yet."
+          />
         </Panel>
       </div>
 

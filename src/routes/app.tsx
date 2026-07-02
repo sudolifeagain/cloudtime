@@ -20,6 +20,7 @@ import {
   DashboardView,
   LoginView,
   type CategorySummary,
+  type DailySummary,
   type DashboardData,
   type LoginProvider,
   type ProjectSummary,
@@ -217,6 +218,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
   const timezone = userRow.timezone;
   const today = formatDate(getToday(timezone));
   const last30Start = formatDate(addDays(getToday(timezone), -29));
+  const last14Start = formatDate(addDays(getToday(timezone), -13));
   const apiBaseUrl = `${(c.env.APP_URL ?? new URL(c.req.url).origin).replace(/\/+$/, "")}/api/v1`;
 
   const [
@@ -229,6 +231,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     machineCount,
     userAgentCount,
     providers,
+    dailySummaries,
     projects,
     fallbackProjects,
     categories,
@@ -247,6 +250,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     scalarNumber(c.env.DB, "SELECT COUNT(*) AS value FROM machine_names WHERE user_id = ?", [userId]),
     scalarNumber(c.env.DB, "SELECT COUNT(*) AS value FROM user_agents WHERE user_id = ?", [userId]),
     loadProviders(c.env.DB, userId),
+    loadDailySummaries(c.env.DB, userId, last14Start, today),
     loadProjectSummaries(c.env.DB, userId, last30Start),
     loadFallbackProjects(c.env.DB, userId),
     loadCategorySummaries(c.env.DB, userId, last30Start),
@@ -276,10 +280,43 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     userAgentCount,
     apiBaseUrl,
     providers,
+    dailySummaries,
     projects: projectData,
     categories,
     recentHeartbeats,
   };
+}
+
+async function loadDailySummaries(
+  db: D1Database,
+  userId: string,
+  startDate: string,
+  endDate: string,
+): Promise<DailySummary[]> {
+  const { results } = await db.prepare(
+    `SELECT date, COALESCE(SUM(total_seconds), 0) AS total_seconds
+     FROM summaries
+     WHERE user_id = ? AND date >= ? AND date <= ?
+     GROUP BY date
+     ORDER BY date ASC`,
+  )
+    .bind(userId, startDate, endDate)
+    .all<{ date: string; total_seconds: number }>();
+
+  const totals = new Map(results.map((row) => [row.date, row.total_seconds]));
+  const days: DailySummary[] = [];
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+
+  for (let time = start.getTime(); time <= end.getTime(); time += 86400000) {
+    const date = new Date(time).toISOString().slice(0, 10);
+    days.push({
+      date,
+      totalSeconds: totals.get(date) ?? 0,
+    });
+  }
+
+  return days;
 }
 
 async function scalarNumber(db: D1Database, sql: string, binds: Array<string | number>): Promise<number> {
