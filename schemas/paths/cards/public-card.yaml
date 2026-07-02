@@ -36,6 +36,7 @@ get:
           - heatmap
           - summary
           - languages
+          - streak
     - name: range
       in: query
       required: false

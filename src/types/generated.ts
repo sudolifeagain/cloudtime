@@ -2805,7 +2805,7 @@ export interface operations {
                 /** @description Public CloudTime username identifying the card owner. */
                 username: string;
                 /** @description Card type to render. */
-                card_type: "heatmap" | "summary" | "languages";
+                card_type: "heatmap" | "summary" | "languages" | "streak";
             };
             cookie?: never;
         };

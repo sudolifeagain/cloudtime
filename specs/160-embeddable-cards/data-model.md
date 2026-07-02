@@ -61,12 +61,29 @@ Validation:
 Not persisted. A card render is derived from:
 
 - target user;
-- card type (`heatmap`, `summary`, `languages`);
+- card type (`heatmap`, `summary`, `languages`, `streak`);
 - range;
 - theme;
 - optional template id;
 - current embed settings;
 - aggregated summaries/hourly summaries plus current-day overlay.
+
+### Tracked Day
+
+Not persisted as a separate table. A tracked day is derived from existing
+activity data:
+
+- date is a user-local calendar date using the user's configured timezone;
+- total computed coding duration is at least one second;
+- timeout rules have already been applied by the duration/summary builder.
+
+The streak card uses tracked days to compute:
+
+- `current_streak`: consecutive tracked days ending today, or ending yesterday
+  when today has no tracked duration yet;
+- `longest_streak`: longest consecutive tracked-day run inside the selected
+  range;
+- `tracked_days`: count of tracked days in the selected range.
 
 ### Rendered Card Cache Entry
 
@@ -75,7 +92,7 @@ Stored in KV, not D1.
 | Key Part | Notes |
 |----------|-------|
 | `user_id` | Internal user id resolved from the public username. |
-| `card_type` | `heatmap`, `summary`, or `languages`. |
+| `card_type` | `heatmap`, `summary`, `languages`, or `streak`. |
 | `range` | Normalized range after fallback/defaulting. |
 | `theme` | Normalized theme after fallback/defaulting. |
 | `template_id` | Present only when a template is used. |

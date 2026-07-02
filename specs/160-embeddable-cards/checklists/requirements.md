@@ -37,5 +37,8 @@
   references). Spec updated accordingly.
 - All other underspecified details were resolved with reasonable defaults recorded in the
   Assumptions section.
+- The GitHub profile README extension is clarified: streak cards use CloudTime
+  tracked coding days, and dashboard snippets expose only public card URLs with
+  no credentials.
 - All checklist items pass. Spec is ready for `/speckit-plan` (or `/speckit-clarify` if deeper
   refinement is wanted first).

@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Embeddable stat cards — continuously-updated dynamic image cards that a user embeds in their GitHub profile README (and other sites), inspired by WakaTime-compatible embeddable charts. Card types: coding-time heatmap, stats summary, top-languages. Multiple selectable themes. User-supplied custom template/background. Public ON/OFF toggle. Short configurable freshness window so the image stays current."
+**Input**: User description: "Embeddable stat cards — continuously-updated dynamic image cards that a user embeds in their GitHub profile README (and other sites), inspired by WakaTime-compatible embeddable charts. Card types: coding-time heatmap, stats summary, top-languages, and CloudTime activity streak. Multiple selectable themes. User-supplied custom template/background. Public ON/OFF toggle. Short configurable freshness window so the image stays current."
 
 ## Background
 
@@ -108,6 +108,35 @@ A user picks from several built-in visual themes (for example a dark and a light
 
 ---
 
+### User Story 5a - Embed a CloudTime activity streak card (Priority: P2)
+
+A user embeds a compact card showing their CloudTime activity streak: current
+tracked-day streak, longest tracked-day streak, and total tracked time for a
+selectable range.
+
+**Why this priority**: GitHub profile README users commonly expect a streak
+card, and CloudTime can provide an original coding-time streak without relying
+on GitHub contribution data. It shares the same public image, visibility,
+cache, and theme infrastructure as the other P2 built-in cards.
+
+**Independent Test**: Seed activity across consecutive and non-consecutive
+timezone-local days, request `streak.svg`, and confirm the current and longest
+streak values match CloudTime duration days after timeout rules are applied.
+
+**Acceptance Scenarios**:
+
+1. **Given** a user with tracked coding activity on consecutive local days,
+   **When** the streak card is requested, **Then** it shows the current tracked
+   day streak and longest tracked day streak.
+2. **Given** today has no tracked coding time yet but yesterday continues an
+   active streak, **When** the streak card is requested, **Then** the current
+   streak may end yesterday rather than resetting to zero.
+3. **Given** a user with no tracked coding time in the requested range,
+   **When** the streak card is requested, **Then** it renders a readable
+   zero-activity state.
+
+---
+
 ### User Story 6 - Define a custom card template (Priority: P3)
 
 Beyond the built-in presets, a user supplies their own card template containing placeholder tokens (a marked-up vector template). The system fills the placeholders with the user's current stats and serves the result as a card, giving the user full control over layout and styling.
@@ -134,6 +163,8 @@ Beyond the built-in presets, a user supplies their own card template containing 
 - **High view volume**: a popular README can drive many image requests; cards must be cacheable and rate-limitable so the instance stays within edge-platform limits.
 - **Oversized/malformed custom template or background**: must be validated and rejected within size limits.
 - **Direct SVG access**: opening the SVG URL directly must not execute user-supplied scripts or load user-supplied external resources.
+- **Streak start-of-day**: current streak must not drop to zero merely because the user has not started coding today; if today has no duration, the streak may end yesterday.
+- **GitHub README cache**: Dashboard snippets may include a `v` cache-busting value, but the system must not promise that GitHub Camo will refresh immediately.
 
 ## Requirements *(mandatory)*
 
@@ -144,6 +175,7 @@ Beyond the built-in presets, a user supplies their own card template containing 
 - **FR-003**: System MUST provide a **coding-time heatmap** card showing daily coding-time intensity over a trailing period in a contribution-graph style.
 - **FR-004**: System MUST provide a **stats summary** card showing total time, daily average, best day, and top language for a selectable time range.
 - **FR-005**: System MUST provide a **top-languages** card showing each top language and its relative share of coding time.
+- **FR-005a**: System MUST provide a **CloudTime activity streak** card showing current tracked-day streak, longest tracked-day streak, and total tracked time for a selectable range.
 - **FR-006**: Users MUST be able to select among multiple built-in visual themes; an unknown or invalid theme MUST fall back to a default theme rather than fail.
 - **FR-007**: Users MUST be able to supply a custom card template containing recognized placeholder tokens; the system MUST fill those placeholders with the user's current stats and MUST reject templates that exceed size limits or contain unsupported/unsafe content (scripts, event-handler attributes, external resource references, active document features, or unknown placeholder tokens).
 - **FR-008**: Operators MUST be able to turn embeddable cards ON or OFF; the default MUST be OFF, and when OFF every card URL MUST return `404` before any cached image or coding data can be returned.
@@ -157,15 +189,18 @@ Beyond the built-in presets, a user supplies their own card template containing 
 - **FR-016**: Public card responses MUST be valid SVG images served with an image media type, explicit cache headers derived from the freshness window, and no cookies or user-private headers.
 - **FR-017**: Custom templates MUST be restricted to a safe static SVG subset; the rendered SVG MUST NOT contain scripts, event-handler attributes, `foreignObject`, external `href`/`xlink:href` references, remote fonts, or data URLs supplied by the user.
 - **FR-018**: Public card URLs MUST identify the target user with a non-secret stable identifier, not with an API key or session-bound value.
+- **FR-019**: System MUST define a tracked day for streak cards as a user-local calendar day with at least one second of computed coding duration after applying the user's timeout rules.
+- **FR-020**: System MUST provide copyable GitHub README Markdown snippets for available public card URLs in the authenticated UI, and those snippets MUST NOT include API keys, session tokens, or other secrets.
 
 ### Key Entities *(include if feature involves data)*
 
-- **Embeddable Card**: a rendered image of a user's coding stats. Attributes: card type (heatmap / summary / top-languages), selected theme, time range, target user, and freshness metadata. Derived from aggregated data; not stored as user-editable content.
+- **Embeddable Card**: a rendered image of a user's coding stats. Attributes: card type (heatmap / summary / top-languages / streak), selected theme, time range, target user, and freshness metadata. Derived from aggregated data; not stored as user-editable content.
 - **Embed Settings**: per-user settings controlling public card visibility, freshness window, and default theme.
 - **Theme**: a named visual preset defining colors and typography only — never which data is shown.
 - **Custom Card Template**: a user-supplied template containing placeholder tokens for stat values. Scoped to a user; subject to size limits and a safe-content policy (no scripts or external references); only a defined set of placeholder tokens is recognized and substituted.
 - **Embed Visibility Setting**: configuration controlling whether cards are publicly retrievable for a user/instance.
 - **Aggregated Activity (existing)**: the daily/hourly coding-time summaries and commit data already maintained by CloudTime; the source of every number a card displays.
+- **Tracked Day**: a user-local calendar day with at least one second of computed coding duration after timeout rules are applied. Used by the streak card.
 
 ## Success Criteria *(mandatory)*
 
@@ -180,6 +215,7 @@ Beyond the built-in presets, a user supplies their own card template containing 
 - **SC-007**: Cards render a valid image in 100% of cases including zero-activity users (no broken images).
 - **SC-008**: A user can force an immediate refresh of a card and see updated data on the next view.
 - **SC-009**: A supplied unsafe template (script, event handler, external reference, `foreignObject`, data URL, or unknown placeholder) is rejected 100% of the time before it can be rendered.
+- **SC-010**: A user can copy a GitHub README Markdown snippet for every available built-in card from the authenticated dashboard without manually assembling a URL.
 
 ## Assumptions
 
@@ -189,6 +225,7 @@ Beyond the built-in presets, a user supplies their own card template containing 
 - The default **freshness window is short** (15 minutes) and is configurable; an external image proxy's own caching is accepted as a best-effort upper bound on staleness, mitigated by a force-refresh mechanism (FR-015).
 - Cards are delivered as **SVG vector images** suitable for README embedding; raster (PNG/JPG) output is out of scope for the first version.
 - **Themes are styling-only** (colors/typography) and apply uniformly across card types.
+- The streak card uses CloudTime tracked coding activity only; it does not read or display GitHub contribution data.
 - A user-supplied custom template is durable user data managed by CloudTime and is treated as untrusted input: only a defined set of stat placeholder tokens is substituted, and unsafe SVG constructs are rejected before storage or rendering.
 - Access to cards is **read-only**; cards never mutate data.
 
