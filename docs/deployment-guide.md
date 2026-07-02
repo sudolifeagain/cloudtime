@@ -211,7 +211,7 @@ curl -I https://your-worker.example.com/app
 # Expect: HTTP/2 200
 ```
 
-Open `https://your-worker.example.com/app` in a browser. If the health check and CSS asset both return 200, the Worker and web UI assets are reachable. **Do not announce the URL yet**; complete the first-login owner claim below before sharing it.
+Open `https://your-worker.example.com/app` in a browser. If the health check, CSS asset, and `/app` all return 200, the Worker and web UI assets are reachable. **Do not announce the URL yet**; complete the first-login owner claim below before sharing it.
 
 ---
 
@@ -304,7 +304,7 @@ Point your editor's WakaTime-compatible plugin at your Worker. In `~/.wakatime.c
 ```ini
 [settings]
 api_url = https://your-worker.example.com/api/v1
-api_key = <your UUID API key from step 3 above>
+api_key = <your UUID API key from step 4 above>
 ```
 
 Restart your editor. Your IDE's status bar should start showing today's coding time within a few seconds of typing.
