@@ -27,6 +27,7 @@ import {
   type RecentHeartbeat,
 } from "../ui/dashboard";
 import { SettingsView, timezoneOptions } from "../ui/settings";
+import { ApiKeyConfirmView } from "../ui/api-key";
 
 type WebEnv = {
   Bindings: Env;
@@ -117,6 +118,16 @@ web.post("/app/api-key", async (c) => {
   return renderDashboard(c, data, generatedApiKey);
 });
 
+web.get("/app/api-key/confirm", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+
+  const data = await loadDashboardData(c, session.userId);
+  if (!data) return c.redirect("/app", 303);
+
+  return renderApiKeyConfirm(c, data);
+});
+
 web.post("/app/logout", async (c) => {
   const session = await readSession(c);
   if (session) {
@@ -176,6 +187,16 @@ function renderSettings(
       />
     </AppLayout>,
     options.status ?? 200,
+    noStoreHeaders(),
+  );
+}
+
+function renderApiKeyConfirm(c: Context<WebEnv>, data: DashboardData) {
+  return c.html(
+    <AppLayout title="Regenerate API Key" username={data.user.username} activePath="dashboard">
+      <ApiKeyConfirmView data={data} />
+    </AppLayout>,
+    200,
     noStoreHeaders(),
   );
 }

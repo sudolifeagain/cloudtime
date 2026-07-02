@@ -95,6 +95,25 @@ describe("web UI", () => {
     expect(html).toContain("AI coding");
   });
 
+  it("renders an API key regeneration confirmation screen", async () => {
+    const user = await seedUserWithSession({ username: "owner" });
+
+    const dashboard = await call("/app", {
+      headers: { Cookie: `__Host-session=${user.sessionToken}` },
+    });
+    expect(await dashboard.text()).toContain("/app/api-key/confirm");
+
+    const res = await call("/app/api-key/confirm", {
+      headers: { Cookie: `__Host-session=${user.sessionToken}` },
+    });
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Regenerate API key?");
+    expect(html).toContain("Existing editor and CLI clients stop authenticating");
+    expect(html).toContain("Regenerate key");
+  });
+
   it("renders settings for a session-authenticated user", async () => {
     const user = await seedUserWithSession({ username: "owner", timezone: "Asia/Tokyo" });
 

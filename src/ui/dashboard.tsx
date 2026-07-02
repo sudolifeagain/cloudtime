@@ -168,11 +168,9 @@ export function DashboardView({
                   : `[settings]\napi_url = ${data.apiBaseUrl}\napi_key = <regenerate to reveal>`}
               </pre>
             </div>
-            <form method="post" action="/app/api-key">
-              <button class="btn btn-primary" type="submit">
-                Regenerate API key
-              </button>
-            </form>
+            <a class="btn btn-primary" href="/app/api-key/confirm">
+              Regenerate API key
+            </a>
           </div>
         </Panel>
 
