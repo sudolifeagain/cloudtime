@@ -164,14 +164,68 @@ describe("embeddable cards — public visibility", () => {
     expect(res.status).toBe(404);
   });
 
-  it("treats summary/languages cards as not-yet-available in later phases", async () => {
+  it("renders summary and languages cards for requested ranges", async () => {
     const user = await seedUser({ username: "carol" });
     await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
 
-    const summary = await call(`/api/v1/users/${user.username}/cards/summary.svg`);
-    expect(summary.status).toBe(404);
-    const languages = await call(`/api/v1/users/${user.username}/cards/languages.svg`);
-    expect(languages.status).toBe(404);
+    const bestDay = formatUtcDate(-2);
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, language, total_seconds) VALUES (?, ?, 'cards', 'TypeScript', ?)",
+    )
+      .bind(user.userId, bestDay, 7200)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, language, total_seconds) VALUES (?, ?, 'cards', 'Markdown', ?)",
+    )
+      .bind(user.userId, formatUtcDate(-1), 3600)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, language, total_seconds) VALUES (?, ?, 'cards', 'Go', ?)",
+    )
+      .bind(user.userId, formatUtcDate(-8), 1800)
+      .run();
+
+    const summary = await call(`/api/v1/users/${user.username}/cards/summary.svg?range=last_7_days`);
+    expect(summary.status).toBe(200);
+    expect(summary.headers.get("Content-Type")).toContain("image/svg+xml");
+    const summarySvg = await summary.text();
+    expect(summarySvg).toContain("Coding summary in the last 7 days");
+    expect(summarySvg).toContain("3 hrs");
+    expect(summarySvg).toContain(`${bestDay} / 2 hrs`);
+    expect(summarySvg).toContain("TypeScript / 67%");
+    expect(summarySvg).not.toContain(user.apiKey);
+
+    const languages = await call(`/api/v1/users/${user.username}/cards/languages.svg?range=last_7_days`);
+    expect(languages.status).toBe(200);
+    const languagesSvg = await languages.text();
+    expect(languagesSvg).toContain("Top languages in the last 7 days");
+    expect(languagesSvg).toContain("TypeScript");
+    expect(languagesSvg).toContain("67%");
+    expect(languagesSvg).toContain("Markdown");
+    expect(languagesSvg).toContain("33%");
+    expect(languagesSvg).not.toContain("Go");
+
+    const fallback = await call(`/api/v1/users/${user.username}/cards/languages.svg?range=not_supported`);
+    expect(fallback.status).toBe(200);
+    const fallbackSvg = await fallback.text();
+    expect(fallbackSvg).toContain("Top languages in the last year");
+    expect(fallbackSvg).toContain("Go");
+    expect(fallbackSvg).toContain("3 hrs 30 mins total coding time");
+  });
+
+  it("applies built-in themes and falls back to default for unknown themes", async () => {
+    const user = await seedUser({ username: "theme_user" });
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
+
+    const dark = await call(`/api/v1/users/${user.username}/cards/heatmap.svg?theme=dark`);
+    expect(dark.status).toBe(200);
+    expect(await dark.text()).toContain("#0d1117");
+
+    const fallback = await call(`/api/v1/users/${user.username}/cards/summary.svg?theme=future_theme`);
+    expect(fallback.status).toBe(200);
+    const fallbackSvg = await fallback.text();
+    expect(fallbackSvg).toContain("#ffffff");
+    expect(fallbackSvg).not.toContain("#0d1117");
   });
 
   it("reflects today's activity computed on demand from raw heartbeats", async () => {

@@ -1,4 +1,4 @@
-export type ProfileCardType = "heatmap" | "streak";
+export type ProfileCardType = "heatmap" | "summary" | "languages" | "streak";
 
 export interface ProfileCardSnippet {
   cardType: ProfileCardType;
@@ -10,6 +10,8 @@ export interface ProfileCardSnippet {
 
 const PROFILE_CARD_TYPES: Array<{ cardType: ProfileCardType; label: string; altText: string }> = [
   { cardType: "heatmap", label: "Heatmap", altText: "CloudTime heatmap" },
+  { cardType: "summary", label: "Summary", altText: "CloudTime summary" },
+  { cardType: "languages", label: "Languages", altText: "CloudTime languages" },
   { cardType: "streak", label: "Streak", altText: "CloudTime streak" },
 ];
 
