@@ -14,8 +14,8 @@ P2/P3.
 - [x] T004 Add `specs/160-embeddable-cards/quickstart.md` for PR2 manual validation.
 - [x] T005 Add `specs/160-embeddable-cards/contracts/openapi-diff.md`.
 - [x] T006 Update OpenAPI paths/components for public SVG cards, embed settings, and template CRUD.
-- [ ] T007 Run `npm run generate` and commit regenerated `src/types/generated.ts`.
-- [ ] T008 Run `npm run lint:api` and `npm run typecheck`.
+- [x] T007 Run `npm run generate` and commit regenerated `src/types/generated.ts`.
+- [x] T008 Run `npm run lint:api` and `npm run typecheck`.
 
 ---
 
@@ -73,6 +73,27 @@ values match existing stats aggregates; invalid theme falls back to default.
 
 ---
 
+## Phase 4a: User Story 5a - CloudTime activity streak card (P2)
+
+**Goal**: A GitHub-profile-friendly streak card renders current and longest
+CloudTime tracked-day streaks from existing activity data.
+
+**Independent Test**: Seed activity across consecutive and non-consecutive
+timezone-local days, request `streak.svg`, and verify current/longest streak,
+tracked-day count, total seconds, range-boundary truncation, zero activity,
+range fallback, cache headers, and theme fallback.
+
+- [ ] T351 [P] Add unit tests for tracked-day streak calculations: consecutive days, gaps, today with no activity, timezone-local day boundaries, range-boundary truncation, total seconds, and zero activity.
+- [ ] T352 [P] Add renderer tests for `streak.svg` safe static SVG output and XML escaping.
+- [ ] T353 Add integration tests for `streak.svg` visibility OFF/ON, cache/ETag behavior, range fallback, and no secret leakage.
+- [ ] T354 Implement streak-card data builder from existing daily totals after timeout rules are applied.
+- [ ] T355 Implement streak-card renderer using shared themes and cache behavior.
+
+**Checkpoint**: Built-in card coverage includes heatmap, summary, languages,
+and streak.
+
+---
+
 ## Phase 5: User Story 6 - Custom templates (P3)
 
 **Goal**: A user can store a safe SVG template with placeholders and render a
@@ -95,9 +116,10 @@ unknown-placeholder templates return `400` and are never rendered.
 
 - [ ] T501 Update `docs/deployment-guide.md` with embed visibility, freshness, and force-refresh guidance.
 - [ ] T502 Update `docs/cloudflare-constraints.md` with public card cache/rate-limit behavior.
-- [ ] T503 Run `npm run generate` if PR2 changes OpenAPI further, then `npm run lint:api`.
-- [ ] T504 Run `npm run typecheck && npm test`.
-- [ ] T505 Open PR2 targeting `develop`, referencing PR1 and noting that embeds default OFF.
+- [ ] T503 Add dashboard copy/preview guidance for GitHub profile README snippets.
+- [ ] T504 Run `npm run generate` if PR2 changes OpenAPI further, then `npm run lint:api`.
+- [ ] T505 Run `npm run typecheck && npm test`.
+- [ ] T506 Open PR2 targeting `develop`, referencing PR1 and noting that embeds default OFF.
 
 ## Dependencies
 
@@ -105,5 +127,7 @@ unknown-placeholder templates return `400` and are never rendered.
 - P1 (T201-T207) must land before P2 and P3 because it establishes public
   visibility, cache, and renderer foundations.
 - P2 can proceed after P1.
+- Streak (T351-T355) can proceed after #186 lands and shares the P2 card
+  foundation with #175.
 - P3 can proceed after P1 and can run in parallel with P2 only if template
   routing does not change shared renderer interfaces.

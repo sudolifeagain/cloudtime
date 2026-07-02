@@ -71,15 +71,36 @@ host page beyond the optional `v` value.
 ```bash
 curl -i "https://time.example.com/api/v1/users/YOUR_USERNAME/cards/summary.svg?range=last_7_days&theme=dark"
 curl -i "https://time.example.com/api/v1/users/YOUR_USERNAME/cards/languages.svg?range=last_30_days&theme=unknown"
+curl -i "https://time.example.com/api/v1/users/YOUR_USERNAME/cards/streak.svg?range=last_year&theme=default"
 ```
 
 Expected:
 
 - summary and language card totals match aggregated stats for the range
+- streak card current streak, longest streak, tracked-day count, and total time
+  match tracked coding days in the requested range
 - unknown theme falls back to the user's default theme
 - zero-activity ranges still return a valid readable SVG
 
-## 6. Verify custom template rejection
+## 6. Copy a GitHub profile README snippet
+
+From the authenticated dashboard, open the embeddable cards section and copy
+the Markdown snippet for a public card.
+
+Expected snippets use ordinary Markdown image syntax and contain no API key or
+session token:
+
+```markdown
+![CloudTime heatmap](https://time.example.com/api/v1/users/YOUR_USERNAME/cards/heatmap.svg?theme=default)
+![CloudTime summary](https://time.example.com/api/v1/users/YOUR_USERNAME/cards/summary.svg?theme=default)
+![CloudTime streak](https://time.example.com/api/v1/users/YOUR_USERNAME/cards/streak.svg?theme=default)
+```
+
+Paste the snippet into a GitHub profile README repository. GitHub may proxy the
+remote image through Camo, so freshness is controlled by CloudTime cache
+headers plus GitHub's own best-effort proxy behavior.
+
+## 7. Verify custom template rejection
 
 ```bash
 curl -X POST "https://time.example.com/api/v1/users/current/embed_templates" \
@@ -97,7 +118,7 @@ Expected:
 Repeat with event handlers, external `href`, `foreignObject`, data URLs, and an
 unknown placeholder token; all must be rejected.
 
-## 7. Turn embeds OFF with a warm cache
+## 8. Turn embeds OFF with a warm cache
 
 1. Request a card successfully.
 2. Disable embeds:
@@ -128,5 +149,6 @@ npm test
 
 The PR2 test suite should include integration coverage for default OFF, ON
 rendering, cache headers, cache-busting, unsupported range fallback, invalid
-card type, theme fallback, zero activity, unsafe template rejection, and OFF
-with a pre-existing cached render.
+card type, theme fallback, streak calculations, zero activity, unsafe template
+rejection, dashboard snippet generation, and OFF with a pre-existing cached
+render.

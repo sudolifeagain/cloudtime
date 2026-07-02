@@ -17,6 +17,21 @@ Sources consulted (2026-06-18):
 - OpenAPI Specification 3.1 - media type content and binary/text response
   description
 
+Additional sources consulted (2026-07-03) for the GitHub profile README card
+extension:
+
+- GitHub Docs: Managing your profile README - profile README repository
+  requirements
+- GitHub Docs: Basic writing and formatting syntax - Markdown image syntax
+- GitHub Docs: About anonymized URLs - Camo proxy behavior, content type
+  checks, `Cache-Control` guidance, and rare cache purge fallback
+- Cloudflare Docs: Workers Cache API - cacheable response headers and
+  conditional request behavior
+- Cloudflare Docs: ETag headers - `304 Not Modified` validation behavior
+- MDN: SVG `<script>` and `SVGScriptElement.href` - active SVG scripting and
+  external script risk
+- W3C SVG Security - scripts and external-resource references in SVG
+
 ## D-1: Public URL shape and authentication
 
 **Decision**: Use
@@ -35,6 +50,12 @@ humans inspecting the embed.
 rejected because it bakes in single-user addressing and would need a breaking
 URL later. `api_key` query parameters were rejected because FR-009 forbids
 secrets in embed URLs and README pages are public.
+
+**2026-07-03 update**: Add `streak` as a fourth built-in card type. The public
+URL shape remains unchanged:
+`GET /api/v1/users/{username}/cards/streak.svg`. The card is intended for
+GitHub profile READMEs, but remains a generic public image URL usable anywhere
+remote images are displayed.
 
 ## D-2: Visibility default and disabled behavior
 
@@ -133,3 +154,44 @@ copy are used.
 
 **Why**: This follows the repository's legal/trademark rule and keeps the
 implementation original while still explaining compatibility context in docs.
+
+## D-8: CloudTime streak semantics
+
+**Decision**: A tracked day is a user-local calendar day with at least one
+second of computed coding duration after applying the user's timeout rules.
+`current_streak` counts consecutive tracked days inside the normalized range,
+ending today, or ending yesterday when today has no tracked duration yet. If
+the active run began before the requested range, only in-range days are
+counted. `longest_streak` is the maximum consecutive tracked-day run in the
+requested range, and `total_seconds` is the selected-range coding duration.
+
+**Why**: GitHub profile users recognize streak cards, but CloudTime should not
+conflate GitHub contribution data with coding-time data. Counting days from
+CloudTime durations keeps the metric explainable, reproducible, and derived
+from data the system already owns. Bounding streak metrics to the normalized
+range keeps public rendering cacheable and avoids unbounded historical reads.
+Allowing the current streak to end yesterday avoids showing zero every morning
+before the user has started coding.
+
+**Alternatives considered**: Using GitHub contribution events was rejected
+because CloudTime does not ingest that data and the card should represent
+CloudTime activity. Counting raw heartbeats was rejected because summaries and
+duration builders already apply timeout rules and timezone bucketing.
+
+## D-9: GitHub profile README UX
+
+**Decision**: The authenticated dashboard should generate copyable Markdown
+snippets for each available public card and render a preview using the same
+public URL. Snippets use ordinary Markdown image syntax and never include API
+keys or session tokens. A cache-busting `v` value may be offered as a manual
+refresh helper, but the UI must describe it as a URL-change mechanism rather
+than a guaranteed immediate GitHub Camo purge.
+
+**Why**: GitHub supports online image embeds in Markdown and profile README
+display depends on a public repository named after the GitHub username. Users
+should not need to construct card URLs by hand, and the UI should make the
+public-visibility state obvious before a snippet is copied.
+
+**Alternatives considered**: Auto-editing a user's GitHub README was rejected
+because it would require a new GitHub authorization flow and introduces
+unnecessary write risk. A GitHub App is not needed for the first version.

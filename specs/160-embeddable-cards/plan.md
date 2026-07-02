@@ -13,6 +13,10 @@ operator-configurable freshness window. The first implementation renders SVG
 from aggregated summaries with a current-day overlay, so a GitHub README image
 can stay current without commits or scheduled repository jobs.
 
+The GitHub profile README extension adds a `streak` card type derived from
+CloudTime tracked coding days and dashboard-generated Markdown snippets for
+copying public card URLs into profile READMEs.
+
 **PR1 (this PR)**: SpecKit artifacts + OpenAPI paths/components for the public
 SVG card endpoint, embed settings, and custom template CRUD + regenerated
 types. **No route handlers, migrations, bindings, or docs-behavior changes.**
@@ -53,7 +57,7 @@ cache keys, never authorization or data selection.
 | II. Cloudflare-Native | PASS | Public rendering is cache-first in KV and reads pre-aggregates on miss; current-day work is bounded. OFF path performs no cache/D1 work. |
 | III. Type Safety | PASS | All new endpoint and schema shapes are generated from `schemas/openapi.yaml`; no hand-edits to generated types. |
 | IV. Legal/Trademark | PASS | The feature is original; references are limited to "WakaTime-compatible" docs wording and no WakaTime source or assets are consulted. |
-| V. Simplicity First | PASS | Three fixed card types, styling-only built-in themes, one settings resource, and template customization deferred to P3. |
+| V. Simplicity First | PASS | Four fixed card types, styling-only built-in themes, one settings resource, and template customization deferred to P3. |
 
 ## Project Structure
 
@@ -101,6 +105,7 @@ tests/integration/embeddable-cards.test.ts   # ADD: route and privacy contract t
 tests/unit/cards-render.test.ts              # ADD: renderer/template unit tests
 docs/deployment-guide.md                     # CHANGE: embed privacy and freshness settings
 docs/cloudflare-constraints.md               # CHANGE: cache/rate-limit notes for public card traffic
+src/ui/dashboard.tsx                         # CHANGE: GitHub README snippets/previews after card implementation
 wrangler.toml                                # CHANGE: commented RATE_LIMIT_EMBED_CARDS block
 ```
 
@@ -138,3 +143,9 @@ SVG at write time so public rendering never evaluates untrusted active content.
   the target user's current local day and reuse existing timeout/date helpers;
   if the bounded query exceeds budget, fall back to the latest aggregate and
   mark the renderer as pending in PR2 tests.
+- **Streak semantics are confused with GitHub contributions** -> define a
+  tracked day as CloudTime coding duration in the user's timezone and avoid
+  reading GitHub contribution data.
+- **Dashboard snippet leaks credentials** -> generate snippets from the public
+  username and app base URL only; never include API keys, session tokens, or
+  query-parameter credentials.

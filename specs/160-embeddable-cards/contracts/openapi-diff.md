@@ -44,7 +44,7 @@ Additive only. No existing endpoint, parameter, schema, or response is changed.
 - `security: []`
 - Path parameters:
   - `username` string
-  - `card_type` enum: `heatmap`, `summary`, `languages`
+  - `card_type` enum: `heatmap`, `summary`, `languages`, `streak`
 - Query parameters:
   - `range` string (optional)
   - `theme` string (optional)
@@ -129,3 +129,13 @@ Contract notes:
 - `components["schemas"]["EmbedTemplateInput"]`
 
 No existing generated member is removed or renamed.
+
+## 6. GitHub profile card extension (#186)
+
+Additive follow-up to the original spec 160 contract:
+
+- `card_type` enum adds `streak`.
+- `streak.svg` uses the same public visibility, cache, ETag, `theme`, `range`,
+  `template_id`, and `v` behavior as other card types.
+- The card reports CloudTime tracked-activity streaks, not GitHub
+  contribution streaks.
