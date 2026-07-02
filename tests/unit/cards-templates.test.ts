@@ -8,10 +8,9 @@ import {
 
 const VALID_TEMPLATE =
   '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="80" viewBox="0 0 320 80" role="img">' +
-  '<style>text{font-family:Arial,sans-serif;}</style>' +
   '<rect width="320" height="80" fill="#fff"></rect>' +
-  '<text x="12" y="28">{{username}}</text>' +
-  '<text x="12" y="54">{{total_time}}</text>' +
+  '<text x="12" y="28" font-family="Arial, sans-serif">{{username}}</text>' +
+  '<text x="12" y="54" font-family="Arial, sans-serif">{{total_time}}</text>' +
   "</svg>";
 
 describe("validateTemplateSvg", () => {
@@ -23,6 +22,8 @@ describe("validateTemplateSvg", () => {
     ["script element", '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'],
     ["event handler", '<svg xmlns="http://www.w3.org/2000/svg"><rect onclick="evil()" /></svg>'],
     ["foreignObject", '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div>html</div></foreignObject></svg>'],
+    ["style element", '<svg xmlns="http://www.w3.org/2000/svg"><style>text{fill:red}</style></svg>'],
+    ["style attribute", '<svg xmlns="http://www.w3.org/2000/svg"><text style="fill:red">x</text></svg>'],
     ["external href", '<svg xmlns="http://www.w3.org/2000/svg"><text href="https://example.test">x</text></svg>'],
     [
       "xlink href",
@@ -31,6 +32,14 @@ describe("validateTemplateSvg", () => {
     [
       "remote font",
       '<svg xmlns="http://www.w3.org/2000/svg"><style>@font-face{font-family:X;src:url(https://example.test/x.woff2)}</style></svg>',
+    ],
+    [
+      "entity-obfuscated CSS URL",
+      '<svg xmlns="http://www.w3.org/2000/svg"><style>rect{filter:u&#x72;l(https://example.test/x)}</style><rect /></svg>',
+    ],
+    [
+      "CSS escape URL",
+      '<svg xmlns="http://www.w3.org/2000/svg"><rect filter="u\\72l(https://example.test/x)" /></svg>',
     ],
     ["data URL", '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="data:image/png;base64,aaaa" /></svg>'],
     ["processing instruction", '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"></svg>'],

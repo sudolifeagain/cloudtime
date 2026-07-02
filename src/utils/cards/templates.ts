@@ -31,7 +31,7 @@ export type TemplateRenderResult =
   | { ok: false; error: string };
 
 const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
-const XML_ENTITY_RE = /&(?!amp;|lt;|gt;|quot;|apos;|#[0-9]+;|#x[0-9a-fA-F]+;)/;
+const UNSAFE_XML_ENTITY_RE = /&(?!amp;|lt;|gt;|quot;|apos;)/;
 const TAG_RE = /<\s*(\/?)\s*([A-Za-z][A-Za-z0-9_.:-]*)([^<>]*?)(\/?)\s*>/g;
 const ATTR_RE = /([A-Za-z_:][A-Za-z0-9_.:-]*)\s*=\s*("[^"]*"|'[^']*')/g;
 
@@ -49,7 +49,6 @@ const ALLOWED_ELEMENTS = new Set([
   "tspan",
   "title",
   "desc",
-  "style",
 ]);
 
 const DISALLOWED_ELEMENTS = new Set([
@@ -69,6 +68,7 @@ const DISALLOWED_ELEMENTS = new Set([
   "mpath",
   "textpath",
   "feimage",
+  "style",
 ]);
 
 export function validateTemplateName(name: unknown): TemplateValidationResult {
@@ -94,6 +94,9 @@ export function validateTemplateSvg(svg: unknown): TemplateValidationResult {
   }
   if (svg.includes("\u0000")) {
     return { ok: false, error: "template_svg contains invalid control characters" };
+  }
+  if (svg.includes("\\")) {
+    return { ok: false, error: "CSS escape sequences are not allowed" };
   }
 
   const trimmed = svg.trim();
@@ -121,8 +124,8 @@ export function validateTemplateSvg(svg: unknown): TemplateValidationResult {
   if (/@(?:import|font-face)\b/i.test(svg) || /\burl\s*\(/i.test(svg)) {
     return { ok: false, error: "external CSS resources are not allowed" };
   }
-  if (XML_ENTITY_RE.test(svg)) {
-    return { ok: false, error: "template_svg contains an unescaped XML entity" };
+  if (UNSAFE_XML_ENTITY_RE.test(svg)) {
+    return { ok: false, error: "template_svg contains an unsupported XML entity" };
   }
 
   const placeholders = validatePlaceholders(svg);
@@ -280,6 +283,9 @@ function validateAttributes(attrText: string): TemplateValidationResult {
     }
     if (name === "href" || name === "xlink:href") {
       return { ok: false, error: "href attributes are not allowed in templates" };
+    }
+    if (name === "style") {
+      return { ok: false, error: "style attributes are not allowed in templates" };
     }
     if (name === "xmlns" && value !== "http://www.w3.org/2000/svg") {
       return { ok: false, error: "only the SVG namespace is allowed" };
