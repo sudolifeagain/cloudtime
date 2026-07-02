@@ -168,6 +168,18 @@ CREATE TABLE IF NOT EXISTS hourly_summaries (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_hourly_summaries_unique
   ON hourly_summaries(user_id, date, hour);
 
+-- Marker table for the one-off hourly_summaries backfill (Issue #142).
+-- A user/date present here was created by the backfill and may be safely
+-- continued by later chunks. Dates that already existed in hourly_summaries
+-- without this marker are skipped to avoid double-counting cron-populated rows.
+CREATE TABLE IF NOT EXISTS hourly_backfill_dates (
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, date),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- ============================================================
 -- Goals
 -- ============================================================

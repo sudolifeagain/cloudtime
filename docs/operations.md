@@ -88,6 +88,47 @@ wrangler d1 execute cloudtime-db --remote --command \
 Repeat until the row count stabilises. Always
 [back up](./backup-restore.md) before bulk deletes.
 
+## Hourly summaries backfill
+
+Issue #142 adds a one-off backfill for the `hours` insight's
+`hourly_summaries` table. The hourly cron derives missing hour-of-day buckets
+from retained raw heartbeats, using the same session-gap and timezone rules as
+normal aggregation.
+
+### How it works
+
+- The backfill runs inside the existing hourly cron and processes at most
+  **5000** heartbeats per run.
+- It only reads heartbeats at or behind the normal `last_aggregated_at` cursor,
+  so it does not race ahead of regular aggregation.
+- It tracks progress in `meta.hourly_backfill_cursor` and sets
+  `meta.hourly_backfill_completed_at` once no retained heartbeat rows remain to
+  scan. After that, future cron runs skip the backfill.
+- It records the first date it actually filled in
+  `meta.hourly_backfill_earliest_date`, which is useful when raw heartbeat
+  retention means older history is no longer available.
+- It never adds to a user/date that already had `hourly_summaries` rows before
+  the backfill reached it. Dates created by the backfill are recorded in
+  `hourly_backfill_dates`, allowing later chunks to continue the same date
+  without double-counting cron-populated rows.
+
+### Re-running
+
+The backfill is intentionally one-off. To run it again after restoring data or
+manually clearing hourly rows, first back up D1, then remove the backfill state
+for the affected instance during a maintenance window:
+
+```bash
+wrangler d1 execute cloudtime-db --remote --command \
+  "DELETE FROM meta WHERE key IN ('hourly_backfill_cursor','hourly_backfill_completed_at','hourly_backfill_earliest_date')"
+wrangler d1 execute cloudtime-db --remote --command \
+  "DELETE FROM hourly_backfill_dates"
+```
+
+Do not reset the backfill state while keeping backfilled `hourly_summaries`
+rows unless you also understand which rows should be preserved; the cursor and
+marker table are the idempotency guard.
+
 ## Data exports (`R2_BUCKET`)
 
 The `/data_dumps` endpoints let a user export their own data (migration,

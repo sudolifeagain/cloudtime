@@ -92,6 +92,7 @@ npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --fil
 npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0003_hourly_summaries.sql
 npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0004_embed_settings.sql
 npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0005_embed_templates.sql
+npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0006_hourly_backfill_dates.sql
 ```
 
 ## 6. Configure secrets

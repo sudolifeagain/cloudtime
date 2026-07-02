@@ -1,6 +1,6 @@
 import { getDateForTimestamp, getHourForTimestamp } from "../utils/time-format";
 
-type HeartbeatForAggregation = {
+export type HeartbeatForAggregation = {
   user_id: string;
   time: number;
   project: string | null;
@@ -25,23 +25,23 @@ type SummaryTuple = {
   seconds: number;
 };
 
-type HourlyTuple = {
+export type HourlyTuple = {
   userId: string;
   date: string;
   hour: number;
   seconds: number;
 };
 
-type ComputedDurations = {
+export type ComputedDurations = {
   daily: Map<string, SummaryTuple>;
   hourly: Map<string, HourlyTuple>;
 };
 
 const DEFAULT_TIMEOUT = 15 * 60; // 15 minutes in seconds
 export const MAX_USER_TIMEOUT = 60 * 60; // 60 minutes - max allowed by validation
-const HEARTBEAT_LIMIT = 5000;
+export const HEARTBEAT_LIMIT = 5000;
 
-async function getLastAggregatedAt(db: D1Database): Promise<number> {
+export async function getLastAggregatedAt(db: D1Database): Promise<number> {
   const row = await db
     .prepare("SELECT value FROM meta WHERE key = 'last_aggregated_at'")
     .first<{ value: string }>();
@@ -52,7 +52,7 @@ type UserSettings = { timeout: number; timezone: string };
 
 const BIND_CHUNK_SIZE = 100;
 
-async function getUserSettings(
+export async function getUserSettings(
   db: D1Database,
   userIds: string[],
 ): Promise<Map<string, UserSettings>> {
@@ -81,7 +81,7 @@ async function getUserSettings(
   return map;
 }
 
-function computeDurations(
+export function computeDurations(
   heartbeats: HeartbeatForAggregation[],
   userSettings: Map<string, UserSettings>,
   lastAggregatedAt: number,

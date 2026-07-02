@@ -21,6 +21,7 @@ import machines from "./routes/machines";
 import userAgents from "./routes/user-agents";
 import { cardsPublic, cardsSettings } from "./routes/cards";
 import { aggregateHeartbeats } from "./cron/aggregate";
+import { backfillHourlySummaries } from "./cron/hourly-backfill";
 import { parseRetentionDays, purgeOldHeartbeats } from "./cron/purge";
 import { processPendingDumps, purgeExpiredDumps } from "./cron/data-dumps";
 
@@ -198,11 +199,17 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
       (async () => {
-        // Run aggregation, session cleanup, and the optional heartbeat purge
-        // independently so a failure in one does not prevent the others from
-        // completing.
+        // Run cron tasks independently so a failure in one does not prevent
+        // the others from completing.
         const retentionDays = parseRetentionDays(env.HEARTBEAT_RETENTION_DAYS);
-        const [, batchResults, purgeResult, dumpBuildResult, dumpPurgeResult] = await Promise.allSettled([
+        const [
+          aggregationResult,
+          batchResults,
+          purgeResult,
+          dumpBuildResult,
+          dumpPurgeResult,
+          hourlyBackfillResult,
+        ] = await Promise.allSettled([
           aggregateHeartbeats(env.DB),
           // Atomic DELETE + RETURNING avoids TOCTOU between SELECT and DELETE
           env.DB.batch([
@@ -219,6 +226,9 @@ export default {
           // No-ops when R2_BUCKET is unbound.
           processPendingDumps(env),
           purgeExpiredDumps(env),
+          // One-off Issue #142 backfill. It stops after COMPLETED_KEY is set
+          // and skips user/date pairs that already have hourly rows.
+          backfillHourlySummaries(env.DB),
         ]);
 
         // Clean up KV cache for deleted sessions
@@ -229,6 +239,9 @@ export default {
           }
         }
 
+        if (aggregationResult?.status === "rejected") {
+          console.error("Heartbeat aggregation failed:", aggregationResult.reason);
+        }
         if (purgeResult?.status === "rejected") {
           console.error("Heartbeat purge failed:", purgeResult.reason);
         }
@@ -237,6 +250,18 @@ export default {
         }
         if (dumpPurgeResult?.status === "rejected") {
           console.error("Data dump purge failed:", dumpPurgeResult.reason);
+        }
+        if (hourlyBackfillResult?.status === "fulfilled") {
+          const result = hourlyBackfillResult.value;
+          if (result.insertedRows > 0) {
+            console.log(
+              `Hourly summaries backfill inserted ${result.insertedRows} rows ` +
+                `through cursor ${result.cursor}` +
+                (result.earliestDate ? `; earliest backfilled date ${result.earliestDate}` : ""),
+            );
+          }
+        } else if (hourlyBackfillResult?.status === "rejected") {
+          console.error("Hourly summaries backfill failed:", hourlyBackfillResult.reason);
         }
       })(),
     );
