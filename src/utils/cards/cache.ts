@@ -20,6 +20,7 @@ export interface CardCacheKeyParts {
   range: string;
   theme: string;
   templateId: string;
+  templateModifiedAt?: string;
   v: string;
   settingsModifiedAt: string;
 }
@@ -32,6 +33,7 @@ export function buildCardCacheKey(p: CardCacheKeyParts): string {
     p.range,
     p.theme,
     p.templateId,
+    p.templateModifiedAt ?? "",
     p.v,
     p.settingsModifiedAt,
   ].join(":");

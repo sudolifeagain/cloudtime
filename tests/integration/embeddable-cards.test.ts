@@ -10,7 +10,7 @@ import { seedUser, truncate } from "../helpers/fixtures";
 const BASE = "https://test.cloudtime.dev";
 
 afterEach(async () => {
-  await truncate("heartbeats", "summaries", "embed_settings", "users");
+  await truncate("heartbeats", "summaries", "embed_templates", "embed_settings", "users");
 });
 
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
@@ -28,6 +28,17 @@ function authPatch(apiKey: string, body: unknown): RequestInit {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
+  };
+}
+
+function authJson(apiKey: string, method: string, body?: unknown): RequestInit {
+  return {
+    method,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
   };
 }
 
@@ -247,6 +258,80 @@ describe("embeddable cards — public visibility", () => {
     const svg = await res.text();
     expect(svg).toContain("2 mins in the last year");
   });
+
+  it("renders a public card through an owned custom template", async () => {
+    const user = await seedUser({ username: "templated" });
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
+
+    const bestDay = formatUtcDate(-1);
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, language, total_seconds) VALUES (?, ?, 'cards', 'TypeScript', ?)",
+    )
+      .bind(user.userId, bestDay, 7200)
+      .run();
+
+    const created = await call(
+      "/api/v1/users/current/embed_templates",
+      authJson(user.apiKey, "POST", {
+        name: "summary badge",
+        template_svg:
+          '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="96" viewBox="0 0 360 96" role="img">' +
+          '<text x="12" y="28">{{username}}</text>' +
+          '<text x="12" y="54">{{total_time}}</text>' +
+          '<text x="12" y="80">{{top_language}}</text>' +
+          "</svg>",
+      }),
+    );
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { data: { id: string } };
+
+    const res = await call(`/api/v1/users/${user.username}/cards/summary.svg?range=last_7_days&template_id=${body.data.id}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("image/svg+xml");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
+
+    const svg = await res.text();
+    expect(svg).toContain("templated");
+    expect(svg).toContain("2 hrs");
+    expect(svg).toContain("TypeScript / 100%");
+    expect(svg).not.toContain(user.apiKey);
+  });
+
+  it("returns 404 when a public card references another user's template", async () => {
+    const owner = await seedUser({ username: "template_owner" });
+    const viewer = await seedUser({ username: "template_viewer" });
+    await call(`/api/v1/users/current/embed_settings`, authPatch(viewer.apiKey, { enabled: true }));
+
+    const created = await call(
+      "/api/v1/users/current/embed_templates",
+      authJson(owner.apiKey, "POST", {
+        name: "private template",
+        template_svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>{{username}}</text></svg>',
+      }),
+    );
+    const body = (await created.json()) as { data: { id: string } };
+
+    const res = await call(`/api/v1/users/${viewer.username}/cards/summary.svg?template_id=${body.data.id}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("revalidates stored templates before public rendering", async () => {
+    const user = await seedUser({ username: "revalidate" });
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
+    const templateId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO embed_templates (id, user_id, name, template_svg, created_at, modified_at)
+       VALUES (?, ?, 'unsafe', ?, datetime('now'), datetime('now'))`,
+    )
+      .bind(templateId, user.userId, '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
+      .run();
+
+    const res = await call(`/api/v1/users/${user.username}/cards/summary.svg?template_id=${templateId}`);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("script");
+  });
 });
 
 describe("embeddable cards — settings auth", () => {
@@ -291,5 +376,113 @@ describe("embeddable cards — settings auth", () => {
     expect(body.data.enabled).toBe(false);
     expect(body.data.freshness_minutes).toBe(15);
     expect(body.data.default_theme).toBe("default");
+  });
+});
+
+describe("embeddable cards - template auth", () => {
+  it("requires authentication to list embed templates", async () => {
+    const res = await call("/api/v1/users/current/embed_templates");
+    expect(res.status).toBe(401);
+  });
+
+  it("supports template CRUD for the authenticated user", async () => {
+    const user = await seedUser({ username: "template_crud" });
+    const templateSvg = '<svg xmlns="http://www.w3.org/2000/svg"><text>{{username}}</text></svg>';
+
+    const created = await call(
+      "/api/v1/users/current/embed_templates",
+      authJson(user.apiKey, "POST", { name: "Profile card", template_svg: templateSvg }),
+    );
+    expect(created.status).toBe(201);
+    const createdBody = (await created.json()) as { data: { id: string; name: string; template_svg: string } };
+    expect(createdBody.data.name).toBe("Profile card");
+    expect(createdBody.data.template_svg).toBe(templateSvg);
+
+    const listed = await call("/api/v1/users/current/embed_templates", {
+      headers: { Authorization: `Bearer ${user.apiKey}` },
+    });
+    expect(listed.status).toBe(200);
+    const listBody = (await listed.json()) as { data: Array<{ id: string }> };
+    expect(listBody.data.map((item) => item.id)).toContain(createdBody.data.id);
+
+    const fetched = await call(`/api/v1/users/current/embed_templates/${createdBody.data.id}`, {
+      headers: { Authorization: `Bearer ${user.apiKey}` },
+    });
+    expect(fetched.status).toBe(200);
+
+    const patched = await call(
+      `/api/v1/users/current/embed_templates/${createdBody.data.id}`,
+      authJson(user.apiKey, "PATCH", { name: "Updated card" }),
+    );
+    expect(patched.status).toBe(200);
+    const patchedBody = (await patched.json()) as { data: { name: string } };
+    expect(patchedBody.data.name).toBe("Updated card");
+
+    const deleted = await call(
+      `/api/v1/users/current/embed_templates/${createdBody.data.id}`,
+      authJson(user.apiKey, "DELETE"),
+    );
+    expect(deleted.status).toBe(204);
+
+    const missing = await call(`/api/v1/users/current/embed_templates/${createdBody.data.id}`, {
+      headers: { Authorization: `Bearer ${user.apiKey}` },
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it("returns 404 for cross-user template access", async () => {
+    const owner = await seedUser({ username: "template_owner_auth" });
+    const other = await seedUser({ username: "template_other_auth" });
+
+    const created = await call(
+      "/api/v1/users/current/embed_templates",
+      authJson(owner.apiKey, "POST", {
+        name: "Owner template",
+        template_svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>{{username}}</text></svg>',
+      }),
+    );
+    const body = (await created.json()) as { data: { id: string } };
+
+    const res = await call(`/api/v1/users/current/embed_templates/${body.data.id}`, {
+      headers: { Authorization: `Bearer ${other.apiKey}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects unsafe template creation and stores nothing", async () => {
+    const user = await seedUser({ username: "template_invalid" });
+
+    const res = await call(
+      "/api/v1/users/current/embed_templates",
+      authJson(user.apiKey, "POST", {
+        name: "bad",
+        template_svg: '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+      }),
+    );
+    expect(res.status).toBe(400);
+
+    const listed = await call("/api/v1/users/current/embed_templates", {
+      headers: { Authorization: `Bearer ${user.apiKey}` },
+    });
+    const listBody = (await listed.json()) as { data: unknown[] };
+    expect(listBody.data).toHaveLength(0);
+  });
+
+  it("rejects empty template patches", async () => {
+    const user = await seedUser({ username: "template_empty_patch" });
+    const created = await call(
+      "/api/v1/users/current/embed_templates",
+      authJson(user.apiKey, "POST", {
+        name: "patch target",
+        template_svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>{{username}}</text></svg>',
+      }),
+    );
+    const body = (await created.json()) as { data: { id: string } };
+
+    const res = await call(
+      `/api/v1/users/current/embed_templates/${body.data.id}`,
+      authJson(user.apiKey, "PATCH", {}),
+    );
+    expect(res.status).toBe(400);
   });
 });
