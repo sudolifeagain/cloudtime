@@ -75,6 +75,16 @@ export interface HeatmapRenderOptions {
   theme?: string;
 }
 
+export interface StreakRenderOptions {
+  username: string;
+  currentStreak: number;
+  longestStreak: number;
+  trackedDays: number;
+  totalSeconds: number;
+  theme?: string;
+  rangeLabel?: string;
+}
+
 export function renderHeatmapSvg(opts: HeatmapRenderOptions): string {
   const theme = resolveTheme(opts.theme);
   const [ty, tm, td] = opts.todayStr.split("-").map(Number);
@@ -150,4 +160,70 @@ export function renderHeatmapSvg(opts: HeatmapRenderOptions): string {
     legend +
     `</svg>`
   );
+}
+
+export function renderStreakSvg(opts: StreakRenderOptions): string {
+  const theme = resolveTheme(opts.theme);
+  const width = 495;
+  const height = 195;
+  const cardPadding = 22;
+  const metricTop = 78;
+  const metricWidth = 142;
+  const metricGap = 12;
+  const barWidth = 350;
+  const barX = cardPadding;
+  const barY = 152;
+  const streakRatio = opts.longestStreak > 0
+    ? Math.min(1, Math.max(0, opts.currentStreak / opts.longestStreak))
+    : 0;
+  const filledBarWidth = Math.round(barWidth * streakRatio);
+
+  const title = `@${escapeXml(truncateText(opts.username, 38))}`;
+  const totalText = escapeXml(`${formatHumanReadable(opts.totalSeconds)} total coding time`);
+  const ariaLabel = escapeXml(`Coding streak card for ${opts.username}`);
+  const rangeLabel = escapeXml(opts.rangeLabel ?? "the last year");
+  const current = escapeXml(formatDays(opts.currentStreak));
+  const longest = escapeXml(formatDays(opts.longestStreak));
+  const active = escapeXml(formatDays(opts.trackedDays));
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}">` +
+    `<style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}` +
+    `.title{font-size:16px;font-weight:700;fill:${theme.text};}` +
+    `.subtitle{font-size:12px;fill:${theme.subtext};}` +
+    `.metric{font-size:25px;font-weight:700;fill:${theme.text};}` +
+    `.label{font-size:11px;font-weight:600;fill:${theme.subtext};}` +
+    `.note{font-size:11px;fill:${theme.subtext};}</style>` +
+    `<rect width="100%" height="100%" rx="8" ry="8" fill="${theme.background}" stroke="#d0d7de"/>` +
+    `<text x="${cardPadding}" y="31" class="title">${title}</text>` +
+    `<text x="${cardPadding}" y="52" class="subtitle">Coding streaks in ${rangeLabel}</text>` +
+    renderMetric(cardPadding, metricTop, metricWidth, "Current", current, theme.levels[2]) +
+    renderMetric(cardPadding + metricWidth + metricGap, metricTop, metricWidth, "Longest", longest, theme.levels[3]) +
+    renderMetric(cardPadding + (metricWidth + metricGap) * 2, metricTop, metricWidth, "Active days", active, theme.levels[1]) +
+    `<rect x="${barX}" y="${barY}" width="${barWidth}" height="8" rx="4" ry="4" fill="${theme.cellEmpty}"/>` +
+    `<rect x="${barX}" y="${barY}" width="${filledBarWidth}" height="8" rx="4" ry="4" fill="${theme.levels[2]}"/>` +
+    `<text x="${barX}" y="178" class="note">${totalText}</text>` +
+    `<text x="${width - cardPadding}" y="178" text-anchor="end" class="note">CloudTime</text>` +
+    `</svg>`
+  );
+}
+
+function renderMetric(x: number, y: number, width: number, label: string, value: string, accent: string): string {
+  return (
+    `<g>` +
+    `<rect x="${x}" y="${y - 16}" width="${width}" height="3" rx="1.5" ry="1.5" fill="${accent}"/>` +
+    `<text x="${x}" y="${y + 18}" class="metric">${value}</text>` +
+    `<text x="${x}" y="${y + 40}" class="label">${label}</text>` +
+    `</g>`
+  );
+}
+
+function formatDays(days: number): string {
+  const safeDays = Math.max(0, Math.floor(days));
+  return `${safeDays} ${safeDays === 1 ? "day" : "days"}`;
+}
+
+function truncateText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(0, maxChars - 3))}...`;
 }

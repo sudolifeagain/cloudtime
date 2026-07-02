@@ -4,8 +4,8 @@ import type { components } from "../types/generated";
 import type { Context } from "hono";
 import { authMiddleware } from "../middleware/auth";
 import { rateLimitExceeded, tooManyRequests } from "../middleware/rate-limit";
-import { getHeatmapData } from "../utils/cards/data";
-import { renderHeatmapSvg, resolveThemeName } from "../utils/cards/render";
+import { getHeatmapData, getStreakData, resolveCardRange, type CardRange } from "../utils/cards/data";
+import { renderHeatmapSvg, renderStreakSvg, resolveThemeName } from "../utils/cards/render";
 import {
   buildCardCacheKey,
   cardCacheControl,
@@ -29,6 +29,7 @@ const FRESHNESS_MAX = 1440; // one day
 const THEME_NAME_MAX = 32;
 const THEME_NAME_RE = /^[a-z0-9_-]+$/;
 const USERNAME_MAX = 64;
+const RANGE_MAX = 32;
 const CACHE_BUSTER_MAX = 64;
 
 interface SettingsRow {
@@ -150,9 +151,9 @@ cardsSettings.patch("/embed_settings", async (c) => {
 
 export const cardsPublic = new Hono<{ Bindings: Env }>();
 
-// P1 ships the heatmap. summary/languages are valid in the contract but land in
-// P2; until then they are reported as not found.
-const IMPLEMENTED_CARD_TYPES = new Set(["heatmap"]);
+// summary/languages are valid in the contract but land in later phases; until
+// then they are reported as not found.
+const IMPLEMENTED_CARD_TYPES = new Set(["heatmap", "streak"]);
 
 function notFound(c: Context): Response {
   return c.json({ error: "Not found" }, 404, { "Cache-Control": "no-store" });
@@ -202,16 +203,22 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
   }
 
   const themeName = resolveThemeName(c.req.query("theme") ?? settings.default_theme);
+  const rangeParam = c.req.query("range");
+  if ((rangeParam?.length ?? 0) > RANGE_MAX) {
+    return badRequest(c, `range must be at most ${RANGE_MAX} characters`);
+  }
+  const cardRange = resolveCardRange(rangeParam);
   const v = c.req.query("v") ?? "";
   if (v.length > CACHE_BUSTER_MAX) {
     return badRequest(c, `v must be at most ${CACHE_BUSTER_MAX} characters`);
   }
   const ifNoneMatch = c.req.raw.headers.get("If-None-Match");
+  const cacheRange = cardType === "streak" ? cardRange.key : "year";
 
   const cacheKey = buildCardCacheKey({
     userId: user.id,
     cardType,
-    range: "year",
+    range: cacheRange,
     theme: themeName,
     templateId: "",
     v,
@@ -223,14 +230,7 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
     return svgResponse(cached.svg, cached.etag, settings.freshness_minutes, ifNoneMatch);
   }
 
-  const data = await getHeatmapData(c.env.DB, user.id, user.timezone, user.timeout);
-  const svg = renderHeatmapSvg({
-    username: user.username,
-    dayTotals: data.dayTotals,
-    todayStr: data.todayStr,
-    totalSeconds: data.totalSeconds,
-    theme: themeName,
-  });
+  const svg = await renderPublicCardSvg(c.env.DB, cardType, user, themeName, cardRange);
   const etag = await computeCardEtag(svg);
 
   const value: CardCacheValue = { svg, etag, generated_at: new Date().toISOString() };
@@ -240,6 +240,40 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
 
   return svgResponse(svg, etag, settings.freshness_minutes, ifNoneMatch);
 });
+
+async function renderPublicCardSvg(
+  db: D1Database,
+  cardType: string,
+  user: PublicUserRow,
+  themeName: string,
+  cardRange: CardRange,
+): Promise<string> {
+  if (cardType === "heatmap") {
+    const data = await getHeatmapData(db, user.id, user.timezone, user.timeout);
+    return renderHeatmapSvg({
+      username: user.username,
+      dayTotals: data.dayTotals,
+      todayStr: data.todayStr,
+      totalSeconds: data.totalSeconds,
+      theme: themeName,
+    });
+  }
+
+  if (cardType === "streak") {
+    const data = await getStreakData(db, user.id, user.timezone, user.timeout, cardRange.days);
+    return renderStreakSvg({
+      username: user.username,
+      currentStreak: data.currentStreak,
+      longestStreak: data.longestStreak,
+      trackedDays: data.trackedDays,
+      totalSeconds: data.totalSeconds,
+      theme: themeName,
+      rangeLabel: cardRange.label,
+    });
+  }
+
+  throw new Error(`Unsupported card type: ${cardType}`);
+}
 
 function svgResponse(
   svg: string,

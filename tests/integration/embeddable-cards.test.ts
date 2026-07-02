@@ -31,6 +31,13 @@ function authPatch(apiKey: string, body: unknown): RequestInit {
   };
 }
 
+function formatUtcDate(daysFromToday: number): string {
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  today.setUTCDate(today.getUTCDate() + daysFromToday);
+  return today.toISOString().slice(0, 10);
+}
+
 describe("embeddable cards — public visibility", () => {
   it("returns 404 when embeds are OFF by default", async () => {
     const user = await seedUser({ username: "alice" });
@@ -60,6 +67,64 @@ describe("embeddable cards — public visibility", () => {
     expect(svg.startsWith("<svg")).toBe(true);
     // The card URL is unauthenticated and must never echo a secret.
     expect(svg).not.toContain(user.apiKey);
+  });
+
+  it("renders the streak card as SVG once embeds are enabled", async () => {
+    const user = await seedUser({ username: "streak_owner" });
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
+
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, total_seconds) VALUES (?, ?, 'cards', ?)",
+    )
+      .bind(user.userId, formatUtcDate(-2), 1800)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, total_seconds) VALUES (?, ?, 'cards', ?)",
+    )
+      .bind(user.userId, formatUtcDate(-1), 3600)
+      .run();
+
+    const res = await call(`/api/v1/users/${user.username}/cards/streak.svg`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("image/svg+xml");
+    expect(res.headers.get("Cache-Control")).toContain("max-age=");
+    expect(res.headers.get("ETag")).toBeTruthy();
+
+    const svg = await res.text();
+    expect(svg).toContain("Coding streaks in the last year");
+    expect(svg).toContain("2 days");
+    expect(svg).toContain("1 hr 30 mins total coding time");
+    expect(svg).not.toContain(user.apiKey);
+  });
+
+  it("applies the requested streak range to rendered totals", async () => {
+    const user = await seedUser({ username: "streak_range" });
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
+
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, total_seconds) VALUES (?, ?, 'cards', ?)",
+    )
+      .bind(user.userId, formatUtcDate(-7), 7200)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, total_seconds) VALUES (?, ?, 'cards', ?)",
+    )
+      .bind(user.userId, formatUtcDate(-6), 3600)
+      .run();
+
+    const res = await call(`/api/v1/users/${user.username}/cards/streak.svg?range=last_7_days`);
+    expect(res.status).toBe(200);
+
+    const svg = await res.text();
+    expect(svg).toContain("Coding streaks in the last 7 days");
+    expect(svg).toContain("1 hr total coding time");
+    expect(svg).not.toContain("3 hrs total coding time");
+
+    const fallback = await call(`/api/v1/users/${user.username}/cards/streak.svg?range=not_supported`);
+    expect(fallback.status).toBe(200);
+    const fallbackSvg = await fallback.text();
+    expect(fallbackSvg).toContain("Coding streaks in the last year");
+    expect(fallbackSvg).toContain("3 hrs total coding time");
   });
 
   it("honors weak and listed If-None-Match validators", async () => {
@@ -99,7 +164,7 @@ describe("embeddable cards — public visibility", () => {
     expect(res.status).toBe(404);
   });
 
-  it("treats summary/languages cards as not-yet-available in P1", async () => {
+  it("treats summary/languages cards as not-yet-available in later phases", async () => {
     const user = await seedUser({ username: "carol" });
     await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
 
