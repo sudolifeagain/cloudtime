@@ -1,5 +1,6 @@
 import { DataTable, EmptyState, MetricCard, Notice, Panel, ProgressRow } from "./components";
 import { RankedBarChart, VerticalBarChart, type ChartDatum } from "./charts";
+import type { EmbedSettings } from "../utils/embed-settings";
 
 export type ProviderLink = {
   provider: string;
@@ -68,6 +69,7 @@ export type DashboardData = {
   machineCount: number;
   userAgentCount: number;
   apiBaseUrl: string;
+  embedSettings: EmbedSettings;
   providers: ProviderLink[];
   dailySummaries: DailySummary[];
   projects: ProjectSummary[];
