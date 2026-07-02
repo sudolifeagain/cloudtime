@@ -91,6 +91,7 @@ npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --fil
 npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0002_pending_link_email_verification.sql
 npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0003_hourly_summaries.sql
 npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0004_embed_settings.sql
+npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0005_embed_templates.sql
 ```
 
 ## 6. Configure secrets
@@ -341,6 +342,28 @@ its image proxy, so CloudTime controls its own `Cache-Control` and `ETag`
 headers, but GitHub may still refetch on its own cadence. If you need a new
 CloudTime URL for manual verification, append a short `v=` value from the
 settings page.
+
+Custom SVG templates can be managed through the authenticated API. Templates
+are stored only after validation as a safe static SVG subset, and they are
+revalidated before each public render. A card references a template with
+`template_id`:
+
+```powershell
+curl -X POST "https://your-worker.example.com/api/v1/users/current/embed_templates" `
+  -H "Authorization: Bearer <your API key>" `
+  -H "Content-Type: application/json" `
+  --data '{"name":"compact","template_svg":"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"360\" height=\"96\" viewBox=\"0 0 360 96\"><text x=\"12\" y=\"28\">{{username}}</text><text x=\"12\" y=\"56\">{{total_time}}</text></svg>"}'
+```
+
+Then use:
+
+```markdown
+![CloudTime custom summary](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/summary.svg?template_id=TEMPLATE_UUID)
+```
+
+Supported placeholders are `username`, `card_type`, `range`, `theme`,
+`total_time`, `daily_average`, `best_day`, `top_language`, `languages`,
+`current_streak`, `longest_streak`, and `tracked_days`.
 
 ---
 
