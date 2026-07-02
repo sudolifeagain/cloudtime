@@ -48,7 +48,7 @@ only that copy:
 
 ```powershell
 Copy-Item wrangler.toml wrangler.local.toml
-# → copy the D1 database_id and KV id into wrangler.local.toml
+# Copy the D1 database_id and KV id into wrangler.local.toml
 ```
 
 For a private deployment-only checkout, editing `wrangler.toml` directly is
@@ -89,6 +89,8 @@ If you redeploy later and there are migration files in `migrations/`, apply them
 ```powershell
 npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0001_add_email_verified.sql
 npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0002_pending_link_email_verification.sql
+npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0003_hourly_summaries.sql
+npx wrangler d1 execute cloudtime-db --remote --config wrangler.local.toml --file=./migrations/0004_embed_settings.sql
 ```
 
 ## 6. Configure secrets
@@ -134,6 +136,25 @@ https://your-cloudtime-instance.workers.dev/api/v1/auth/github/callback
 ```
 
 The web dashboard uses the same callback URL.
+
+### GitHub OAuth App checklist
+
+For GitHub, register an OAuth App under Developer settings and use:
+
+| Field | Value |
+|---|---|
+| Application name | Any public name users will recognize, for example `CloudTime` |
+| Homepage URL | `https://your-cloudtime-instance.workers.dev` |
+| Authorization callback URL | `https://your-cloudtime-instance.workers.dev/api/v1/auth/github/callback` |
+| Enable Device Flow | Leave disabled for CloudTime's web dashboard login |
+
+Device Flow is only needed for headless or CLI-style authorization flows. CloudTime uses the regular browser OAuth callback flow, so enabling Device Flow is unnecessary unless you are building a separate client that explicitly uses it.
+
+If an OAuth client secret was pasted into chat, issue trackers, logs, or any other shared place, rotate it in the provider dashboard and immediately update the Worker secret:
+
+```powershell
+npx wrangler secret put GITHUB_CLIENT_SECRET --config wrangler.local.toml
+```
 
 ## 7. Choose instance mode
 
@@ -184,6 +205,9 @@ curl -i https://your-worker.example.com/api/v1/health
 # Expect: HTTP/2 200, body: {"status":"ok"}
 
 curl -I https://your-worker.example.com/assets/app.css
+# Expect: HTTP/2 200
+
+curl -I https://your-worker.example.com/app
 # Expect: HTTP/2 200
 ```
 
@@ -236,7 +260,8 @@ on instances that do not set the variable.
    - Click the configured provider.
    - Complete the OAuth flow.
    - Confirm the dashboard loads under `/app`.
-3. **Generate your API key** from the dashboard. The plaintext UUID API key is shown **once**. Store it in your password manager and your `~/.wakatime.cfg`.
+3. Open **Settings** and set your timezone and heartbeat timeout.
+4. **Generate your API key** from the dashboard. The confirmation page is shown before the key is rotated. The plaintext UUID API key is shown **once** after rotation. Store it in your password manager and your `~/.wakatime.cfg`.
 
 For automation, the API route remains available:
 
@@ -284,12 +309,22 @@ api_key = <your UUID API key from step 3 above>
 
 Restart your editor. Your IDE's status bar should start showing today's coding time within a few seconds of typing.
 
+To verify ingestion from the command line, call an authenticated read endpoint after the editor has sent a heartbeat:
+
+```bash
+curl -i \
+  -H "Authorization: Bearer <your UUID API key>" \
+  https://your-worker.example.com/api/v1/users/current/status_bar/today
+```
+
+The dashboard updates recent heartbeats as soon as they are stored. Daily and project charts are based on aggregated summaries, so they may not show new activity until the hourly cron has run. The AI coding panel appears when incoming heartbeats use the `ai coding` category; it displays only stored heartbeat metadata such as time, project, entity, language, editor, and machine.
+
 ---
 
 ## 11. Ongoing operations
 
 - **Backups**: see [`backup-restore.md`](./backup-restore.md). Schedule periodic D1 exports — the Cloudflare account-level snapshots are not a substitute for operator-owned exports.
-- **Heartbeat retention** (when [Issue #108](https://github.com/sudolifeagain/cloudtime/issues/108) ships): consider setting `HEARTBEAT_RETENTION_DAYS` to bound table growth.
+- **Heartbeat retention**: consider setting `HEARTBEAT_RETENTION_DAYS` to bound raw heartbeat table growth. Aggregated summaries are retained.
 - **Email deliverability**: if you've enabled multi-user mode, monitor Resend's bounce / complaint rate and the `[email]` log lines.
 - **Rate-limit metrics**: monitor `[rate-limit]` warnings in `npx wrangler tail --config wrangler.local.toml` to detect abuse. Tune the `[[ratelimits]]` blocks in `wrangler.toml` if legitimate traffic gets rejected.
 
@@ -304,5 +339,6 @@ Restart your editor. Your IDE's status bar should start showing today's coding t
 | `/app` is unstyled or `/assets/app.css` is 404 | Deploy with `npm run deploy -- --config wrangler.local.toml` so Tailwind CSS + daisyUI assets are built and uploaded. |
 | `429 Too many requests` on OAuth | Rate limiter rejected your client IP. Wait 60 seconds; if recurring, widen the limit in `wrangler.toml`. |
 | Heartbeat 500 errors | Check `npx wrangler tail --config wrangler.local.toml` — usually D1 connectivity or a schema mismatch (re-run the remote schema command in step 5). |
-| `GET /heartbeats` returns the wrong day's data | Set your timezone via `PATCH /api/v1/users/current/profile` (`{"timezone": "Asia/Tokyo"}`). The endpoint defaults to your profile timezone since PR #112. |
+| `GET /heartbeats` returns the wrong day's data | Set your timezone in the dashboard Settings page, or via `PATCH /api/v1/users/current/profile` (`{"timezone": "Asia/Tokyo"}`). |
 | Status bar in IDE shows 0 minutes | Confirm your `api_url` is exactly `<worker>/api/v1` (no trailing slash, no `/heartbeats`). |
+| Dashboard charts are empty but recent heartbeats exist | Wait for the hourly cron. Recent heartbeats render immediately; daily and project charts use aggregated summary rows. |

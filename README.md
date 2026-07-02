@@ -11,7 +11,7 @@ Designed for **individual developers** who want full control over their coding m
 
 - Full API compatibility with WakaTime-compatible editor plugins
 - OAuth login (GitHub / Google / Discord) with multi-provider linking
-- Web dashboard for owner sign-in, API key rotation, and recent activity
+- Web dashboard for owner sign-in, settings, API key rotation, charts, and recent activity
 - Heartbeat tracking, summaries, stats, durations, goals, insights
 - Runs entirely on Cloudflare's free tier (Workers + D1 + KV)
 - Single-user by default, with multi-user/team mode planned
@@ -74,7 +74,7 @@ https://your-cloudtime-instance.workers.dev/app
 
 ### 4. Connect your editor
 
-After your first OAuth login, generate an API key from the dashboard. Configure your WakaTime-compatible editor plugin to point to your instance:
+After your first OAuth login, use the dashboard to set your timezone and heartbeat timeout, then generate an API key. Configure your WakaTime-compatible editor plugin to point to your instance:
 
 ```ini
 # ~/.wakatime.cfg
@@ -86,11 +86,12 @@ api_key = your-uuid-api-key-here
 ## Architecture
 
 ```
-Editor Plugin → Heartbeats → Cloudflare Workers (Hono)
-                                    │
-                              ┌─────┼─────┐
-                              D1    KV    Cron
-                           (SQLite) (Cache) (Aggregation)
+Editor Plugin -> Heartbeats -> Cloudflare Workers (Hono)
+                                      |
+                         +------------+------------+
+                         |            |            |
+                         D1           KV          Cron
+                      (SQLite)      (Cache)   (Aggregation)
 ```
 
 ## Development
@@ -107,8 +108,10 @@ npm run deploy     # Deploy to Cloudflare
 | Document | Description |
 |----------|-------------|
 | [docs/development-flow.md](docs/development-flow.md) | SDD workflow, milestones, branching strategy |
+| [docs/deployment-guide.md](docs/deployment-guide.md) | Cloudflare Workers deployment and first-run setup |
 | [docs/auth-design.md](docs/auth-design.md) | OAuth, sessions, security design |
 | [docs/cloudflare-constraints.md](docs/cloudflare-constraints.md) | Platform limits and mitigation strategies |
+| [docs/operations.md](docs/operations.md) | Retention, exports, and operator runbooks |
 | [docs/wakatime-feature-research.md](docs/wakatime-feature-research.md) | WakaTime-compatible feature research |
 | [schemas/openapi.yaml](schemas/openapi.yaml) | API specification (Single Source of Truth) |
 
