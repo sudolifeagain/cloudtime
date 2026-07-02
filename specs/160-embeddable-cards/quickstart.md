@@ -77,7 +77,8 @@ curl -i "https://time.example.com/api/v1/users/YOUR_USERNAME/cards/streak.svg?ra
 Expected:
 
 - summary and language card totals match aggregated stats for the range
-- streak card current/longest streak values match tracked coding days in the requested range
+- streak card current streak, longest streak, tracked-day count, and total time
+  match tracked coding days in the requested range
 - unknown theme falls back to the user's default theme
 - zero-activity ranges still return a valid readable SVG
 

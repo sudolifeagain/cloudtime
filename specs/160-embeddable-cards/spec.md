@@ -120,14 +120,16 @@ on GitHub contribution data. It shares the same public image, visibility,
 cache, and theme infrastructure as the other P2 built-in cards.
 
 **Independent Test**: Seed activity across consecutive and non-consecutive
-timezone-local days, request `streak.svg`, and confirm the current and longest
-streak values match CloudTime duration days after timeout rules are applied.
+timezone-local days, request `streak.svg`, and confirm the current streak,
+longest streak, tracked-day count, and total tracked time match CloudTime
+duration days inside the requested range after timeout rules are applied.
 
 **Acceptance Scenarios**:
 
 1. **Given** a user with tracked coding activity on consecutive local days,
    **When** the streak card is requested, **Then** it shows the current tracked
-   day streak and longest tracked day streak.
+   day streak, longest tracked day streak, tracked-day count, and total tracked
+   time for the requested range.
 2. **Given** today has no tracked coding time yet but yesterday continues an
    active streak, **When** the streak card is requested, **Then** the current
    streak may end yesterday rather than resetting to zero.
@@ -190,6 +192,7 @@ Beyond the built-in presets, a user supplies their own card template containing 
 - **FR-017**: Custom templates MUST be restricted to a safe static SVG subset; the rendered SVG MUST NOT contain scripts, event-handler attributes, `foreignObject`, external `href`/`xlink:href` references, remote fonts, or data URLs supplied by the user.
 - **FR-018**: Public card URLs MUST identify the target user with a non-secret stable identifier, not with an API key or session-bound value.
 - **FR-019**: System MUST define a tracked day for streak cards as a user-local calendar day with at least one second of computed coding duration after applying the user's timeout rules.
+- **FR-019a**: Streak card metrics MUST be computed inside the normalized requested range. If an active streak began before the range, current streak counts only the in-range consecutive tracked days.
 - **FR-020**: System MUST provide copyable GitHub README Markdown snippets for available public card URLs in the authenticated UI, and those snippets MUST NOT include API keys, session tokens, or other secrets.
 
 ### Key Entities *(include if feature involves data)*

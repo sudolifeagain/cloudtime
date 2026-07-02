@@ -159,15 +159,19 @@ implementation original while still explaining compatibility context in docs.
 
 **Decision**: A tracked day is a user-local calendar day with at least one
 second of computed coding duration after applying the user's timeout rules.
-`current_streak` counts consecutive tracked days ending today, or ending
-yesterday when today has no tracked duration yet. `longest_streak` is the
-maximum consecutive tracked-day run in the requested range.
+`current_streak` counts consecutive tracked days inside the normalized range,
+ending today, or ending yesterday when today has no tracked duration yet. If
+the active run began before the requested range, only in-range days are
+counted. `longest_streak` is the maximum consecutive tracked-day run in the
+requested range, and `total_seconds` is the selected-range coding duration.
 
 **Why**: GitHub profile users recognize streak cards, but CloudTime should not
 conflate GitHub contribution data with coding-time data. Counting days from
 CloudTime durations keeps the metric explainable, reproducible, and derived
-from data the system already owns. Allowing the current streak to end yesterday
-avoids showing zero every morning before the user has started coding.
+from data the system already owns. Bounding streak metrics to the normalized
+range keeps public rendering cacheable and avoids unbounded historical reads.
+Allowing the current streak to end yesterday avoids showing zero every morning
+before the user has started coding.
 
 **Alternatives considered**: Using GitHub contribution events was rejected
 because CloudTime does not ingest that data and the card should represent

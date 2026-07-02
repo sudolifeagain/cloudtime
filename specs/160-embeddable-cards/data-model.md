@@ -77,13 +77,15 @@ activity data:
 - total computed coding duration is at least one second;
 - timeout rules have already been applied by the duration/summary builder.
 
-The streak card uses tracked days to compute:
+The streak card uses tracked days and selected-range totals to compute:
 
-- `current_streak`: consecutive tracked days ending today, or ending yesterday
-  when today has no tracked duration yet;
+- `current_streak`: consecutive tracked days inside the normalized range,
+  ending today, or ending yesterday when today has no tracked duration yet. If
+  the active run began before the range, only in-range days are counted;
 - `longest_streak`: longest consecutive tracked-day run inside the selected
   range;
-- `tracked_days`: count of tracked days in the selected range.
+- `tracked_days`: count of tracked days in the selected range;
+- `total_seconds`: sum of computed coding duration in the selected range.
 
 ### Rendered Card Cache Entry
 

@@ -80,9 +80,10 @@ CloudTime tracked-day streaks from existing activity data.
 
 **Independent Test**: Seed activity across consecutive and non-consecutive
 timezone-local days, request `streak.svg`, and verify current/longest streak,
-zero activity, range fallback, cache headers, and theme fallback.
+tracked-day count, total seconds, range-boundary truncation, zero activity,
+range fallback, cache headers, and theme fallback.
 
-- [ ] T351 [P] Add unit tests for tracked-day streak calculations: consecutive days, gaps, today with no activity, timezone-local day boundaries, and zero activity.
+- [ ] T351 [P] Add unit tests for tracked-day streak calculations: consecutive days, gaps, today with no activity, timezone-local day boundaries, range-boundary truncation, total seconds, and zero activity.
 - [ ] T352 [P] Add renderer tests for `streak.svg` safe static SVG output and XML escaping.
 - [ ] T353 Add integration tests for `streak.svg` visibility OFF/ON, cache/ETag behavior, range fallback, and no secret leakage.
 - [ ] T354 Implement streak-card data builder from existing daily totals after timeout rules are applied.
