@@ -1,6 +1,7 @@
 import { EmptyState, Notice, Panel } from "./components";
 import type { DashboardData } from "./dashboard";
 import { buildProfileCardSnippets } from "../utils/cards/snippets";
+import { THEMES } from "../utils/cards/render";
 
 const FALLBACK_TIMEZONES = [
   "UTC",
@@ -44,6 +45,7 @@ export function SettingsView({
     username: data.user.username,
     theme: data.embedSettings.default_theme,
   });
+  const themeOptions = Object.keys(THEMES);
   const cacheBusterValue = data.today.date.replace(/-/g, "");
 
   return (
@@ -139,9 +141,11 @@ export function SettingsView({
             <label class="form-control grid gap-2">
               <span class="label-text font-medium">Default theme</span>
               <select class="select select-bordered w-full" name="default_theme">
-                <option value="default" selected={data.embedSettings.default_theme === "default"}>
-                  default
-                </option>
+                {themeOptions.map((theme) => (
+                  <option value={theme} selected={data.embedSettings.default_theme === theme}>
+                    {theme}
+                  </option>
+                ))}
               </select>
             </label>
 

@@ -3,8 +3,21 @@ import type { AuthEnv, Env } from "../types";
 import type { Context } from "hono";
 import { authMiddleware } from "../middleware/auth";
 import { rateLimitExceeded, tooManyRequests } from "../middleware/rate-limit";
-import { getHeatmapData, getStreakData, resolveCardRange, type CardRange } from "../utils/cards/data";
-import { renderHeatmapSvg, renderStreakSvg, resolveThemeName } from "../utils/cards/render";
+import {
+  getHeatmapData,
+  getLanguagesCardData,
+  getStreakData,
+  getSummaryCardData,
+  resolveCardRange,
+  type CardRange,
+} from "../utils/cards/data";
+import {
+  renderHeatmapSvg,
+  renderLanguagesSvg,
+  renderStreakSvg,
+  renderSummarySvg,
+  resolveThemeName,
+} from "../utils/cards/render";
 import {
   loadEmbedSettings,
   prepareEmbedSettingsUpdate,
@@ -63,9 +76,7 @@ cardsSettings.patch("/embed_settings", async (c) => {
 
 export const cardsPublic = new Hono<{ Bindings: Env }>();
 
-// summary/languages are valid in the contract but land in later phases; until
-// then they are reported as not found.
-const IMPLEMENTED_CARD_TYPES = new Set(["heatmap", "streak"]);
+const IMPLEMENTED_CARD_TYPES = new Set(["heatmap", "summary", "languages", "streak"]);
 
 function notFound(c: Context): Response {
   return c.json({ error: "Not found" }, 404, { "Cache-Control": "no-store" });
@@ -125,7 +136,7 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
     return badRequest(c, `v must be at most ${CACHE_BUSTER_MAX} characters`);
   }
   const ifNoneMatch = c.req.raw.headers.get("If-None-Match");
-  const cacheRange = cardType === "streak" ? cardRange.key : "year";
+  const cacheRange = cardType === "heatmap" ? "year" : cardRange.key;
 
   const cacheKey = buildCardCacheKey({
     userId: user.id,
@@ -179,6 +190,30 @@ async function renderPublicCardSvg(
       longestStreak: data.longestStreak,
       trackedDays: data.trackedDays,
       totalSeconds: data.totalSeconds,
+      theme: themeName,
+      rangeLabel: cardRange.label,
+    });
+  }
+
+  if (cardType === "summary") {
+    const data = await getSummaryCardData(db, user.id, user.timezone, user.timeout, cardRange.days);
+    return renderSummarySvg({
+      username: user.username,
+      totalSeconds: data.totalSeconds,
+      dailyAverageSeconds: data.dailyAverageSeconds,
+      bestDay: data.bestDay,
+      topLanguage: data.topLanguage,
+      theme: themeName,
+      rangeLabel: cardRange.label,
+    });
+  }
+
+  if (cardType === "languages") {
+    const data = await getLanguagesCardData(db, user.id, user.timezone, user.timeout, cardRange.days);
+    return renderLanguagesSvg({
+      username: user.username,
+      totalSeconds: data.totalSeconds,
+      languages: data.languages,
       theme: themeName,
       rangeLabel: cardRange.label,
     });

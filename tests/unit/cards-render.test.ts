@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   escapeXml,
   renderHeatmapSvg,
+  renderLanguagesSvg,
   renderStreakSvg,
+  renderSummarySvg,
   resolveTheme,
   resolveThemeName,
 } from "../../src/utils/cards/render";
@@ -67,6 +69,80 @@ describe("renderHeatmapSvg", () => {
     expect(svg).not.toMatch(/foreignObject/i);
     expect(svg).not.toMatch(/href=/i);
     expect(svg).not.toMatch(/on\w+=/i); // no event-handler attributes
+  });
+});
+
+describe("renderSummarySvg", () => {
+  it("renders summary metrics and escapes language text", () => {
+    const svg = renderSummarySvg({
+      username: "alice",
+      totalSeconds: 3 * 3600,
+      dailyAverageSeconds: 1800,
+      bestDay: { date: "2026-06-17", seconds: 2 * 3600 },
+      topLanguage: { language: '<script>TypeScript</script>', seconds: 7200, percent: 66.7 },
+      rangeLabel: "the last 7 days",
+    });
+
+    expect(svg).toContain("Coding summary in the last 7 days");
+    expect(svg).toContain("3 hrs");
+    expect(svg).toContain("30 mins");
+    expect(svg).toContain("2026-06-17 / 2 hrs");
+    expect(svg).not.toContain("<script>");
+    expect(svg).toContain("&lt;script&gt;");
+  });
+
+  it("emits only a safe static subset", () => {
+    const svg = renderSummarySvg({
+      username: "a",
+      totalSeconds: 0,
+      dailyAverageSeconds: 0,
+      bestDay: null,
+      topLanguage: null,
+    });
+    expect(svg).not.toMatch(/<script/i);
+    expect(svg).not.toMatch(/foreignObject/i);
+    expect(svg).not.toMatch(/href=/i);
+    expect(svg).not.toMatch(/on\w+=/i);
+  });
+});
+
+describe("renderLanguagesSvg", () => {
+  it("renders language shares and zero activity states", () => {
+    const svg = renderLanguagesSvg({
+      username: "alice",
+      totalSeconds: 3 * 3600,
+      languages: [
+        { language: "TypeScript", seconds: 7200, percent: 66.7 },
+        { language: "Markdown", seconds: 3600, percent: 33.3 },
+      ],
+      rangeLabel: "the last 30 days",
+    });
+
+    expect(svg).toContain("Top languages in the last 30 days");
+    expect(svg).toContain("TypeScript");
+    expect(svg).toContain("67%");
+    expect(svg).toContain("Markdown");
+    expect(svg).toContain("33%");
+
+    const empty = renderLanguagesSvg({
+      username: "alice",
+      totalSeconds: 0,
+      languages: [],
+    });
+    expect(empty).toContain("No language data in the last year");
+  });
+
+  it("escapes language names and emits only a safe static subset", () => {
+    const svg = renderLanguagesSvg({
+      username: "a",
+      totalSeconds: 60,
+      languages: [{ language: '<script>x</script>', seconds: 60, percent: 100 }],
+    });
+    expect(svg).not.toContain("<script>");
+    expect(svg).toContain("&lt;script&gt;");
+    expect(svg).not.toMatch(/foreignObject/i);
+    expect(svg).not.toMatch(/href=/i);
+    expect(svg).not.toMatch(/on\w+=/i);
   });
 });
 
@@ -144,6 +220,11 @@ describe("theme resolution", () => {
 
   it("keeps a known theme name", () => {
     expect(resolveThemeName("default")).toBe("default");
+  });
+
+  it("supports the dark built-in theme", () => {
+    expect(resolveThemeName("dark")).toBe("dark");
+    expect(resolveTheme("dark").background).toBe("#0d1117");
   });
 });
 

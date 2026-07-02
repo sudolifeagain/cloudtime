@@ -25,6 +25,26 @@ export interface StreakData extends StreakStats {
   totalSeconds: number;
 }
 
+export interface SummaryCardData {
+  todayStr: string;
+  totalSeconds: number;
+  dailyAverageSeconds: number;
+  bestDay: { date: string; seconds: number } | null;
+  topLanguage: LanguageShare | null;
+}
+
+export interface LanguageShare {
+  language: string;
+  seconds: number;
+  percent: number;
+}
+
+export interface LanguagesCardData {
+  todayStr: string;
+  totalSeconds: number;
+  languages: LanguageShare[];
+}
+
 // 53 columns covers a full trailing year plus the current partial week, matching
 // a contribution-graph layout.
 const HEATMAP_WEEKS = 53;
@@ -112,6 +132,53 @@ export async function getStreakData(
   };
 }
 
+export async function getSummaryCardData(
+  db: D1Database,
+  userId: string,
+  tz: string,
+  timeoutMinutes: number,
+  rangeDays = STREAK_DAYS,
+): Promise<SummaryCardData> {
+  const { todayStr, startStr, days } = resolveTrailingRange(tz, rangeDays);
+  const { dayTotals, totalSeconds: pastSeconds } = await loadSummaryDayTotals(
+    db,
+    userId,
+    startStr,
+    todayStr,
+  );
+  let totalSeconds = pastSeconds;
+
+  const todaySeconds = await computeTodaySeconds(db, userId, tz, todayStr, timeoutMinutes);
+  if (todaySeconds > 0) {
+    dayTotals.set(todayStr, todaySeconds);
+    totalSeconds += todaySeconds;
+  }
+
+  const languages = await loadLanguageShares(db, userId, tz, todayStr, startStr, timeoutMinutes);
+  const topLanguage = languages[0] ?? null;
+
+  return {
+    todayStr,
+    totalSeconds,
+    dailyAverageSeconds: totalSeconds / days,
+    bestDay: findBestDay(dayTotals),
+    topLanguage,
+  };
+}
+
+export async function getLanguagesCardData(
+  db: D1Database,
+  userId: string,
+  tz: string,
+  timeoutMinutes: number,
+  rangeDays = STREAK_DAYS,
+): Promise<LanguagesCardData> {
+  const { todayStr, startStr } = resolveTrailingRange(tz, rangeDays);
+  const languages = await loadLanguageShares(db, userId, tz, todayStr, startStr, timeoutMinutes);
+  const totalSeconds = languages.reduce((sum, language) => sum + language.seconds, 0);
+  return { todayStr, totalSeconds, languages };
+}
+
 export function calculateStreakStats(dayTotals: Map<string, number>, todayStr: string): StreakStats {
   const activeDays = new Set<string>();
   for (const [date, seconds] of dayTotals) {
@@ -149,6 +216,52 @@ export function calculateStreakStats(dayTotals: Map<string, number>, todayStr: s
   return { trackedDays, currentStreak, longestStreak };
 }
 
+function resolveTrailingRange(tz: string, rangeDays: number): { todayStr: string; startStr: string; days: number } {
+  const today = getToday(tz);
+  const todayStr = formatDate(today);
+  const days = Math.max(1, Math.floor(rangeDays));
+  const startStr = formatDate(addDays(today, -(days - 1)));
+  return { todayStr, startStr, days };
+}
+
+function findBestDay(dayTotals: Map<string, number>): { date: string; seconds: number } | null {
+  let best: { date: string; seconds: number } | null = null;
+  for (const [date, seconds] of dayTotals) {
+    if (seconds <= 0) continue;
+    if (!best || seconds > best.seconds || (seconds === best.seconds && date > best.date)) {
+      best = { date, seconds };
+    }
+  }
+  return best;
+}
+
+async function loadLanguageShares(
+  db: D1Database,
+  userId: string,
+  tz: string,
+  todayStr: string,
+  startStr: string,
+  timeoutMinutes: number,
+): Promise<LanguageShare[]> {
+  const languageTotals = await loadLanguageTotals(db, userId, startStr, todayStr);
+  const todayLanguageTotals = await computeTodayLanguageSeconds(db, userId, tz, todayStr, timeoutMinutes);
+  for (const [language, seconds] of todayLanguageTotals) {
+    languageTotals.set(language, (languageTotals.get(language) ?? 0) + seconds);
+  }
+
+  const totalSeconds = [...languageTotals.values()].reduce((sum, seconds) => sum + seconds, 0);
+  if (totalSeconds <= 0) return [];
+
+  return [...languageTotals.entries()]
+    .map(([language, seconds]) => ({
+      language,
+      seconds,
+      percent: (seconds / totalSeconds) * 100,
+    }))
+    .sort((a, b) => b.seconds - a.seconds || a.language.localeCompare(b.language))
+    .slice(0, 5);
+}
+
 async function loadSummaryDayTotals(
   db: D1Database,
   userId: string,
@@ -170,6 +283,30 @@ async function loadSummaryDayTotals(
     totalSeconds += seconds;
   }
   return { dayTotals, totalSeconds };
+}
+
+async function loadLanguageTotals(
+  db: D1Database,
+  userId: string,
+  startStr: string,
+  endExclusiveStr: string,
+): Promise<Map<string, number>> {
+  const { results } = await db
+    .prepare(
+      `SELECT COALESCE(NULLIF(language, ''), 'Unknown') AS language, SUM(total_seconds) AS seconds
+       FROM summaries
+       WHERE user_id = ? AND date >= ? AND date < ?
+       GROUP BY COALESCE(NULLIF(language, ''), 'Unknown')`,
+    )
+    .bind(userId, startStr, endExclusiveStr)
+    .all<{ language: string; seconds: number | null }>();
+
+  const languageTotals = new Map<string, number>();
+  for (const row of results) {
+    const seconds = Number(row.seconds ?? 0);
+    if (seconds > 0) languageTotals.set(row.language, seconds);
+  }
+  return languageTotals;
 }
 
 function parseUtcDate(dateStr: string): Date | null {
@@ -214,4 +351,31 @@ async function computeTodaySeconds(
     if (gap > 0 && gap <= timeout) total += gap;
   }
   return total;
+}
+
+async function computeTodayLanguageSeconds(
+  db: D1Database,
+  userId: string,
+  tz: string,
+  todayStr: string,
+  timeoutMinutes: number,
+): Promise<Map<string, number>> {
+  const { start, end } = getEpochBoundsForDate(todayStr, tz);
+  const { results } = await db
+    .prepare(
+      "SELECT time, language FROM heartbeats WHERE user_id = ? AND time >= ? AND time < ? ORDER BY time ASC",
+    )
+    .bind(userId, start, end)
+    .all<{ time: number; language: string | null }>();
+
+  const timeout = timeoutMinutes * 60;
+  const totals = new Map<string, number>();
+  for (let i = 1; i < results.length; i++) {
+    const prev = results[i - 1];
+    const gap = results[i].time - prev.time;
+    if (gap <= 0 || gap > timeout) continue;
+    const language = prev.language && prev.language.length > 0 ? prev.language : "Unknown";
+    totals.set(language, (totals.get(language) ?? 0) + gap);
+  }
+  return totals;
 }

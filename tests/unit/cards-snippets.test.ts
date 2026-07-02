@@ -9,11 +9,17 @@ describe("profile card snippets", () => {
       theme: "default",
     });
 
-    expect(snippets.map((snippet) => snippet.cardType)).toEqual(["heatmap", "streak"]);
+    expect(snippets.map((snippet) => snippet.cardType)).toEqual(["heatmap", "summary", "languages", "streak"]);
     expect(snippets[0].markdown).toBe(
       "![CloudTime heatmap](https://cloudtime.example.test/api/v1/users/alice/cards/heatmap.svg?theme=default)",
     );
     expect(snippets[1].markdown).toBe(
+      "![CloudTime summary](https://cloudtime.example.test/api/v1/users/alice/cards/summary.svg?theme=default)",
+    );
+    expect(snippets[2].markdown).toBe(
+      "![CloudTime languages](https://cloudtime.example.test/api/v1/users/alice/cards/languages.svg?theme=default)",
+    );
+    expect(snippets[3].markdown).toBe(
       "![CloudTime streak](https://cloudtime.example.test/api/v1/users/alice/cards/streak.svg?theme=default)",
     );
   });

@@ -9,22 +9,32 @@ import { formatHumanReadable } from "../time-format";
 
 export interface CardTheme {
   background: string;
+  border: string;
   cellEmpty: string;
+  accent: string;
   levels: [string, string, string, string];
   text: string;
   subtext: string;
 }
 
-// P1 ships the default theme only. Additional selectable themes (P2 / User
-// Story 5) slot in here; resolveTheme() already falls back to default for
-// unknown names (FR-006).
 export const THEMES: Record<string, CardTheme> = {
   default: {
     background: "#ffffff",
+    border: "#d0d7de",
     cellEmpty: "#ebedf0",
+    accent: "#30a14e",
     levels: ["#9be9a8", "#40c463", "#30a14e", "#216e39"],
     text: "#1f2328",
     subtext: "#656d76",
+  },
+  dark: {
+    background: "#0d1117",
+    border: "#30363d",
+    cellEmpty: "#161b22",
+    accent: "#2f81f7",
+    levels: ["#0e4429", "#006d32", "#26a641", "#39d353"],
+    text: "#e6edf3",
+    subtext: "#8b949e",
   },
 };
 
@@ -81,6 +91,24 @@ export interface StreakRenderOptions {
   longestStreak: number;
   trackedDays: number;
   totalSeconds: number;
+  theme?: string;
+  rangeLabel?: string;
+}
+
+export interface SummaryRenderOptions {
+  username: string;
+  totalSeconds: number;
+  dailyAverageSeconds: number;
+  bestDay: { date: string; seconds: number } | null;
+  topLanguage: { language: string; seconds: number; percent: number } | null;
+  theme?: string;
+  rangeLabel?: string;
+}
+
+export interface LanguagesRenderOptions {
+  username: string;
+  totalSeconds: number;
+  languages: Array<{ language: string; seconds: number; percent: number }>;
   theme?: string;
   rangeLabel?: string;
 }
@@ -162,6 +190,78 @@ export function renderHeatmapSvg(opts: HeatmapRenderOptions): string {
   );
 }
 
+export function renderSummarySvg(opts: SummaryRenderOptions): string {
+  const theme = resolveTheme(opts.theme);
+  const width = 495;
+  const height = 195;
+  const cardPadding = 22;
+  const rangeLabel = escapeXml(opts.rangeLabel ?? "the last year");
+  const title = `@${escapeXml(truncateText(opts.username, 38))}`;
+  const ariaLabel = escapeXml(`Coding summary card for ${opts.username}`);
+  const bestDayText = opts.bestDay
+    ? `${opts.bestDay.date} / ${formatHumanReadable(opts.bestDay.seconds)}`
+    : "No activity";
+  const topLanguageText = opts.topLanguage
+    ? `${truncateText(opts.topLanguage.language, 18)} / ${formatPercent(opts.topLanguage.percent)}`
+    : "No language";
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}">` +
+    cardStyle(theme) +
+    `<rect width="100%" height="100%" rx="8" ry="8" fill="${theme.background}" stroke="${theme.border}"/>` +
+    `<text x="${cardPadding}" y="31" class="title">${title}</text>` +
+    `<text x="${cardPadding}" y="52" class="subtitle">Coding summary in ${rangeLabel}</text>` +
+    renderSummaryMetric(cardPadding, 90, "Total time", formatHumanReadable(opts.totalSeconds), theme.accent) +
+    renderSummaryMetric(260, 90, "Daily average", formatHumanReadable(opts.dailyAverageSeconds), theme.levels[1]) +
+    renderSummaryMetric(cardPadding, 145, "Best day", bestDayText, theme.levels[2]) +
+    renderSummaryMetric(260, 145, "Top language", topLanguageText, theme.levels[3]) +
+    `</svg>`
+  );
+}
+
+export function renderLanguagesSvg(opts: LanguagesRenderOptions): string {
+  const theme = resolveTheme(opts.theme);
+  const width = 495;
+  const height = 210;
+  const cardPadding = 22;
+  const rangeLabel = escapeXml(opts.rangeLabel ?? "the last year");
+  const title = `@${escapeXml(truncateText(opts.username, 38))}`;
+  const totalText = escapeXml(`${formatHumanReadable(opts.totalSeconds)} total coding time`);
+  const ariaLabel = escapeXml(`Top languages card for ${opts.username}`);
+  const barX = 148;
+  const barWidth = 250;
+  const barHeight = 9;
+
+  let rows = "";
+  if (opts.languages.length === 0) {
+    rows = `<text x="${cardPadding}" y="104" class="subtitle">No language data in ${rangeLabel}</text>`;
+  } else {
+    for (let i = 0; i < opts.languages.length; i++) {
+      const language = opts.languages[i];
+      const y = 78 + i * 24;
+      const pct = Math.max(0, Math.min(100, language.percent));
+      const fill = theme.levels[i % theme.levels.length];
+      const filled = Math.max(2, Math.round((barWidth * pct) / 100));
+      rows += `<text x="${cardPadding}" y="${y + 9}" class="label">${escapeXml(truncateText(language.language, 16))}</text>`;
+      rows += `<rect x="${barX}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4.5" ry="4.5" fill="${theme.cellEmpty}"/>`;
+      rows += `<rect x="${barX}" y="${y}" width="${filled}" height="${barHeight}" rx="4.5" ry="4.5" fill="${fill}"/>`;
+      rows += `<text x="${width - cardPadding}" y="${y + 9}" text-anchor="end" class="label">${escapeXml(formatPercent(pct))}</text>`;
+    }
+  }
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}">` +
+    cardStyle(theme) +
+    `<rect width="100%" height="100%" rx="8" ry="8" fill="${theme.background}" stroke="${theme.border}"/>` +
+    `<text x="${cardPadding}" y="31" class="title">${title}</text>` +
+    `<text x="${cardPadding}" y="52" class="subtitle">Top languages in ${rangeLabel}</text>` +
+    rows +
+    `<text x="${cardPadding}" y="${height - 18}" class="note">${totalText}</text>` +
+    `<text x="${width - cardPadding}" y="${height - 18}" text-anchor="end" class="note">CloudTime</text>` +
+    `</svg>`
+  );
+}
+
 export function renderStreakSvg(opts: StreakRenderOptions): string {
   const theme = resolveTheme(opts.theme);
   const width = 495;
@@ -188,13 +288,8 @@ export function renderStreakSvg(opts: StreakRenderOptions): string {
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}">` +
-    `<style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}` +
-    `.title{font-size:16px;font-weight:700;fill:${theme.text};}` +
-    `.subtitle{font-size:12px;fill:${theme.subtext};}` +
-    `.metric{font-size:25px;font-weight:700;fill:${theme.text};}` +
-    `.label{font-size:11px;font-weight:600;fill:${theme.subtext};}` +
-    `.note{font-size:11px;fill:${theme.subtext};}</style>` +
-    `<rect width="100%" height="100%" rx="8" ry="8" fill="${theme.background}" stroke="#d0d7de"/>` +
+    cardStyle(theme) +
+    `<rect width="100%" height="100%" rx="8" ry="8" fill="${theme.background}" stroke="${theme.border}"/>` +
     `<text x="${cardPadding}" y="31" class="title">${title}</text>` +
     `<text x="${cardPadding}" y="52" class="subtitle">Coding streaks in ${rangeLabel}</text>` +
     renderMetric(cardPadding, metricTop, metricWidth, "Current", current, theme.levels[2]) +
@@ -218,9 +313,36 @@ function renderMetric(x: number, y: number, width: number, label: string, value:
   );
 }
 
+function renderSummaryMetric(x: number, y: number, label: string, value: string, accent: string): string {
+  return (
+    `<g>` +
+    `<rect x="${x}" y="${y - 19}" width="190" height="3" rx="1.5" ry="1.5" fill="${accent}"/>` +
+    `<text x="${x}" y="${y}" class="label">${escapeXml(label)}</text>` +
+    `<text x="${x}" y="${y + 23}" class="summaryValue">${escapeXml(truncateText(value, 28))}</text>` +
+    `</g>`
+  );
+}
+
+function cardStyle(theme: CardTheme): string {
+  return (
+    `<style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}` +
+    `.title{font-size:16px;font-weight:700;fill:${theme.text};}` +
+    `.subtitle{font-size:12px;fill:${theme.subtext};}` +
+    `.metric{font-size:25px;font-weight:700;fill:${theme.text};}` +
+    `.summaryValue{font-size:18px;font-weight:700;fill:${theme.text};}` +
+    `.label{font-size:11px;font-weight:600;fill:${theme.subtext};}` +
+    `.note{font-size:11px;fill:${theme.subtext};}</style>`
+  );
+}
+
 function formatDays(days: number): string {
   const safeDays = Math.max(0, Math.floor(days));
   return `${safeDays} ${safeDays === 1 ? "day" : "days"}`;
+}
+
+function formatPercent(percent: number): string {
+  const rounded = Math.round(percent);
+  return `${rounded}%`;
 }
 
 function truncateText(value: string, maxChars: number): string {

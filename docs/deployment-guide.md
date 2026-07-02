@@ -330,6 +330,8 @@ token. They look like:
 
 ```markdown
 ![CloudTime heatmap](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/heatmap.svg?theme=default)
+![CloudTime summary](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/summary.svg?theme=default)
+![CloudTime languages](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/languages.svg?theme=default)
 ![CloudTime streak](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/streak.svg?theme=default)
 ```
 
