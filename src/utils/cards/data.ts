@@ -30,6 +30,26 @@ export interface StreakData extends StreakStats {
 const HEATMAP_WEEKS = 53;
 const STREAK_DAYS = 365;
 
+export interface CardRange {
+  key: string;
+  days: number;
+  label: string;
+}
+
+const CARD_RANGES: Record<string, CardRange> = {
+  last_7_days: { key: "last_7_days", days: 7, label: "the last 7 days" },
+  last_30_days: { key: "last_30_days", days: 30, label: "the last 30 days" },
+  last_6_months: { key: "last_6_months", days: 183, label: "the last 6 months" },
+  last_year: { key: "last_year", days: STREAK_DAYS, label: "the last year" },
+};
+
+export function resolveCardRange(range?: string): CardRange {
+  if (range && Object.prototype.hasOwnProperty.call(CARD_RANGES, range)) {
+    return CARD_RANGES[range];
+  }
+  return CARD_RANGES.last_year;
+}
+
 export async function getHeatmapData(
   db: D1Database,
   userId: string,
@@ -64,10 +84,12 @@ export async function getStreakData(
   userId: string,
   tz: string,
   timeoutMinutes: number,
+  rangeDays = STREAK_DAYS,
 ): Promise<StreakData> {
   const today = getToday(tz);
   const todayStr = formatDate(today);
-  const startStr = formatDate(addDays(today, -(STREAK_DAYS - 1)));
+  const days = Math.max(1, Math.floor(rangeDays));
+  const startStr = formatDate(addDays(today, -(days - 1)));
 
   const { dayTotals, totalSeconds: pastSeconds } = await loadSummaryDayTotals(
     db,

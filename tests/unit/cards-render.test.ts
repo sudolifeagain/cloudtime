@@ -97,6 +97,18 @@ describe("renderStreakSvg", () => {
     expect(svg).toContain("0 secs total coding time");
   });
 
+  it("renders the normalized range label", () => {
+    const svg = renderStreakSvg({
+      username: "alice",
+      currentStreak: 2,
+      longestStreak: 4,
+      trackedDays: 5,
+      totalSeconds: 3600,
+      rangeLabel: "the last 7 days",
+    });
+    expect(svg).toContain("Coding streaks in the last 7 days");
+  });
+
   it("escapes the username to prevent markup injection", () => {
     const svg = renderStreakSvg({
       username: '<script>evil()</script>&"x',

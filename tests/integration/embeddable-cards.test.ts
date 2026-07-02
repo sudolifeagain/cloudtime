@@ -97,6 +97,36 @@ describe("embeddable cards — public visibility", () => {
     expect(svg).not.toContain(user.apiKey);
   });
 
+  it("applies the requested streak range to rendered totals", async () => {
+    const user = await seedUser({ username: "streak_range" });
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
+
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, total_seconds) VALUES (?, ?, 'cards', ?)",
+    )
+      .bind(user.userId, formatUtcDate(-7), 7200)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, total_seconds) VALUES (?, ?, 'cards', ?)",
+    )
+      .bind(user.userId, formatUtcDate(-6), 3600)
+      .run();
+
+    const res = await call(`/api/v1/users/${user.username}/cards/streak.svg?range=last_7_days`);
+    expect(res.status).toBe(200);
+
+    const svg = await res.text();
+    expect(svg).toContain("Coding streaks in the last 7 days");
+    expect(svg).toContain("1 hr total coding time");
+    expect(svg).not.toContain("3 hrs total coding time");
+
+    const fallback = await call(`/api/v1/users/${user.username}/cards/streak.svg?range=not_supported`);
+    expect(fallback.status).toBe(200);
+    const fallbackSvg = await fallback.text();
+    expect(fallbackSvg).toContain("Coding streaks in the last year");
+    expect(fallbackSvg).toContain("3 hrs total coding time");
+  });
+
   it("honors weak and listed If-None-Match validators", async () => {
     const user = await seedUser({ username: "etag_user" });
     await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: true }));
