@@ -1,6 +1,6 @@
 import { getDateForTimestamp, getHourForTimestamp } from "../utils/time-format";
 
-type HeartbeatForAggregation = {
+export type HeartbeatForAggregation = {
   user_id: string;
   time: number;
   project: string | null;
@@ -25,23 +25,23 @@ type SummaryTuple = {
   seconds: number;
 };
 
-type HourlyTuple = {
+export type HourlyTuple = {
   userId: string;
   date: string;
   hour: number;
   seconds: number;
 };
 
-type ComputedDurations = {
+export type ComputedDurations = {
   daily: Map<string, SummaryTuple>;
   hourly: Map<string, HourlyTuple>;
 };
 
 const DEFAULT_TIMEOUT = 15 * 60; // 15 minutes in seconds
 export const MAX_USER_TIMEOUT = 60 * 60; // 60 minutes - max allowed by validation
-const HEARTBEAT_LIMIT = 5000;
+export const HEARTBEAT_LIMIT = 5000;
 
-async function getLastAggregatedAt(db: D1Database): Promise<number> {
+export async function getLastAggregatedAt(db: D1Database): Promise<number> {
   const row = await db
     .prepare("SELECT value FROM meta WHERE key = 'last_aggregated_at'")
     .first<{ value: string }>();
@@ -52,7 +52,7 @@ type UserSettings = { timeout: number; timezone: string };
 
 const BIND_CHUNK_SIZE = 100;
 
-async function getUserSettings(
+export async function getUserSettings(
   db: D1Database,
   userIds: string[],
 ): Promise<Map<string, UserSettings>> {
@@ -81,10 +81,12 @@ async function getUserSettings(
   return map;
 }
 
-function computeDurations(
+export function computeDurations(
   heartbeats: HeartbeatForAggregation[],
   userSettings: Map<string, UserSettings>,
   lastAggregatedAt: number,
+  shouldProcessHeartbeat: (heartbeat: HeartbeatForAggregation) => boolean = (heartbeat) =>
+    heartbeat.time > lastAggregatedAt,
 ): ComputedDurations {
   const result = new Map<string, SummaryTuple>();
   // Hour-of-day aggregate (Issue #134), bucketed in the same walk so a single
@@ -113,8 +115,8 @@ function computeDurations(
       const curr = userHeartbeats[i];
       const gap = curr.time - prev.time;
 
-      // Only generate durations for heartbeats after lastAggregatedAt
-      if (curr.time <= lastAggregatedAt) continue;
+      // Only generate durations for heartbeats after the caller's cursor.
+      if (!shouldProcessHeartbeat(curr)) continue;
 
       if (gap > timeout || gap <= 0) continue;
 
