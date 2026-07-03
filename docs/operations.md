@@ -101,9 +101,10 @@ normal aggregation.
   **5000** heartbeats per run.
 - It only reads heartbeats at or behind the normal `last_aggregated_at` cursor,
   so it does not race ahead of regular aggregation.
-- It tracks progress in `meta.hourly_backfill_cursor` and sets
-  `meta.hourly_backfill_completed_at` once no retained heartbeat rows remain to
-  scan. After that, future cron runs skip the backfill.
+- It tracks progress with the composite
+  `meta.hourly_backfill_cursor` / `meta.hourly_backfill_cursor_id` pair and
+  sets `meta.hourly_backfill_completed_at` once no retained heartbeat rows
+  remain to scan. After that, future cron runs skip the backfill.
 - It records the first date it actually filled in
   `meta.hourly_backfill_earliest_date`, which is useful when raw heartbeat
   retention means older history is no longer available.
@@ -120,7 +121,7 @@ for the affected instance during a maintenance window:
 
 ```bash
 wrangler d1 execute cloudtime-db --remote --command \
-  "DELETE FROM meta WHERE key IN ('hourly_backfill_cursor','hourly_backfill_completed_at','hourly_backfill_earliest_date')"
+  "DELETE FROM meta WHERE key IN ('hourly_backfill_cursor','hourly_backfill_cursor_id','hourly_backfill_completed_at','hourly_backfill_earliest_date')"
 wrangler d1 execute cloudtime-db --remote --command \
   "DELETE FROM hourly_backfill_dates"
 ```

@@ -9,9 +9,12 @@ import {
 } from "./aggregate";
 
 const CURSOR_KEY = "hourly_backfill_cursor";
+const CURSOR_ID_KEY = "hourly_backfill_cursor_id";
 const COMPLETED_KEY = "hourly_backfill_completed_at";
 const EARLIEST_DATE_KEY = "hourly_backfill_earliest_date";
 const DATE_PAIR_CHUNK_SIZE = 50;
+
+type BackfillHeartbeat = HeartbeatForAggregation & { id: string };
 
 export type HourlyBackfillStatus = "waiting" | "skipped" | "processed" | "complete";
 
@@ -37,11 +40,13 @@ export async function backfillHourlySummaries(
   }
 
   const cursor = await getMetaNumber(db, CURSOR_KEY);
+  const cursorId = await getMetaString(db, CURSOR_ID_KEY);
   const safeLimit = Math.max(1, Math.floor(limit));
-  const newHeartbeats = await loadBackfillHeartbeats(db, cursor, lastAggregatedAt, safeLimit);
+  const newHeartbeats = await loadBackfillHeartbeats(db, cursor, cursorId, lastAggregatedAt, safeLimit);
   if (newHeartbeats.length === 0) {
     await db.batch([
       upsertMeta(db, CURSOR_KEY, String(lastAggregatedAt)),
+      upsertMeta(db, CURSOR_ID_KEY, ""),
       upsertMeta(db, COMPLETED_KEY, new Date().toISOString()),
     ]);
     return {
@@ -52,13 +57,22 @@ export async function backfillHourlySummaries(
     };
   }
 
-  const lookbackHeartbeats = await loadLookbackHeartbeats(db, cursor);
+  const lookbackHeartbeats = await loadLookbackHeartbeats(db, cursor, cursorId);
   const heartbeats = [...lookbackHeartbeats, ...newHeartbeats];
   const userSettings = await getUserSettings(db, [...new Set(heartbeats.map((hb) => hb.user_id))]);
-  const { hourly } = computeDurations(heartbeats, userSettings, cursor);
+  const { hourly } = computeDurations(
+    heartbeats,
+    userSettings,
+    cursor,
+    (hb) => hb.time > cursor || (hb.time === cursor && (hb as BackfillHeartbeat).id > cursorId),
+  );
   const fillable = await filterTuplesForBackfillableDates(db, [...hourly.values()]);
 
-  const maxTime = Math.max(...newHeartbeats.map((hb) => hb.time));
+  const lastHeartbeat = newHeartbeats.at(-1);
+  if (!lastHeartbeat) {
+    throw new Error("backfillHourlySummaries: expected a non-empty heartbeat batch");
+  }
+  const maxTime = lastHeartbeat.time;
   const complete = newHeartbeats.length < safeLimit;
   const earliestDate = minDate(fillable);
 
@@ -91,6 +105,7 @@ DO UPDATE SET total_seconds = total_seconds + excluded.total_seconds`;
   }
 
   statements.push(upsertMeta(db, CURSOR_KEY, String(maxTime)));
+  statements.push(upsertMeta(db, CURSOR_ID_KEY, lastHeartbeat.id));
   if (earliestDate) statements.push(upsertEarliestDate(db, earliestDate));
   if (complete) statements.push(upsertMeta(db, COMPLETED_KEY, new Date().toISOString()));
 
@@ -116,42 +131,60 @@ async function getMetaNumber(db: D1Database, key: string): Promise<number> {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+async function getMetaString(db: D1Database, key: string): Promise<string> {
+  const row = await db.prepare("SELECT value FROM meta WHERE key = ?").bind(key).first<{ value: string }>();
+  return row?.value ?? "";
+}
+
 async function loadLookbackHeartbeats(
   db: D1Database,
   cursor: number,
-): Promise<HeartbeatForAggregation[]> {
+  cursorId: string,
+): Promise<BackfillHeartbeat[]> {
   if (cursor <= 0) return [];
   const lookbackTime = Math.max(0, cursor - MAX_USER_TIMEOUT);
+  const cursorPredicate = cursorId
+    ? "(time < ? OR (time = ? AND id <= ?))"
+    : "time <= ?";
+  const bindings = cursorId
+    ? [lookbackTime, cursor, cursor, cursorId]
+    : [lookbackTime, cursor];
   const { results } = await db
     .prepare(
-      `SELECT user_id, max(time) as time, project, branch, language, editor,
+      `SELECT id, user_id, time, project, branch, language, editor,
               operating_system, category, machine
-       FROM heartbeats
-       WHERE time > ? AND time <= ?
-       GROUP BY user_id`,
+       FROM (
+         SELECT id, user_id, time, project, branch, language, editor,
+                operating_system, category, machine,
+                ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY time DESC, id DESC) AS rn
+         FROM heartbeats
+         WHERE time > ? AND ${cursorPredicate}
+       )
+       WHERE rn = 1`,
     )
-    .bind(lookbackTime, cursor)
-    .all<HeartbeatForAggregation>();
+    .bind(...bindings)
+    .all<BackfillHeartbeat>();
   return results;
 }
 
 async function loadBackfillHeartbeats(
   db: D1Database,
   cursor: number,
+  cursorId: string,
   lastAggregatedAt: number,
   limit: number,
-): Promise<HeartbeatForAggregation[]> {
+): Promise<BackfillHeartbeat[]> {
   const { results } = await db
     .prepare(
-      `SELECT user_id, time, project, branch, language, editor,
+      `SELECT id, user_id, time, project, branch, language, editor,
               operating_system, category, machine
        FROM heartbeats
-       WHERE time > ? AND time <= ?
-       ORDER BY time ASC
+       WHERE (time > ? OR (time = ? AND id > ?)) AND time <= ?
+       ORDER BY time ASC, id ASC
        LIMIT ?`,
     )
-    .bind(cursor, lastAggregatedAt, limit)
-    .all<HeartbeatForAggregation>();
+    .bind(cursor, cursor, cursorId, lastAggregatedAt, limit)
+    .all<BackfillHeartbeat>();
   return results;
 }
 

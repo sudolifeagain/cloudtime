@@ -9,11 +9,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { backfillHourlySummaries } from "../../src/cron/hourly-backfill";
 import { seedUser, truncate } from "../helpers/fixtures";
 
-async function seedHeartbeat(userId: string, epochSeconds: number): Promise<void> {
+async function seedHeartbeat(userId: string, epochSeconds: number, id = crypto.randomUUID()): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO heartbeats (id, user_id, entity, time) VALUES (?, ?, ?, ?)`,
   )
-    .bind(crypto.randomUUID(), userId, "src/main.ts", epochSeconds)
+    .bind(id, userId, "src/main.ts", epochSeconds)
     .run();
 }
 
@@ -110,6 +110,33 @@ describe("backfillHourlySummaries", () => {
     expect(second.status).toBe("complete");
     expect(await hourlyRows(user.userId)).toEqual([
       { date: "2026-05-01", hour: 13, total_seconds: 900 },
+    ]);
+  });
+
+  it("does not skip heartbeats that share the chunk-boundary timestamp", async () => {
+    const userA = await seedUser({ username: "backfill_tie_a", timezone: "UTC" });
+    const userB = await seedUser({ username: "backfill_tie_b", timezone: "UTC" });
+    const base = Date.UTC(2026, 4, 1, 14, 0, 0) / 1000;
+
+    await seedHeartbeat(userA.userId, base, "a-100");
+    await seedHeartbeat(userB.userId, base, "b-100");
+    await seedHeartbeat(userA.userId, base + 100, "a-200");
+    await seedHeartbeat(userB.userId, base + 100, "b-200");
+    await seedHeartbeat(userB.userId, base + 200, "b-300");
+    await setMeta("last_aggregated_at", String(base + 200));
+
+    const first = await backfillHourlySummaries(env.DB, 3);
+    expect(first.status).toBe("processed");
+    expect(first.cursor).toBe(base + 100);
+
+    const second = await backfillHourlySummaries(env.DB, 3);
+    expect(second.status).toBe("complete");
+
+    expect(await hourlyRows(userA.userId)).toEqual([
+      { date: "2026-05-01", hour: 14, total_seconds: 100 },
+    ]);
+    expect(await hourlyRows(userB.userId)).toEqual([
+      { date: "2026-05-01", hour: 14, total_seconds: 200 },
     ]);
   });
 

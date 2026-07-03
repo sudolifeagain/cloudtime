@@ -85,6 +85,8 @@ export function computeDurations(
   heartbeats: HeartbeatForAggregation[],
   userSettings: Map<string, UserSettings>,
   lastAggregatedAt: number,
+  shouldProcessHeartbeat: (heartbeat: HeartbeatForAggregation) => boolean = (heartbeat) =>
+    heartbeat.time > lastAggregatedAt,
 ): ComputedDurations {
   const result = new Map<string, SummaryTuple>();
   // Hour-of-day aggregate (Issue #134), bucketed in the same walk so a single
@@ -113,8 +115,8 @@ export function computeDurations(
       const curr = userHeartbeats[i];
       const gap = curr.time - prev.time;
 
-      // Only generate durations for heartbeats after lastAggregatedAt
-      if (curr.time <= lastAggregatedAt) continue;
+      // Only generate durations for heartbeats after the caller's cursor.
+      if (!shouldProcessHeartbeat(curr)) continue;
 
       if (gap > timeout || gap <= 0) continue;
 
