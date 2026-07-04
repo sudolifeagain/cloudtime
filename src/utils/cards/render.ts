@@ -134,6 +134,7 @@ export function renderHeatmapSvg(opts: HeatmapRenderOptions): string {
   let cells = "";
   let monthLabels = "";
   let lastMonth = -1;
+  let lastMonthLabelX = -Infinity;
   for (let i = 0; i < totalDays; i++) {
     const dt = new Date(startMs + i * 86400000);
     const dateStr = `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
@@ -145,11 +146,14 @@ export function renderHeatmapSvg(opts: HeatmapRenderOptions): string {
     const x = LEFT + col * STEP;
     const y = TOP + row * STEP;
     cells += `<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="2" ry="2" fill="${fill}"><title>${dateStr}: ${escapeXml(formatHumanReadable(secs))}</title></rect>`;
-    if (row === 0) {
+    if (dt.getUTCDate() === 1) {
       const month = dt.getUTCMonth();
       if (month !== lastMonth) {
         lastMonth = month;
-        monthLabels += `<text x="${x}" y="${TOP - 8}" class="lbl">${MONTHS[month]}</text>`;
+        if (x - lastMonthLabelX >= 32) {
+          monthLabels += `<text x="${x}" y="${TOP - 8}" class="lbl">${MONTHS[month]}</text>`;
+          lastMonthLabelX = x;
+        }
       }
     }
   }

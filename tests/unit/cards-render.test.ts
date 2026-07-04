@@ -58,6 +58,17 @@ describe("renderHeatmapSvg", () => {
     expect(svg).toContain(`<title>${day}: 8 hrs`);
   });
 
+  it("does not crowd adjacent month labels at the range boundary", () => {
+    const svg = renderHeatmapSvg({
+      username: "alice",
+      dayTotals: new Map(),
+      todayStr: "2026-07-04",
+      totalSeconds: 0,
+    });
+    const firstMonthLabel = svg.match(/<text x="\d+" y="26" class="lbl">([A-Z][a-z]{2})<\/text>/)?.[1];
+    expect(firstMonthLabel).toBe("Jul");
+  });
+
   it("emits only a safe static subset (no script/foreignObject/href)", () => {
     const svg = renderHeatmapSvg({
       username: "a",
