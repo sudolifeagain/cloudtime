@@ -96,6 +96,8 @@ paths:
     $ref: paths/users/data-dumps.yaml
   /users/{username}/cards/{card_type}.svg:
     $ref: paths/cards/public-card.yaml
+  /users/{username}/badges/{badge_type}.svg:
+    $ref: paths/cards/public-badge.yaml
   /users/current/embed_settings:
     $ref: paths/cards/embed-settings.yaml
   /users/current/embed_templates:

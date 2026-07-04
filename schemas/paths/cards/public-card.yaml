@@ -4,9 +4,10 @@ get:
     - embeddable_cards
   summary: Render a public embeddable stats card
   description: |
-    Returns an SVG image suitable for embedding in a GitHub README or any
-    page that displays remote images. This operation is intentionally public
-    (`security: []`) and MUST NOT require or accept an API key in the URL.
+    Returns an SVG image suitable for embedding in a GitHub profile README or
+    any page that displays remote images. This operation is intentionally
+    public (`security: []`) and MUST NOT require or accept an API key in the
+    URL.
 
     The target user is selected by a non-secret username. If embeds are
     disabled for that user, the user does not exist, or the requested template
@@ -16,6 +17,11 @@ get:
     user's freshness window. The optional `v` parameter participates in cache
     keys so a user can force a refetch, but it never changes card data or
     visibility.
+
+    The `profile` card type is a composite image for personal profile READMEs.
+    It combines several CloudTime-owned metrics into one original SVG surface.
+    The optional `metrics` and `layout` query parameters apply only to the
+    composite profile card; unsupported metric names return `400`.
   security: []
   parameters:
     - name: username
@@ -37,6 +43,7 @@ get:
           - summary
           - languages
           - streak
+          - profile
     - name: range
       in: query
       required: false
@@ -59,6 +66,38 @@ get:
       schema:
         type: string
         format: uuid
+    - name: metrics
+      in: query
+      required: false
+      style: form
+      explode: false
+      description: |
+        Optional comma-separated metric list for the `profile` composite card.
+        Omit to use the server default. Repeated, unknown, or unsupported metric
+        names return `400`.
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 8
+        uniqueItems: true
+        items:
+          type: string
+          enum:
+            - today
+            - week
+            - all_time
+            - top_language
+            - current_streak
+            - goal_progress
+    - name: layout
+      in: query
+      required: false
+      description: Optional layout for the `profile` composite card.
+      schema:
+        type: string
+        enum:
+          - default
+          - compact
     - name: v
       in: query
       required: false
