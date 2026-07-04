@@ -191,6 +191,11 @@ describe("embeddable cards — public visibility", () => {
       .bind(user.userId, formatUtcDate(-1), 3600)
       .run();
     await env.DB.prepare(
+      "INSERT INTO summaries (user_id, date, project, language, total_seconds) VALUES (?, ?, 'cards', '', ?)",
+    )
+      .bind(user.userId, formatUtcDate(-1), 10800)
+      .run();
+    await env.DB.prepare(
       "INSERT INTO summaries (user_id, date, project, language, total_seconds) VALUES (?, ?, 'cards', 'Go', ?)",
     )
       .bind(user.userId, formatUtcDate(-8), 1800)
@@ -201,9 +206,10 @@ describe("embeddable cards — public visibility", () => {
     expect(summary.headers.get("Content-Type")).toContain("image/svg+xml");
     const summarySvg = await summary.text();
     expect(summarySvg).toContain("Coding summary in the last 7 days");
-    expect(summarySvg).toContain("3 hrs");
-    expect(summarySvg).toContain(`${bestDay} / 2 hrs`);
+    expect(summarySvg).toContain("6 hrs");
+    expect(summarySvg).toContain(`${formatUtcDate(-1)} / 4 hrs`);
     expect(summarySvg).toContain("TypeScript / 67%");
+    expect(summarySvg).not.toContain("Unknown");
     expect(summarySvg).not.toContain(user.apiKey);
 
     const languages = await call(`/api/v1/users/${user.username}/cards/languages.svg?range=last_7_days`);
@@ -214,6 +220,7 @@ describe("embeddable cards — public visibility", () => {
     expect(languagesSvg).toContain("67%");
     expect(languagesSvg).toContain("Markdown");
     expect(languagesSvg).toContain("33%");
+    expect(languagesSvg).not.toContain("Unknown");
     expect(languagesSvg).not.toContain("Go");
 
     const fallback = await call(`/api/v1/users/${user.username}/cards/languages.svg?range=not_supported`);
@@ -222,6 +229,7 @@ describe("embeddable cards — public visibility", () => {
     expect(fallbackSvg).toContain("Top languages in the last year");
     expect(fallbackSvg).toContain("Go");
     expect(fallbackSvg).toContain("3 hrs 30 mins total coding time");
+    expect(fallbackSvg).not.toContain("Unknown");
   });
 
   it("applies built-in themes and falls back to default for unknown themes", async () => {

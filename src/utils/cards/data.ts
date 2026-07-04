@@ -49,6 +49,7 @@ export interface LanguagesCardData {
 // a contribution-graph layout.
 const HEATMAP_WEEKS = 53;
 const STREAK_DAYS = 365;
+const UNKNOWN_LANGUAGE = "Unknown";
 
 export interface CardRange {
   key: string;
@@ -246,6 +247,7 @@ async function loadLanguageShares(
   const languageTotals = await loadLanguageTotals(db, userId, startStr, todayStr);
   const todayLanguageTotals = await computeTodayLanguageSeconds(db, userId, tz, todayStr, timeoutMinutes);
   for (const [language, seconds] of todayLanguageTotals) {
+    if (language === UNKNOWN_LANGUAGE) continue;
     languageTotals.set(language, (languageTotals.get(language) ?? 0) + seconds);
   }
 
@@ -293,10 +295,10 @@ async function loadLanguageTotals(
 ): Promise<Map<string, number>> {
   const { results } = await db
     .prepare(
-      `SELECT COALESCE(NULLIF(language, ''), 'Unknown') AS language, SUM(total_seconds) AS seconds
+      `SELECT language, SUM(total_seconds) AS seconds
        FROM summaries
-       WHERE user_id = ? AND date >= ? AND date < ?
-       GROUP BY COALESCE(NULLIF(language, ''), 'Unknown')`,
+       WHERE user_id = ? AND date >= ? AND date < ? AND language IS NOT NULL AND language != ''
+       GROUP BY language`,
     )
     .bind(userId, startStr, endExclusiveStr)
     .all<{ language: string; seconds: number | null }>();
@@ -304,7 +306,7 @@ async function loadLanguageTotals(
   const languageTotals = new Map<string, number>();
   for (const row of results) {
     const seconds = Number(row.seconds ?? 0);
-    if (seconds > 0) languageTotals.set(row.language, seconds);
+    if (row.language !== UNKNOWN_LANGUAGE && seconds > 0) languageTotals.set(row.language, seconds);
   }
   return languageTotals;
 }
@@ -374,7 +376,7 @@ async function computeTodayLanguageSeconds(
     const prev = results[i - 1];
     const gap = results[i].time - prev.time;
     if (gap <= 0 || gap > timeout) continue;
-    const language = prev.language && prev.language.length > 0 ? prev.language : "Unknown";
+    const language = prev.language && prev.language.length > 0 ? prev.language : UNKNOWN_LANGUAGE;
     totals.set(language, (totals.get(language) ?? 0) + gap);
   }
   return totals;
