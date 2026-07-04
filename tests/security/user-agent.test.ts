@@ -1,13 +1,13 @@
 /**
- * Unit tests for src/utils/user-agent.ts — the wakatime-cli User-Agent parser.
+ * Unit tests for src/utils/user-agent.ts — the compatible CLI User-Agent parser.
  *
- * The format that wakatime-cli emits is:
+ * The compatible CLI format is:
  *   wakatime/<cli-ver> (<os>-<core>-<platform>) <runtime> <plugin>/<plugin-ver>
  */
 import { describe, expect, it } from "vitest";
 import { parseUserAgent } from "../../src/utils/user-agent";
 
-describe("parseUserAgent (wakatime-cli format)", () => {
+describe("parseUserAgent (compatible CLI format)", () => {
   it("extracts os, editor, and version from the standard format", () => {
     const ua = "wakatime/v1.65.2 (linux-6.5.0-amd64) go1.21.5 vscode-wakatime/24.0.4";
     expect(parseUserAgent(ua)).toEqual({

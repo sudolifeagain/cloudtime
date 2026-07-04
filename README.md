@@ -112,7 +112,8 @@ npm run deploy     # Deploy to Cloudflare
 | [docs/auth-design.md](docs/auth-design.md) | OAuth, sessions, security design |
 | [docs/cloudflare-constraints.md](docs/cloudflare-constraints.md) | Platform limits and mitigation strategies |
 | [docs/operations.md](docs/operations.md) | Retention, exports, and operator runbooks |
-| [docs/wakatime-feature-research.md](docs/wakatime-feature-research.md) | WakaTime-compatible feature research |
+| [docs/implementation-boundaries.md](docs/implementation-boundaries.md) | Independent implementation and compatibility boundaries |
+| [docs/compatibility-research.md](docs/compatibility-research.md) | Personal analytics feature research and roadmap |
 | [schemas/openapi.yaml](schemas/openapi.yaml) | API specification (Single Source of Truth) |
 
 ## Project Structure

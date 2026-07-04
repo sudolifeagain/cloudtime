@@ -78,8 +78,7 @@ heartbeats.use("/heartbeats/*", authMiddleware);
 heartbeats.use("/heartbeats.bulk", authMiddleware);
 
 // GET /heartbeats?date=YYYY-MM-DD
-// `date` is interpreted in the user's profile timezone (matches WakaTime:
-// "Heartbeats will be returned from 12am until 11:59pm in user's timezone").
+// `date` is interpreted as the user's local calendar day.
 heartbeats.get("/heartbeats", async (c) => {
   const date = c.req.query("date");
   if (!date) {
