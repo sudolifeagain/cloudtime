@@ -3,7 +3,7 @@ info:
   title: CloudTime API
   description: |
     Self-hosted WakaTime-compatible coding time tracker API.
-    Compatible with WakaTime editor plugins and CLI tools.
+    Compatible with WakaTime-compatible editor plugins and CLI tools.
   version: 0.1.0
   license:
     name: MIT
