@@ -162,10 +162,10 @@ Example: 00000000-0000-4000-8000-000000000000
 
 ### API Key Transport
 
-Three transport methods are accepted for WakaTime compatibility
+Three transport methods are accepted for WakaTime-compatible clients
 (`src/utils/auth.ts`):
 
-1. `Authorization: Basic <base64(api_key)>` — what wakatime-cli sends. Preferred.
+1. `Authorization: Basic <base64(api_key)>` — what compatible CLI clients send. Preferred.
 2. `Authorization: Bearer <api_key>` — equivalent; also preferred.
 3. `?api_key=<api_key>` query parameter — **compatibility fallback only.**
    Query strings are recorded in access logs, proxy logs, and browser

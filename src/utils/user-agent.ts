@@ -1,16 +1,15 @@
 /**
- * Helpers for resolving the WakaTime-style User-Agent string into a
+ * Helpers for resolving compatible CLI-style User-Agent strings into a
  * `user_agents` row foreign key (Issue #99).
  *
- * wakatime-cli composes its User-Agent like:
+ * Compatible CLI clients commonly compose User-Agent values like:
  *
  *   wakatime/<cli-ver> (<os-name>-<core>-<platform>) <runtime> <plugin>/<plugin-ver>
  *
  * Example: `wakatime/v1.65.2 (linux-6.5.0-amd64) go1.21.5 vscode-wakatime/24.0.4`
  *
- * Editor and OS are derived server-side, mirroring WakaTime's behaviour where
- * the server is the parser of record. Parsing is best-effort; unrecognised
- * shapes leave the optional columns NULL.
+ * Editor and OS are derived server-side from the raw client string. Parsing is
+ * best-effort; unrecognised shapes leave the optional columns NULL.
  */
 
 import { INPUT_LIMITS, truncateTo } from "./input-limits";
@@ -25,7 +24,7 @@ export interface ParsedUserAgent {
 }
 
 /**
- * Extract editor / version / os from a wakatime-cli-style User-Agent string.
+ * Extract editor / version / os from a compatible CLI-style User-Agent string.
  * Returns nulls when the shape is unrecognised; the call site stores the raw
  * value alongside whatever was parsed, so a parse failure does not lose data.
  */
@@ -40,7 +39,7 @@ export function parseUserAgent(value: string): ParsedUserAgent {
     return { editor, version, os };
   }
 
-  // OS: first segment inside the parenthesised triple. wakatime-cli emits
+  // OS: first segment inside the parenthesised triple. Compatible CLI clients emit
   //   (os-core-platform)
   // where os is "linux" / "darwin" / "windows" / etc.
   const paren = value.match(/\(([^)]+)\)/);
@@ -53,8 +52,8 @@ export function parseUserAgent(value: string): ParsedUserAgent {
     }
   }
 
-  // Editor + version: the last `<name>/<version>` token. wakatime-cli always
-  // appends the plugin identifier at the tail, so this is the most reliable
+  // Editor + version: the last `<name>/<version>` token. Compatible CLI clients
+  // append the plugin identifier at the tail, so this is the most reliable
   // anchor for the editor field.
   for (let i = tokens.length - 1; i >= 0; i--) {
     const slashIdx = tokens[i].lastIndexOf("/");

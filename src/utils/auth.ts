@@ -3,7 +3,7 @@ import type { Env } from "../types";
 import { sha256Hex } from "./crypto";
 
 /**
- * Extract API key from request (WakaTime-compatible auth)
+ * Extract API key from compatible editor-client requests.
  * Supports: Basic Auth (base64 encoded api_key), Bearer token, query param
  */
 export function getApiKey(req: HonoRequest): string | null {
@@ -12,7 +12,7 @@ export function getApiKey(req: HonoRequest): string | null {
   if (authHeader?.startsWith("Basic ")) {
     try {
       const decoded = atob(authHeader.slice(6));
-      // WakaTime sends "api_key:" as basic auth
+      // Compatible clients send "api_key:" as basic auth.
       const colonIdx = decoded.indexOf(":");
       return colonIdx >= 0 ? decoded.slice(0, colonIdx) : decoded;
     } catch {
