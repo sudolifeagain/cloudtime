@@ -514,9 +514,10 @@ export interface paths {
         };
         /**
          * Render a public embeddable stats card
-         * @description Returns an SVG image suitable for embedding in a GitHub README or any
-         *     page that displays remote images. This operation is intentionally public
-         *     (`security: []`) and MUST NOT require or accept an API key in the URL.
+         * @description Returns an SVG image suitable for embedding in a GitHub profile README or
+         *     any page that displays remote images. This operation is intentionally
+         *     public (`security: []`) and MUST NOT require or accept an API key in the
+         *     URL.
          *
          *     The target user is selected by a non-secret username. If embeds are
          *     disabled for that user, the user does not exist, or the requested template
@@ -526,8 +527,48 @@ export interface paths {
          *     user's freshness window. The optional `v` parameter participates in cache
          *     keys so a user can force a refetch, but it never changes card data or
          *     visibility.
+         *
+         *     The `profile` card type is a composite image for personal profile READMEs.
+         *     It combines several CloudTime-owned metrics into one original SVG surface.
+         *     The optional `metrics` and `layout` query parameters apply only to the
+         *     composite profile card; unsupported metric names return `400`.
          */
         get: operations["getEmbeddableCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{username}/badges/{badge_type}.svg": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Render a public embeddable profile badge
+         * @description Returns a small SVG badge suitable for embedding in a GitHub profile README
+         *     or other Markdown surfaces that display remote images. This operation is
+         *     intentionally public (`security: []`) and MUST NOT require or accept an API
+         *     key in the URL.
+         *
+         *     The target user is selected by a non-secret username. If embeds are
+         *     disabled for that user, the user does not exist, or the requested metric is
+         *     unavailable, the response is `404` and no cached badge image is served.
+         *
+         *     Successful responses include explicit cache headers derived from the user's
+         *     freshness window. The optional `v` parameter participates in cache keys so a
+         *     user can force a refetch, but it never changes badge data or visibility.
+         *
+         *     Badge rendering uses original CloudTime copy and visual design. The
+         *     generated SVG MUST expose an accessible image name matching the Markdown alt
+         *     text guidance for informative images.
+         */
+        get: operations["getEmbeddableBadge"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2797,6 +2838,14 @@ export interface operations {
                 theme?: string;
                 /** @description Optional custom template owned by the target user. */
                 template_id?: string;
+                /**
+                 * @description Optional comma-separated metric list for the `profile` composite card.
+                 *     Omit to use the server default. Repeated, unknown, or unsupported metric
+                 *     names return `400`.
+                 */
+                metrics?: ("today" | "week" | "all_time" | "top_language" | "current_streak" | "goal_progress")[];
+                /** @description Optional layout for the `profile` composite card. */
+                layout?: "default" | "compact";
                 /** @description Optional cache-busting value. Changes the cache key only. */
                 v?: string;
             };
@@ -2805,13 +2854,65 @@ export interface operations {
                 /** @description Public CloudTime username identifying the card owner. */
                 username: string;
                 /** @description Card type to render. */
-                card_type: "heatmap" | "summary" | "languages" | "streak";
+                card_type: "heatmap" | "summary" | "languages" | "streak" | "profile";
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
             /** @description SVG card image */
+            200: {
+                headers: {
+                    /** @description Public cache policy derived from the user's freshness window. */
+                    "Cache-Control"?: string;
+                    /** @description Entity tag for the rendered SVG. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/svg+xml": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getEmbeddableBadge: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Optional range for range-aware badges. `coding_time` defaults to
+                 *     `today`; `top_language` defaults to `last_7_days`; `current_streak` and
+                 *     `goal_progress` ignore this parameter.
+                 */
+                range?: "today" | "last_7_days" | "last_30_days" | "last_6_months" | "last_year" | "all_time";
+                /**
+                 * @description Optional goal identifier for the `goal_progress` badge. When omitted,
+                 *     the first enabled, non-snoozed goal ordered by creation time is used.
+                 */
+                goal_id?: string;
+                /** @description Optional short label override for the left side of the badge. */
+                label?: string;
+                /** @description Built-in visual theme. Unknown themes fall back to the user's default theme. */
+                theme?: string;
+                /** @description Optional badge shape style. */
+                style?: "flat" | "pill";
+                /** @description Optional cache-busting value. Changes the cache key only. */
+                v?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Public CloudTime username identifying the badge owner. */
+                username: string;
+                /** @description Badge metric to render. */
+                badge_type: "coding_time" | "top_language" | "current_streak" | "goal_progress";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SVG badge image */
             200: {
                 headers: {
                     /** @description Public cache policy derived from the user's freshness window. */
