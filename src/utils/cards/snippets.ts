@@ -12,7 +12,7 @@ const PROFILE_CARD_TYPES: Array<{ cardType: ProfileCardType; label: string; altT
   { cardType: "heatmap", label: "Heatmap", altText: "CloudTime heatmap" },
   { cardType: "summary", label: "Summary", altText: "CloudTime summary" },
   { cardType: "languages", label: "Languages", altText: "CloudTime languages" },
-  { cardType: "streak", label: "Streak", altText: "CloudTime streak" },
+  { cardType: "streak", label: "Streak", altText: "CloudTime coding activity streak" },
 ];
 
 export function buildProfileCardSnippets({
