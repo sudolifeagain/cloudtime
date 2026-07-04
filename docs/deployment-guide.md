@@ -20,7 +20,7 @@ It assumes you have a Cloudflare account and Node.js 22+ on the workstation.
 ## 2. Clone and install
 
 ```powershell
-git clone https://github.com/sudolifeagain/cloudtime.git
+git clone https://github.com/<owner>/cloudtime.git
 cd cloudtime
 npm ci
 ```
