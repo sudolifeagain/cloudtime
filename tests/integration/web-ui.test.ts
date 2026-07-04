@@ -137,7 +137,7 @@ describe("web UI", () => {
     expect(html).toContain("![CloudTime heatmap](https://test.cloudtime.dev/api/v1/users/owner/cards/heatmap.svg?theme=default)");
     expect(html).toContain("![CloudTime summary](https://test.cloudtime.dev/api/v1/users/owner/cards/summary.svg?theme=default)");
     expect(html).toContain("![CloudTime languages](https://test.cloudtime.dev/api/v1/users/owner/cards/languages.svg?theme=default)");
-    expect(html).toContain("![CloudTime streak](https://test.cloudtime.dev/api/v1/users/owner/cards/streak.svg?theme=default)");
+    expect(html).toContain("![CloudTime coding activity streak](https://test.cloudtime.dev/api/v1/users/owner/cards/streak.svg?theme=default)");
     expect(html).not.toContain(user.apiKey);
   });
 

@@ -102,7 +102,7 @@ describe("embeddable cards — public visibility", () => {
     expect(res.headers.get("ETag")).toBeTruthy();
 
     const svg = await res.text();
-    expect(svg).toContain("Coding streaks in the last year");
+    expect(svg).toContain("CloudTime coding activity streaks in the last year");
     expect(svg).toContain("2 days");
     expect(svg).toContain("1 hr 30 mins total coding time");
     expect(svg).not.toContain(user.apiKey);
@@ -127,14 +127,14 @@ describe("embeddable cards — public visibility", () => {
     expect(res.status).toBe(200);
 
     const svg = await res.text();
-    expect(svg).toContain("Coding streaks in the last 7 days");
+    expect(svg).toContain("CloudTime coding activity streaks in the last 7 days");
     expect(svg).toContain("1 hr total coding time");
     expect(svg).not.toContain("3 hrs total coding time");
 
     const fallback = await call(`/api/v1/users/${user.username}/cards/streak.svg?range=not_supported`);
     expect(fallback.status).toBe(200);
     const fallbackSvg = await fallback.text();
-    expect(fallbackSvg).toContain("Coding streaks in the last year");
+    expect(fallbackSvg).toContain("CloudTime coding activity streaks in the last year");
     expect(fallbackSvg).toContain("3 hrs total coding time");
   });
 

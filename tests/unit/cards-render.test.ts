@@ -193,7 +193,7 @@ describe("renderStreakSvg", () => {
       totalSeconds: 3600,
       rangeLabel: "the last 7 days",
     });
-    expect(svg).toContain("Coding streaks in the last 7 days");
+    expect(svg).toContain("CloudTime coding activity streaks in the last 7 days");
   });
 
   it("escapes the username to prevent markup injection", () => {

@@ -20,7 +20,7 @@ describe("profile card snippets", () => {
       "![CloudTime languages](https://cloudtime.example.test/api/v1/users/alice/cards/languages.svg?theme=default)",
     );
     expect(snippets[3].markdown).toBe(
-      "![CloudTime streak](https://cloudtime.example.test/api/v1/users/alice/cards/streak.svg?theme=default)",
+      "![CloudTime coding activity streak](https://cloudtime.example.test/api/v1/users/alice/cards/streak.svg?theme=default)",
     );
   });
 

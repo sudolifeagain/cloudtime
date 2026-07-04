@@ -284,7 +284,7 @@ export function renderStreakSvg(opts: StreakRenderOptions): string {
 
   const title = `@${escapeXml(truncateText(opts.username, 38))}`;
   const totalText = escapeXml(`${formatHumanReadable(opts.totalSeconds)} total coding time`);
-  const ariaLabel = escapeXml(`Coding streak card for ${opts.username}`);
+  const ariaLabel = escapeXml(`CloudTime coding activity streak card for ${opts.username}`);
   const rangeLabel = escapeXml(opts.rangeLabel ?? "the last year");
   const current = escapeXml(formatDays(opts.currentStreak));
   const longest = escapeXml(formatDays(opts.longestStreak));
@@ -295,7 +295,7 @@ export function renderStreakSvg(opts: StreakRenderOptions): string {
     cardStyle(theme) +
     `<rect width="100%" height="100%" rx="8" ry="8" fill="${theme.background}" stroke="${theme.border}"/>` +
     `<text x="${cardPadding}" y="31" class="title">${title}</text>` +
-    `<text x="${cardPadding}" y="52" class="subtitle">Coding streaks in ${rangeLabel}</text>` +
+    `<text x="${cardPadding}" y="52" class="subtitle">CloudTime coding activity streaks in ${rangeLabel}</text>` +
     renderMetric(cardPadding, metricTop, metricWidth, "Current", current, theme.levels[2]) +
     renderMetric(cardPadding + metricWidth + metricGap, metricTop, metricWidth, "Longest", longest, theme.levels[3]) +
     renderMetric(cardPadding + (metricWidth + metricGap) * 2, metricTop, metricWidth, "Active days", active, theme.levels[1]) +

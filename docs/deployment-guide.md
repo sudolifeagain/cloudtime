@@ -334,7 +334,7 @@ token. They look like:
 ![CloudTime heatmap](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/heatmap.svg?theme=default)
 ![CloudTime summary](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/summary.svg?theme=default)
 ![CloudTime languages](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/languages.svg?theme=default)
-![CloudTime streak](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/streak.svg?theme=default)
+![CloudTime coding activity streak](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/streak.svg?theme=default)
 ```
 
 Paste the snippets into the root `README.md` of the GitHub profile repository
