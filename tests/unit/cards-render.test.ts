@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   escapeXml,
+  renderBadgeSvg,
   renderHeatmapSvg,
   renderLanguagesSvg,
+  renderProfileCardSvg,
   renderStreakSvg,
   renderSummarySvg,
   resolveTheme,
@@ -236,6 +238,108 @@ describe("theme resolution", () => {
   it("supports the dark built-in theme", () => {
     expect(resolveThemeName("dark")).toBe("dark");
     expect(resolveTheme("dark").background).toBe("#0d1117");
+  });
+});
+
+describe("renderBadgeSvg", () => {
+  it("produces a well-formed svg root with an accessible image name", () => {
+    const svg = renderBadgeSvg({ label: "today", value: "2 hrs" });
+    expect(svg.startsWith("<svg")).toBe(true);
+    expect(svg).toContain('xmlns="http://www.w3.org/2000/svg"');
+    expect(svg).toContain('role="img"');
+    expect(svg).toContain('aria-label="CloudTime today: 2 hrs"');
+    expect(svg).toContain(">today</text>");
+    expect(svg).toContain(">2 hrs</text>");
+    expect(svg.trimEnd().endsWith("</svg>")).toBe(true);
+  });
+
+  it("renders flat corners by default and full rounding for pill", () => {
+    const flat = renderBadgeSvg({ label: "streak", value: "3 days" });
+    expect(flat).toContain('rx="3"');
+    const pill = renderBadgeSvg({ label: "streak", value: "3 days", style: "pill" });
+    expect(pill).toContain('rx="12"');
+  });
+
+  it("grows the badge width with longer text", () => {
+    const short = renderBadgeSvg({ label: "goal", value: "50%" });
+    const long = renderBadgeSvg({ label: "goal", value: "1 hr 30 mins of 3 hrs" });
+    const width = (svg: string) => Number(/width="(\d+)"/.exec(svg)?.[1]);
+    expect(width(long)).toBeGreaterThan(width(short));
+  });
+
+  it("applies built-in themes", () => {
+    const dark = renderBadgeSvg({ label: "today", value: "1 hr", theme: "dark" });
+    expect(dark).toContain("#0d1117");
+  });
+
+  it("escapes label and value and emits only a safe static subset", () => {
+    const svg = renderBadgeSvg({ label: '<script>x</script>', value: '"&<>' });
+    expect(svg).not.toContain("<script>");
+    expect(svg).toContain("&lt;script&gt;");
+    expect(svg).not.toMatch(/foreignObject/i);
+    expect(svg).not.toMatch(/href=/i);
+    expect(svg).not.toMatch(/on\w+=/i);
+  });
+});
+
+describe("renderProfileCardSvg", () => {
+  const SECTIONS = [
+    { label: "Today", value: "2 hrs" },
+    { label: "Last 7 days", value: "10 hrs" },
+    { label: "Top language", value: "TypeScript / 67%" },
+    { label: "Current streak", value: "3 days" },
+  ];
+
+  it("renders requested sections in order with an accessible name", () => {
+    const svg = renderProfileCardSvg({ username: "alice", sections: SECTIONS });
+    expect(svg.startsWith("<svg")).toBe(true);
+    expect(svg).toContain('role="img"');
+    expect(svg).toContain(
+      'aria-label="CloudTime profile card for alice: Today, Last 7 days, Top language, Current streak"',
+    );
+    for (const section of SECTIONS) {
+      expect(svg).toContain(section.label);
+      expect(svg).toContain(escapeXml(section.value));
+    }
+    expect(svg.indexOf("Today")).toBeLessThan(svg.indexOf("Last 7 days"));
+    expect(svg.indexOf("Last 7 days")).toBeLessThan(svg.indexOf("Top language"));
+  });
+
+  it("renders the compact layout narrower than the default layout", () => {
+    const dflt = renderProfileCardSvg({ username: "alice", sections: SECTIONS });
+    const compact = renderProfileCardSvg({ username: "alice", sections: SECTIONS, layout: "compact" });
+    expect(dflt).toContain('width="495"');
+    expect(compact).toContain('width="320"');
+    for (const section of SECTIONS) {
+      expect(compact).toContain(section.label);
+    }
+  });
+
+  it("grows the default layout height with more rows", () => {
+    const height = (svg: string) => Number(/height="(\d+)"/.exec(svg)?.[1]);
+    const two = renderProfileCardSvg({ username: "a", sections: SECTIONS.slice(0, 2) });
+    const six = renderProfileCardSvg({
+      username: "a",
+      sections: [...SECTIONS, { label: "All time", value: "300 hrs" }, { label: "Goal progress", value: "50% of 2 hrs / day" }],
+    });
+    expect(height(six)).toBeGreaterThan(height(two));
+  });
+
+  it("applies built-in themes", () => {
+    const dark = renderProfileCardSvg({ username: "alice", sections: SECTIONS, theme: "dark" });
+    expect(dark).toContain("#0d1117");
+  });
+
+  it("escapes user-derived text and emits only a safe static subset", () => {
+    const svg = renderProfileCardSvg({
+      username: '<script>evil()</script>',
+      sections: [{ label: "Top language", value: '<script>TS</script>' }],
+    });
+    expect(svg).not.toContain("<script>");
+    expect(svg).toContain("&lt;script&gt;");
+    expect(svg).not.toMatch(/foreignObject/i);
+    expect(svg).not.toMatch(/href=/i);
+    expect(svg).not.toMatch(/on\w+=/i);
   });
 });
 

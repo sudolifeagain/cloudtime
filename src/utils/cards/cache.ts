@@ -21,6 +21,10 @@ export interface CardCacheKeyParts {
   theme: string;
   templateId: string;
   templateModifiedAt?: string;
+  /** Normalized metric list for the `profile` composite card; empty otherwise. */
+  metrics?: string;
+  /** Normalized layout for the `profile` composite card; empty otherwise. */
+  layout?: string;
   v: string;
   settingsModifiedAt: string;
 }
@@ -34,6 +38,38 @@ export function buildCardCacheKey(p: CardCacheKeyParts): string {
     p.theme,
     p.templateId,
     p.templateModifiedAt ?? "",
+    p.metrics ?? "",
+    p.layout ?? "",
+    p.v,
+    p.settingsModifiedAt,
+  ].join(":");
+}
+
+export interface BadgeCacheKeyParts {
+  userId: string;
+  badgeType: string;
+  range: string;
+  theme: string;
+  style: string;
+  label: string;
+  goalId: string;
+  v: string;
+  settingsModifiedAt: string;
+}
+
+// Badges live under their own prefix so badge and card entries never collide.
+// The free-text label is URI-encoded so a crafted label cannot alias another
+// option combination's key segments.
+export function buildBadgeCacheKey(p: BadgeCacheKeyParts): string {
+  return [
+    "embed-badge",
+    p.userId,
+    p.badgeType,
+    p.range,
+    p.theme,
+    p.style,
+    encodeURIComponent(p.label),
+    p.goalId,
     p.v,
     p.settingsModifiedAt,
   ].join(":");

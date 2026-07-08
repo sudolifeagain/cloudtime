@@ -339,6 +339,134 @@ function cardStyle(theme: CardTheme): string {
   );
 }
 
+// ============================================================
+// Badges + composite profile card (spec 198)
+// ============================================================
+
+export type BadgeStyle = "flat" | "pill";
+
+export interface BadgeRenderOptions {
+  label: string;
+  value: string;
+  theme?: string;
+  style?: BadgeStyle;
+}
+
+const BADGE_HEIGHT = 24;
+const BADGE_FONT_PX = 11;
+// Rough average glyph advance for the 11px system-font stack. SVG text is not
+// measured server-side, so segment widths are estimated per character.
+const BADGE_CHAR_PX = 6.2;
+const BADGE_PAD_X = 9;
+
+function badgeSegmentWidth(text: string): number {
+  return Math.round(Math.max(1, text.length) * BADGE_CHAR_PX) + BADGE_PAD_X * 2;
+}
+
+export function renderBadgeSvg(opts: BadgeRenderOptions): string {
+  const theme = resolveTheme(opts.theme);
+  const label = truncateText(opts.label, 24);
+  const value = truncateText(opts.value, 32);
+  const radius = opts.style === "pill" ? BADGE_HEIGHT / 2 : 3;
+  const labelWidth = badgeSegmentWidth(label);
+  const valueWidth = badgeSegmentWidth(value);
+  const width = labelWidth + valueWidth;
+  const textY = BADGE_HEIGHT / 2 + BADGE_FONT_PX / 2 - 1.5;
+  const ariaLabel = escapeXml(`CloudTime ${label}: ${value}`);
+  // The value segment is drawn as a fully rounded rect plus a square patch over
+  // its left edge, leaving only the badge's right corners rounded.
+  const patchWidth = Math.min(radius, valueWidth / 2);
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${BADGE_HEIGHT}" viewBox="0 0 ${width} ${BADGE_HEIGHT}" role="img" aria-label="${ariaLabel}">` +
+    `<style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:${BADGE_FONT_PX}px;}` +
+    `.blabel{fill:${theme.subtext};}` +
+    `.bvalue{fill:#ffffff;font-weight:600;}</style>` +
+    `<rect x="0.5" y="0.5" width="${width - 1}" height="${BADGE_HEIGHT - 1}" rx="${radius}" ry="${radius}" fill="${theme.background}" stroke="${theme.border}"/>` +
+    `<rect x="${labelWidth}" y="0" width="${valueWidth}" height="${BADGE_HEIGHT}" rx="${radius}" ry="${radius}" fill="${theme.accent}"/>` +
+    `<rect x="${labelWidth}" y="0" width="${patchWidth}" height="${BADGE_HEIGHT}" fill="${theme.accent}"/>` +
+    `<text x="${labelWidth / 2}" y="${textY}" text-anchor="middle" class="blabel">${escapeXml(label)}</text>` +
+    `<text x="${labelWidth + valueWidth / 2}" y="${textY}" text-anchor="middle" class="bvalue">${escapeXml(value)}</text>` +
+    `</svg>`
+  );
+}
+
+export type ProfileCardLayout = "default" | "compact";
+
+export interface ProfileCardRenderOptions {
+  username: string;
+  sections: Array<{ label: string; value: string }>;
+  theme?: string;
+  layout?: ProfileCardLayout;
+}
+
+export function renderProfileCardSvg(opts: ProfileCardRenderOptions): string {
+  const theme = resolveTheme(opts.theme);
+  const title = `@${escapeXml(truncateText(opts.username, 38))}`;
+  const sectionNames = opts.sections.map((section) => section.label).join(", ");
+  const ariaLabel = escapeXml(`CloudTime profile card for ${opts.username}: ${sectionNames}`);
+
+  if (opts.layout === "compact") {
+    const width = 320;
+    const rowStep = 24;
+    const firstRowY = 58;
+    const height = firstRowY + Math.max(1, opts.sections.length) * rowStep;
+    let rows = "";
+    for (let i = 0; i < opts.sections.length; i++) {
+      const section = opts.sections[i];
+      const y = firstRowY + i * rowStep;
+      rows += `<text x="20" y="${y}" class="label">${escapeXml(truncateText(section.label, 20))}</text>`;
+      rows += `<text x="${width - 20}" y="${y}" text-anchor="end" class="compactValue">${escapeXml(truncateText(section.value, 24))}</text>`;
+    }
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}">` +
+      profileCardStyle(theme) +
+      `<rect width="100%" height="100%" rx="8" ry="8" fill="${theme.background}" stroke="${theme.border}"/>` +
+      `<text x="20" y="28" class="title">${title}</text>` +
+      `<text x="${width - 20}" y="28" text-anchor="end" class="note">CloudTime</text>` +
+      rows +
+      `</svg>`
+    );
+  }
+
+  const width = 495;
+  const cardPadding = 22;
+  const rowStep = 55;
+  const firstRowY = 90;
+  const rows = Math.max(1, Math.ceil(opts.sections.length / 2));
+  const height = firstRowY + (rows - 1) * rowStep + 50;
+  let tiles = "";
+  for (let i = 0; i < opts.sections.length; i++) {
+    const section = opts.sections[i];
+    const x = i % 2 === 0 ? cardPadding : 260;
+    const y = firstRowY + Math.floor(i / 2) * rowStep;
+    tiles += renderSummaryMetric(x, y, section.label, section.value, theme.levels[i % theme.levels.length]);
+  }
+
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${ariaLabel}">` +
+    profileCardStyle(theme) +
+    `<rect width="100%" height="100%" rx="8" ry="8" fill="${theme.background}" stroke="${theme.border}"/>` +
+    `<text x="${cardPadding}" y="31" class="title">${title}</text>` +
+    `<text x="${cardPadding}" y="52" class="subtitle">CloudTime profile</text>` +
+    `<text x="${width - cardPadding}" y="31" text-anchor="end" class="note">CloudTime</text>` +
+    tiles +
+    `</svg>`
+  );
+}
+
+function profileCardStyle(theme: CardTheme): string {
+  return (
+    `<style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}` +
+    `.title{font-size:16px;font-weight:700;fill:${theme.text};}` +
+    `.subtitle{font-size:12px;fill:${theme.subtext};}` +
+    `.summaryValue{font-size:18px;font-weight:700;fill:${theme.text};}` +
+    `.compactValue{font-size:13px;font-weight:600;fill:${theme.text};}` +
+    `.label{font-size:11px;font-weight:600;fill:${theme.subtext};}` +
+    `.note{font-size:11px;fill:${theme.subtext};}</style>`
+  );
+}
+
 function formatDays(days: number): string {
   const safeDays = Math.max(0, Math.floor(days));
   return `${safeDays} ${safeDays === 1 ? "day" : "days"}`;
