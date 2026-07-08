@@ -49,8 +49,17 @@ Think in English, interact with the user in Japanese.
 - The Workers test pool runs `tests/setup.ts` once per file to load `src/db/schema.sql`. Helpers in `tests/helpers/fixtures.ts` mint users + API keys without going through OAuth.
 - CI runs both `typecheck` and `test` on every PR (`.github/workflows/test.yml`).
 
+## Current Work Context
+- For up-to-date feature context, consult the most recently updated
+  `specs/<nnn>-<slug>/plan.md` and the open GitHub issues — they are
+  authoritative over the pointer in the managed section below.
+- The section between the SPECKIT markers is auto-managed by
+  `.specify/extensions/agent-context` (refreshed when a plan is generated);
+  it points at the plan that was worked on most recently and may lag behind
+  merged work. Do not hand-edit it expecting the edit to persist.
+
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan:
-`specs/159-rate-limit-expansion/plan.md`
+shell commands, and other important information, read the current plan
+at specs/198-profile-card-expansion/plan.md
 <!-- SPECKIT END -->
