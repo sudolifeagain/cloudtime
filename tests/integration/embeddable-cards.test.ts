@@ -10,7 +10,7 @@ import { seedUser, truncate } from "../helpers/fixtures";
 const BASE = "https://test.cloudtime.dev";
 
 afterEach(async () => {
-  await truncate("heartbeats", "summaries", "embed_templates", "embed_settings", "users");
+  await truncate("heartbeats", "summaries", "goals", "embed_templates", "embed_settings", "users");
 });
 
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
@@ -47,6 +47,53 @@ function formatUtcDate(daysFromToday: number): string {
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   today.setUTCDate(today.getUTCDate() + daysFromToday);
   return today.toISOString().slice(0, 10);
+}
+
+async function seedSummary(userId: string, date: string, totalSeconds: number, language?: string): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO summaries (user_id, date, project, language, total_seconds) VALUES (?, ?, 'cards', ?, ?)",
+  )
+    .bind(userId, date, language ?? null, totalSeconds)
+    .run();
+}
+
+async function seedGoal(
+  userId: string,
+  overrides: Partial<{
+    title: string;
+    type: string;
+    delta: string;
+    targetSeconds: number;
+    enabled: boolean;
+    snoozed: boolean;
+    inverse: boolean;
+    createdAt: string;
+  }> = {},
+): Promise<string> {
+  const id = crypto.randomUUID();
+  await env.DB.prepare(
+    `INSERT INTO goals (id, user_id, title, type, delta, target_seconds, is_enabled, is_snoozed, is_inverse, created_at, modified_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+  )
+    .bind(
+      id,
+      userId,
+      overrides.title ?? "Code 2 hrs",
+      overrides.type ?? "coding",
+      overrides.delta ?? "day",
+      overrides.targetSeconds ?? 7200,
+      overrides.enabled === false ? 0 : 1,
+      overrides.snoozed ? 1 : 0,
+      overrides.inverse ? 1 : 0,
+      overrides.createdAt ?? "2026-01-01 00:00:00",
+    )
+    .run();
+  return id;
+}
+
+async function enableEmbeds(apiKey: string): Promise<void> {
+  const res = await call(`/api/v1/users/current/embed_settings`, authPatch(apiKey, { enabled: true }));
+  expect(res.status).toBe(200);
 }
 
 describe("embeddable cards — public visibility", () => {
@@ -492,5 +539,432 @@ describe("embeddable cards - template auth", () => {
       authJson(user.apiKey, "PATCH", {}),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe("public badges - routes", () => {
+  it("returns 404 when embeds are OFF by default", async () => {
+    const user = await seedUser({ username: "badge_off" });
+    const res = await call(`/api/v1/users/${user.username}/badges/coding_time.svg`);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for an unknown user and unknown badge types", async () => {
+    expect((await call(`/api/v1/users/ghost/badges/coding_time.svg`)).status).toBe(404);
+
+    const user = await seedUser({ username: "badge_unknown_type" });
+    await enableEmbeds(user.apiKey);
+    expect((await call(`/api/v1/users/${user.username}/badges/velocity.svg`)).status).toBe(404);
+    expect((await call(`/api/v1/users/${user.username}/badges/coding_time.png`)).status).toBe(404);
+  });
+
+  it("renders the coding_time badge for today from raw heartbeats", async () => {
+    const user = await seedUser({ username: "badge_today" });
+    await enableEmbeds(user.apiKey);
+
+    const now = Math.floor(Date.now() / 1000);
+    for (const t of [now - 120, now - 60, now]) {
+      await env.DB.prepare(
+        "INSERT INTO heartbeats (id, user_id, entity, time) VALUES (?, ?, ?, ?)",
+      )
+        .bind(crypto.randomUUID(), user.userId, "file.ts", t)
+        .run();
+    }
+
+    const res = await call(`/api/v1/users/${user.username}/badges/coding_time.svg`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("image/svg+xml");
+    expect(res.headers.get("Cache-Control")).toContain("max-age=");
+    expect(res.headers.get("ETag")).toBeTruthy();
+
+    const svg = await res.text();
+    expect(svg.startsWith("<svg")).toBe(true);
+    expect(svg).toContain('role="img"');
+    expect(svg).toContain("aria-label=");
+    expect(svg).toContain(">today</text>");
+    expect(svg).toContain(">2 mins</text>");
+    expect(svg).not.toContain(user.apiKey);
+  });
+
+  it("applies range windows and all_time to the coding_time badge", async () => {
+    const user = await seedUser({ username: "badge_ranges" });
+    await enableEmbeds(user.apiKey);
+    await seedSummary(user.userId, formatUtcDate(-1), 3600);
+    await seedSummary(user.userId, "2020-01-01", 7200);
+
+    const week = await call(`/api/v1/users/${user.username}/badges/coding_time.svg?range=last_7_days`);
+    expect(week.status).toBe(200);
+    const weekSvg = await week.text();
+    expect(weekSvg).toContain(">last 7 days</text>");
+    expect(weekSvg).toContain(">1 hr</text>");
+
+    const allTime = await call(`/api/v1/users/${user.username}/badges/coding_time.svg?range=all_time`);
+    expect(allTime.status).toBe(200);
+    const allTimeSvg = await allTime.text();
+    expect(allTimeSvg).toContain(">all time</text>");
+    expect(allTimeSvg).toContain(">3 hrs</text>");
+  });
+
+  it("renders the top_language badge over its default trailing week", async () => {
+    const user = await seedUser({ username: "badge_language" });
+    await enableEmbeds(user.apiKey);
+    await seedSummary(user.userId, formatUtcDate(-1), 7200, "TypeScript");
+    await seedSummary(user.userId, formatUtcDate(-2), 3600, "Markdown");
+    await seedSummary(user.userId, formatUtcDate(-30), 36000, "Go");
+
+    const res = await call(`/api/v1/users/${user.username}/badges/top_language.svg`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain(">top language</text>");
+    expect(svg).toContain(">TypeScript</text>");
+    expect(svg).not.toContain("Go");
+  });
+
+  it("renders the current_streak badge and ignores a valid range parameter", async () => {
+    const user = await seedUser({ username: "badge_streak" });
+    await enableEmbeds(user.apiKey);
+    await seedSummary(user.userId, formatUtcDate(-1), 3600);
+    await seedSummary(user.userId, formatUtcDate(-2), 3600);
+
+    const res = await call(`/api/v1/users/${user.username}/badges/current_streak.svg?range=all_time`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain(">streak</text>");
+    expect(svg).toContain(">2 days</text>");
+  });
+
+  it("supports label overrides, pill style, and built-in themes", async () => {
+    const user = await seedUser({ username: "badge_options" });
+    await enableEmbeds(user.apiKey);
+
+    const res = await call(
+      `/api/v1/users/${user.username}/badges/coding_time.svg?label=Focus&style=pill&theme=dark`,
+    );
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain(">Focus</text>");
+    expect(svg).toContain('rx="12"');
+    expect(svg).toContain("#0d1117");
+  });
+
+  it("rejects invalid badge query parameters with 400", async () => {
+    const user = await seedUser({ username: "badge_invalid" });
+    await enableEmbeds(user.apiKey);
+    const base = `/api/v1/users/${user.username}/badges/coding_time.svg`;
+
+    expect((await call(`${base}?range=yesterday`)).status).toBe(400);
+    expect((await call(`${base}?style=round`)).status).toBe(400);
+    expect((await call(`${base}?label=`)).status).toBe(400);
+    expect((await call(`${base}?label=${"x".repeat(25)}`)).status).toBe(400);
+    expect((await call(`${base}?goal_id=not-a-uuid`)).status).toBe(400);
+    expect((await call(`${base}?v=${"x".repeat(65)}`)).status).toBe(400);
+  });
+});
+
+describe("public badges - goal progress", () => {
+  it("returns 404 when the user has no eligible goal", async () => {
+    const user = await seedUser({ username: "goal_none" });
+    await enableEmbeds(user.apiKey);
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(404);
+  });
+
+  it("uses the first enabled, non-snoozed goal ordered by creation time", async () => {
+    const user = await seedUser({ username: "goal_default" });
+    await enableEmbeds(user.apiKey);
+    await seedGoal(user.userId, { targetSeconds: 3600, enabled: false, createdAt: "2026-01-01 00:00:00" });
+    await seedGoal(user.userId, { targetSeconds: 3600, snoozed: true, createdAt: "2026-01-02 00:00:00" });
+    await seedGoal(user.userId, { targetSeconds: 7200, createdAt: "2026-01-03 00:00:00" });
+    await seedGoal(user.userId, { targetSeconds: 60, createdAt: "2026-01-04 00:00:00" });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    // 3600 of the 7200-second goal, not the disabled/snoozed/newer ones.
+    expect(svg).toContain(">50%</text>");
+  });
+
+  it("selects a specific eligible goal by goal_id", async () => {
+    const user = await seedUser({ username: "goal_by_id" });
+    await enableEmbeds(user.apiKey);
+    await seedGoal(user.userId, { targetSeconds: 7200, createdAt: "2026-01-01 00:00:00" });
+    const goalId = await seedGoal(user.userId, { targetSeconds: 14400, createdAt: "2026-01-02 00:00:00" });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg?goal_id=${goalId}`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(">25%</text>");
+  });
+
+  it("returns 404 for missing, disabled, or cross-user goal ids", async () => {
+    const owner = await seedUser({ username: "goal_owner" });
+    const viewer = await seedUser({ username: "goal_viewer" });
+    await enableEmbeds(viewer.apiKey);
+    const foreignGoal = await seedGoal(owner.userId);
+    const disabledGoal = await seedGoal(viewer.userId, { enabled: false });
+
+    const missing = await call(
+      `/api/v1/users/${viewer.username}/badges/goal_progress.svg?goal_id=${crypto.randomUUID()}`,
+    );
+    expect(missing.status).toBe(404);
+
+    const foreign = await call(
+      `/api/v1/users/${viewer.username}/badges/goal_progress.svg?goal_id=${foreignGoal}`,
+    );
+    expect(foreign.status).toBe(404);
+
+    const disabled = await call(
+      `/api/v1/users/${viewer.username}/badges/goal_progress.svg?goal_id=${disabledGoal}`,
+    );
+    expect(disabled.status).toBe(404);
+  });
+
+  it("renders an inverse goal under its cap as percent of cap", async () => {
+    const user = await seedUser({ username: "goal_inverse_under" });
+    await enableEmbeds(user.apiKey);
+    await seedGoal(user.userId, { targetSeconds: 7200, inverse: true });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain(">50% of cap</text>");
+  });
+
+  it("renders an exceeded inverse cap without overachievement framing", async () => {
+    const user = await seedUser({ username: "goal_inverse_over" });
+    await enableEmbeds(user.apiKey);
+    await seedGoal(user.userId, { targetSeconds: 3600, inverse: true });
+    await seedSummary(user.userId, formatUtcDate(0), 10800);
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    // 3 hrs against a 1-hr cap: honest "300% of cap", not a bare achievement %.
+    expect(svg).toContain(">300% of cap</text>");
+  });
+
+  it("returns 404 for a goal_progress badge with a warm cache after the goal is disabled", async () => {
+    const user = await seedUser({ username: "goal_warm_disable" });
+    await enableEmbeds(user.apiKey);
+    const goalId = await seedGoal(user.userId, { targetSeconds: 7200 });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const warm = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(warm.status).toBe(200);
+    expect(await warm.text()).toContain(">50%</text>");
+
+    await env.DB.prepare("UPDATE goals SET is_enabled = 0 WHERE id = ?").bind(goalId).run();
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(404);
+  });
+
+  it("re-renders a goal_progress badge after the goal target changes", async () => {
+    const user = await seedUser({ username: "goal_edit" });
+    await enableEmbeds(user.apiKey);
+    const goalId = await seedGoal(user.userId, { targetSeconds: 7200 });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const warm = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(await warm.text()).toContain(">50%</text>");
+
+    // Editing the goal bumps modified_at, which the cache key folds in so the
+    // warm entry cannot mask the new target.
+    await env.DB.prepare("UPDATE goals SET target_seconds = 3600, modified_at = ? WHERE id = ?")
+      .bind("2026-02-02 00:00:00", goalId)
+      .run();
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(">100%</text>");
+  });
+});
+
+describe("public profile card", () => {
+  it("renders the default metric set with an accessible name", async () => {
+    const user = await seedUser({ username: "profile_default" });
+    await enableEmbeds(user.apiKey);
+    await seedSummary(user.userId, formatUtcDate(-1), 3600, "TypeScript");
+
+    const res = await call(`/api/v1/users/${user.username}/cards/profile.svg`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("image/svg+xml");
+    expect(res.headers.get("Cache-Control")).toContain("max-age=");
+    expect(res.headers.get("ETag")).toBeTruthy();
+
+    const svg = await res.text();
+    expect(svg).toContain('role="img"');
+    expect(svg).toContain(`CloudTime profile card for ${user.username}`);
+    expect(svg).toContain("Today");
+    expect(svg).toContain("Last 7 days");
+    expect(svg).toContain("Top language");
+    expect(svg).toContain("Current streak");
+    expect(svg).toContain("TypeScript / 100%");
+    expect(svg).not.toContain(user.apiKey);
+  });
+
+  it("renders requested metrics in the requested order", async () => {
+    const user = await seedUser({ username: "profile_ordered" });
+    await enableEmbeds(user.apiKey);
+    await seedSummary(user.userId, "2020-01-01", 7200);
+
+    const res = await call(
+      `/api/v1/users/${user.username}/cards/profile.svg?metrics=all_time,today`,
+    );
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain("All time");
+    expect(svg).toContain("2 hrs");
+    expect(svg.indexOf("All time")).toBeLessThan(svg.indexOf("Today"));
+    expect(svg).not.toContain("Top language");
+  });
+
+  it("rejects unknown, duplicate, and empty metrics entries", async () => {
+    const user = await seedUser({ username: "profile_metrics_invalid" });
+    await enableEmbeds(user.apiKey);
+    const base = `/api/v1/users/${user.username}/cards/profile.svg`;
+
+    expect((await call(`${base}?metrics=velocity`)).status).toBe(400);
+    expect((await call(`${base}?metrics=today,today`)).status).toBe(400);
+    expect((await call(`${base}?metrics=today,,week`)).status).toBe(400);
+    expect((await call(`${base}?metrics=`)).status).toBe(400);
+    expect((await call(`${base}?layout=wide`)).status).toBe(400);
+  });
+
+  it("ignores metrics and layout on non-profile card types", async () => {
+    const user = await seedUser({ username: "profile_param_scope" });
+    await enableEmbeds(user.apiKey);
+    const res = await call(
+      `/api/v1/users/${user.username}/cards/heatmap.svg?metrics=velocity&layout=wide`,
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("renders the compact layout", async () => {
+    const user = await seedUser({ username: "profile_compact" });
+    await enableEmbeds(user.apiKey);
+
+    const res = await call(`/api/v1/users/${user.username}/cards/profile.svg?layout=compact`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain('width="320"');
+    expect(svg).toContain("Current streak");
+  });
+
+  it("renders goal progress when an eligible goal exists and 404s otherwise", async () => {
+    const user = await seedUser({ username: "profile_goal" });
+    await enableEmbeds(user.apiKey);
+
+    const missing = await call(`/api/v1/users/${user.username}/cards/profile.svg?metrics=goal_progress`);
+    expect(missing.status).toBe(404);
+
+    await seedGoal(user.userId, { targetSeconds: 7200, delta: "day" });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+    const res = await call(`/api/v1/users/${user.username}/cards/profile.svg?metrics=goal_progress`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain("Goal progress");
+    expect(svg).toContain("50% of 2 hrs / day");
+  });
+
+  it("renders the profile card through an owned custom template", async () => {
+    const user = await seedUser({ username: "profile_templated" });
+    await enableEmbeds(user.apiKey);
+    await seedSummary(user.userId, formatUtcDate(-1), 3600);
+
+    const created = await call(
+      "/api/v1/users/current/embed_templates",
+      authJson(user.apiKey, "POST", {
+        name: "profile template",
+        template_svg:
+          '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="96" viewBox="0 0 360 96" role="img">' +
+          '<text x="12" y="28">{{username}}</text>' +
+          '<text x="12" y="54">{{total_time}}</text>' +
+          '<text x="12" y="80">{{current_streak}}</text>' +
+          "</svg>",
+      }),
+    );
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { data: { id: string } };
+
+    const res = await call(
+      `/api/v1/users/${user.username}/cards/profile.svg?template_id=${body.data.id}`,
+    );
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain("profile_templated");
+    expect(svg).toContain("1 hr");
+    expect(svg).toContain("1 day");
+  });
+
+  it("labels an inverse goal as a cap in the profile card", async () => {
+    const user = await seedUser({ username: "profile_inverse_goal" });
+    await enableEmbeds(user.apiKey);
+    await seedGoal(user.userId, { targetSeconds: 7200, delta: "day", inverse: true });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const res = await call(`/api/v1/users/${user.username}/cards/profile.svg?metrics=goal_progress`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain("50% of 2 hrs cap / day");
+  });
+});
+
+describe("public badges and profile card - privacy", () => {
+  it("returns 404 for badges even with a warm cache after embeds are turned OFF", async () => {
+    const user = await seedUser({ username: "badge_privacy" });
+    await enableEmbeds(user.apiKey);
+
+    const warm = await call(`/api/v1/users/${user.username}/badges/coding_time.svg`);
+    expect(warm.status).toBe(200);
+
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: false }));
+
+    const res = await call(`/api/v1/users/${user.username}/badges/coding_time.svg`);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for the profile card even with a warm cache after embeds are turned OFF", async () => {
+    const user = await seedUser({ username: "profile_privacy" });
+    await enableEmbeds(user.apiKey);
+
+    const warm = await call(`/api/v1/users/${user.username}/cards/profile.svg`);
+    expect(warm.status).toBe(200);
+
+    await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: false }));
+
+    const res = await call(`/api/v1/users/${user.username}/cards/profile.svg`);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for the profile goal section with a warm cache after the goal is disabled", async () => {
+    const user = await seedUser({ username: "profile_goal_disable" });
+    await enableEmbeds(user.apiKey);
+    const goalId = await seedGoal(user.userId, { targetSeconds: 7200, delta: "day" });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const warm = await call(`/api/v1/users/${user.username}/cards/profile.svg?metrics=goal_progress`);
+    expect(warm.status).toBe(200);
+    expect(await warm.text()).toContain("50% of 2 hrs / day");
+
+    await env.DB.prepare("UPDATE goals SET is_enabled = 0 WHERE id = ?").bind(goalId).run();
+
+    const res = await call(`/api/v1/users/${user.username}/cards/profile.svg?metrics=goal_progress`);
+    expect(res.status).toBe(404);
+  });
+
+  it("never echoes credentials in badge or profile card output", async () => {
+    const user = await seedUser({ username: "badge_secret" });
+    await enableEmbeds(user.apiKey);
+
+    const badge = await call(`/api/v1/users/${user.username}/badges/current_streak.svg`);
+    expect(badge.status).toBe(200);
+    expect(await badge.text()).not.toContain(user.apiKey);
+
+    const profile = await call(`/api/v1/users/${user.username}/cards/profile.svg`);
+    expect(profile.status).toBe(200);
+    expect(await profile.text()).not.toContain(user.apiKey);
   });
 });

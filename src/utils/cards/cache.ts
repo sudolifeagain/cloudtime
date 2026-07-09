@@ -21,6 +21,16 @@ export interface CardCacheKeyParts {
   theme: string;
   templateId: string;
   templateModifiedAt?: string;
+  /** Normalized metric list for the `profile` composite card; empty otherwise. */
+  metrics?: string;
+  /** Normalized layout for the `profile` composite card; empty otherwise. */
+  layout?: string;
+  /**
+   * `<goalId>:<goal.modified_at>` of the eligible goal when the profile card's
+   * metrics include `goal_progress`; empty otherwise. Folding it in means a
+   * disabled/edited goal invalidates the warm card immediately.
+   */
+  goalModifiedAt?: string;
   v: string;
   settingsModifiedAt: string;
 }
@@ -34,6 +44,46 @@ export function buildCardCacheKey(p: CardCacheKeyParts): string {
     p.theme,
     p.templateId,
     p.templateModifiedAt ?? "",
+    p.metrics ?? "",
+    p.layout ?? "",
+    p.goalModifiedAt ?? "",
+    p.v,
+    p.settingsModifiedAt,
+  ].join(":");
+}
+
+export interface BadgeCacheKeyParts {
+  userId: string;
+  badgeType: string;
+  range: string;
+  theme: string;
+  style: string;
+  label: string;
+  /** Resolved goal id for `goal_progress` badges; empty otherwise. */
+  goalId: string;
+  /**
+   * `modified_at` of the resolved goal for `goal_progress` badges; empty
+   * otherwise. Folding it in invalidates a warm badge when the goal is edited.
+   */
+  goalModifiedAt?: string;
+  v: string;
+  settingsModifiedAt: string;
+}
+
+// Badges live under their own prefix so badge and card entries never collide.
+// The free-text label is URI-encoded so a crafted label cannot alias another
+// option combination's key segments.
+export function buildBadgeCacheKey(p: BadgeCacheKeyParts): string {
+  return [
+    "embed-badge",
+    p.userId,
+    p.badgeType,
+    p.range,
+    p.theme,
+    p.style,
+    encodeURIComponent(p.label),
+    p.goalId,
+    p.goalModifiedAt ?? "",
     p.v,
     p.settingsModifiedAt,
   ].join(":");

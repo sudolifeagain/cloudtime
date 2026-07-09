@@ -337,6 +337,43 @@ token. They look like:
 ![CloudTime coding activity streak](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/streak.svg?theme=default)
 ```
 
+### Profile badges
+
+Small single-metric SVG badges live at
+`/api/v1/users/YOUR_USERNAME/badges/{badge_type}.svg` with badge types
+`coding_time`, `top_language`, `current_streak`, and `goal_progress`:
+
+```markdown
+![CloudTime coding time today](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/badges/coding_time.svg?range=today&theme=default)
+![CloudTime top language in the last 7 days](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/badges/top_language.svg?range=last_7_days&theme=default)
+![CloudTime current coding streak](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/badges/current_streak.svg?theme=default)
+![CloudTime goal progress](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/badges/goal_progress.svg?theme=default)
+```
+
+Badges accept `range` (`today`, `last_7_days`, `last_30_days`,
+`last_6_months`, `last_year`, `all_time` — `coding_time` defaults to `today`,
+`top_language` to `last_7_days`; the other badge types ignore it), a `label`
+override (1-24 characters), `style` (`flat` or `pill`), `theme`, and `v`.
+The `goal_progress` badge shows the current day or ISO-week progress of the
+first enabled, non-snoozed goal (oldest first); pass `goal_id` to pick a
+specific goal. Only enabled, non-snoozed goals are ever rendered publicly —
+anything else returns `404`.
+
+### Composite profile card
+
+One composite card combines several personal metrics behind a single URL:
+
+```markdown
+![CloudTime profile card](https://your-worker.example.com/api/v1/users/YOUR_USERNAME/cards/profile.svg?metrics=today,week,top_language,current_streak&theme=default)
+```
+
+`metrics` is a comma-separated ordered list from `today`, `week`, `all_time`,
+`top_language`, `current_streak`, and `goal_progress` (unknown or duplicate
+names return `400`; omit it for the default set shown above). The
+`top_language` section uses a fixed trailing 7-day window. `layout=compact`
+renders a narrow single-column variant. Requesting `goal_progress` without an
+eligible goal returns `404`.
+
 Paste the snippets into the root `README.md` of the GitHub profile repository
 named exactly like your GitHub username. GitHub proxies remote images through
 its image proxy, so CloudTime controls its own `Cache-Control` and `ETag`

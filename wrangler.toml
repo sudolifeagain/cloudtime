@@ -108,3 +108,17 @@ namespace_id = "1004"
   [ratelimits.simple]
   limit = 30
   period = 60
+
+# Issue #198 — public embeddable cards + badges (GET /users/{username}/cards|
+# badges/*.svg). Responses are KV-cached per the owner's freshness window, so a
+# warm profile makes no origin work; the limiter caps cache-miss traffic
+# (unique v/label/goal_id values) keyed on the truncated client IP. Runs after
+# the embeds-OFF 404 gate, so a disabled profile never consults it. Keyed the
+# same as RATE_LIMIT_PUBLIC_STATS (30/min absorbs a README's badges fanned out
+# through GitHub's image proxy plus NAT-aggregated networks).
+[[ratelimits]]
+name = "RATE_LIMIT_EMBED_CARDS"
+namespace_id = "1005"
+  [ratelimits.simple]
+  limit = 30
+  period = 60

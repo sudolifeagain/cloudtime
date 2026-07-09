@@ -1,6 +1,6 @@
 import { EmptyState, Notice, Panel } from "./components";
 import type { DashboardData } from "./dashboard";
-import { buildProfileCardSnippets } from "../utils/cards/snippets";
+import { buildProfileBadgeSnippets, buildProfileCardSnippets } from "../utils/cards/snippets";
 import { THEMES } from "../utils/cards/render";
 
 const FALLBACK_TIMEZONES = [
@@ -41,6 +41,11 @@ export function SettingsView({
   embedError?: string;
 }) {
   const snippets = buildProfileCardSnippets({
+    apiBaseUrl: data.apiBaseUrl,
+    username: data.user.username,
+    theme: data.embedSettings.default_theme,
+  });
+  const badgeSnippets = buildProfileBadgeSnippets({
     apiBaseUrl: data.apiBaseUrl,
     username: data.user.username,
     theme: data.embedSettings.default_theme,
@@ -197,6 +202,18 @@ export function SettingsView({
                   previewAlt={snippet.altText}
                   previewEnabled={data.embedSettings.enabled}
                   first={index === 0}
+                />
+              ))}
+              {badgeSnippets.map((snippet) => (
+                <SnippetBlock
+                  key={snippet.badgeType}
+                  snippetId={`profile-badge-snippet-${snippet.badgeType}`}
+                  label={snippet.label}
+                  markdown={snippet.markdown}
+                  previewUrl={snippet.url}
+                  previewAlt={snippet.altText}
+                  previewEnabled={data.embedSettings.enabled}
+                  first={false}
                 />
               ))}
             </div>

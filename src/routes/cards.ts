@@ -5,16 +5,30 @@ import type { components, operations } from "../types/generated";
 import { authMiddleware } from "../middleware/auth";
 import { rateLimitExceeded, tooManyRequests } from "../middleware/rate-limit";
 import {
+  DEFAULT_PROFILE_METRICS,
+  PROFILE_METRIC_KEYS,
+  getCodingTimeBadgeData,
+  getCurrentStreakBadgeData,
+  getGoalProgressBadgeData,
   getHeatmapData,
   getLanguagesCardData,
+  getProfileCardData,
   getStreakData,
   getSummaryCardData,
+  getTopLanguageBadgeData,
+  resolveBadgeRange,
   resolveCardRange,
+  resolveEligibleGoal,
+  type BadgeData,
   type CardRange,
+  type EligibleGoal,
+  type ProfileMetricKey,
 } from "../utils/cards/data";
 import {
+  renderBadgeSvg,
   renderHeatmapSvg,
   renderLanguagesSvg,
+  renderProfileCardSvg,
   renderStreakSvg,
   renderSummarySvg,
   resolveThemeName,
@@ -35,6 +49,7 @@ import {
   type EmbedSettingsUpdate,
 } from "../utils/embed-settings";
 import {
+  buildBadgeCacheKey,
   buildCardCacheKey,
   cardCacheControl,
   cardCacheTtlSeconds,
@@ -177,7 +192,38 @@ cardsSettings.delete("/embed_templates/:template_id", async (c) => {
 
 export const cardsPublic = new Hono<{ Bindings: Env }>();
 
-const IMPLEMENTED_CARD_TYPES = new Set(["heatmap", "summary", "languages", "streak"]);
+const IMPLEMENTED_CARD_TYPES = new Set(["heatmap", "summary", "languages", "streak", "profile"]);
+
+type BadgeQuery = NonNullable<operations["getEmbeddableBadge"]["parameters"]["query"]>;
+type BadgeTypeParam = operations["getEmbeddableBadge"]["parameters"]["path"]["badge_type"];
+type BadgeStyleParam = NonNullable<BadgeQuery["style"]>;
+type CardQuery = NonNullable<operations["getEmbeddableCard"]["parameters"]["query"]>;
+type ProfileLayoutParam = NonNullable<CardQuery["layout"]>;
+
+const BADGE_TYPES = new Set<string>([
+  "coding_time",
+  "top_language",
+  "current_streak",
+  "goal_progress",
+] satisfies BadgeTypeParam[]);
+const BADGE_STYLES = new Set<string>(["flat", "pill"] satisfies BadgeStyleParam[]);
+const PROFILE_LAYOUTS = new Set<string>(["default", "compact"] satisfies ProfileLayoutParam[]);
+const PROFILE_METRIC_SET = new Set<string>(PROFILE_METRIC_KEYS);
+const PROFILE_METRICS_MAX = 8;
+const BADGE_LABEL_MAX = 24;
+
+// Default ranges per badge type (contract: `current_streak` and
+// `goal_progress` ignore the range parameter entirely).
+const BADGE_RANGE_DEFAULTS: Record<BadgeTypeParam, string> = {
+  coding_time: "today",
+  top_language: "last_7_days",
+  current_streak: "last_year",
+  goal_progress: "today",
+};
+
+// Requested metric data exists but no eligible goal/user resource backs it —
+// the public routes answer 404 without caching (data-model privacy rules).
+class UnavailableDataError extends Error {}
 
 function notFound(c: Context): Response {
   return c.json({ error: "Not found" }, 404, { "Cache-Control": "no-store" });
@@ -351,8 +397,39 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
     : null;
   if (templateId.length > 0 && !template) return notFound(c);
 
+  // `metrics` and `layout` apply only to the composite profile card; for
+  // other card types they are ignored entirely (public-card contract).
+  let profileMetrics: readonly ProfileMetricKey[] = DEFAULT_PROFILE_METRICS;
+  let profileLayout: ProfileLayoutParam = "default";
+  if (cardType === "profile") {
+    const metricsParam = c.req.query("metrics");
+    if (metricsParam !== undefined) {
+      const parsed = parseProfileMetrics(metricsParam);
+      if (!parsed.ok) return badRequest(c, parsed.error);
+      profileMetrics = parsed.metrics;
+    }
+    const layoutParam = c.req.query("layout");
+    if (layoutParam !== undefined) {
+      if (!PROFILE_LAYOUTS.has(layoutParam)) {
+        return badRequest(c, "layout must be one of: default, compact");
+      }
+      profileLayout = layoutParam as ProfileLayoutParam;
+    }
+  }
+
+  // Only the built-in profile renderer surfaces goal_progress (the template
+  // path renders a fixed non-goal view). Resolve the eligible goal BEFORE the
+  // cache so a disabled/edited goal answers 404 (or re-renders) without serving
+  // a stale image, and fold its id + modified_at into the cache key.
+  let profileGoal: EligibleGoal | null = null;
+  if (cardType === "profile" && !template && profileMetrics.includes("goal_progress")) {
+    profileGoal = await resolveEligibleGoal(c.env.DB, user.id);
+    if (!profileGoal) return notFound(c);
+  }
+
   const ifNoneMatch = c.req.raw.headers.get("If-None-Match");
-  const cacheRange = cardType === "heatmap" ? "year" : cardRange.key;
+  // The profile card has no range selector, so its cache entry is range-fixed.
+  const cacheRange = cardType === "heatmap" ? "year" : cardType === "profile" ? "profile" : cardRange.key;
 
   const cacheKey = buildCardCacheKey({
     userId: user.id,
@@ -361,6 +438,9 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
     theme: themeName,
     templateId,
     templateModifiedAt: template?.modified_at ?? "",
+    metrics: cardType === "profile" ? profileMetrics.join("+") : "",
+    layout: cardType === "profile" ? profileLayout : "",
+    goalModifiedAt: profileGoal ? `${profileGoal.id}:${profileGoal.modifiedAt}` : "",
     v,
     settingsModifiedAt: settings.modified_at ?? "",
   });
@@ -372,10 +452,17 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
 
   let svg: string;
   try {
-    svg = await renderPublicCardSvg(c.env.DB, cardType, user, themeName, cardRange, template);
+    svg = await renderPublicCardSvg(c.env.DB, cardType, user, themeName, cardRange, template, {
+      metrics: profileMetrics,
+      layout: profileLayout,
+      goal: profileGoal,
+    });
   } catch (err) {
     if (err instanceof TemplateRenderError) {
       return badRequest(c, err.message);
+    }
+    if (err instanceof UnavailableDataError) {
+      return notFound(c);
     }
     throw err;
   }
@@ -389,6 +476,168 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
   return svgResponse(svg, etag, settings.freshness_minutes, ifNoneMatch);
 });
 
+// ============================================================
+// Public badges: /users/{username}/badges/{badge_type}.svg (spec 198)
+// Same gate ordering as cards: visibility OFF answers 404 before the
+// rate-limit budget, cache lookup, or any aggregate read.
+// ============================================================
+
+cardsPublic.get("/users/:username/badges/:file", async (c) => {
+  const username = c.req.param("username");
+  const file = c.req.param("file");
+  if (username.length < 1 || username.length > USERNAME_MAX) {
+    return badRequest(c, `username must be 1-${USERNAME_MAX} characters`);
+  }
+  if (!file.endsWith(".svg")) return notFound(c);
+  const badgeType = file.slice(0, -".svg".length);
+  if (!BADGE_TYPES.has(badgeType)) return notFound(c);
+
+  const user = await c.env.DB
+    .prepare("SELECT id, username, timezone, timeout FROM users WHERE username = ?")
+    .bind(username)
+    .first<PublicUserRow>();
+  if (!user) return notFound(c);
+
+  const settings = await loadEmbedSettings(c.env.DB, user.id);
+  if (!settings.enabled) return notFound(c);
+
+  // Badges share the single public-image rate-limit binding with cards. The
+  // limiter keys on the truncated client IP (see rate-limit.ts); the
+  // `embed-cards:${user.id}` argument is only a log tag, not the rate key.
+  // Runs after the OFF gate and before the cache/render work a miss triggers.
+  if (
+    await rateLimitExceeded(
+      c.env.RATE_LIMIT_EMBED_CARDS,
+      c.req.raw.headers,
+      `embed-cards:${user.id}`,
+      "RATE_LIMIT_EMBED_CARDS",
+    )
+  ) {
+    return tooManyRequests(c);
+  }
+
+  const themeName = resolveThemeName(c.req.query("theme") ?? settings.default_theme);
+
+  // Unsupported enum values are 400 for badges (FR-007) — unlike cards, there
+  // is no silent range fallback.
+  const badgeRange = resolveBadgeRange(
+    c.req.query("range"),
+    BADGE_RANGE_DEFAULTS[badgeType as BadgeTypeParam],
+  );
+  if (!badgeRange) {
+    return badRequest(c, "range must be one of: today, last_7_days, last_30_days, last_6_months, last_year, all_time");
+  }
+
+  const styleParam = c.req.query("style");
+  if (styleParam !== undefined && !BADGE_STYLES.has(styleParam)) {
+    return badRequest(c, "style must be one of: flat, pill");
+  }
+  const style = (styleParam ?? "flat") as BadgeStyleParam;
+
+  const label = c.req.query("label");
+  if (label !== undefined && (label.length < 1 || label.length > BADGE_LABEL_MAX)) {
+    return badRequest(c, `label must be 1-${BADGE_LABEL_MAX} characters`);
+  }
+
+  const goalId = c.req.query("goal_id") ?? "";
+  if (goalId.length > 0 && !UUID_RE.test(goalId)) {
+    return badRequest(c, "goal_id must be a valid UUID");
+  }
+
+  const v = c.req.query("v") ?? "";
+  if (v.length > CACHE_BUSTER_MAX) {
+    return badRequest(c, `v must be at most ${CACHE_BUSTER_MAX} characters`);
+  }
+
+  // Resolve the goal before the cache for goal_progress: an unavailable,
+  // disabled, or edited goal must never serve a cached badge image
+  // (public-badge contract). The resolved id + modified_at fold into the key.
+  let goal: EligibleGoal | null = null;
+  if (badgeType === "goal_progress") {
+    goal = await resolveEligibleGoal(c.env.DB, user.id, goalId.length > 0 ? goalId : undefined);
+    if (!goal) return notFound(c);
+  }
+
+  const ifNoneMatch = c.req.raw.headers.get("If-None-Match");
+  // Range only fragments the cache for range-aware badges.
+  const rangeAware = badgeType === "coding_time" || badgeType === "top_language";
+  const cacheKey = buildBadgeCacheKey({
+    userId: user.id,
+    badgeType,
+    range: rangeAware ? badgeRange.key : "",
+    theme: themeName,
+    style,
+    label: label ?? "",
+    goalId: goal?.id ?? "",
+    goalModifiedAt: goal?.modifiedAt ?? "",
+    v,
+    settingsModifiedAt: settings.modified_at ?? "",
+  });
+
+  const cached = (await c.env.KV.get(cacheKey, "json")) as CardCacheValue | null;
+  if (cached) {
+    return svgResponse(cached.svg, cached.etag, settings.freshness_minutes, ifNoneMatch);
+  }
+
+  const data = await loadBadgeData(c.env.DB, badgeType as BadgeTypeParam, user, badgeRange, goal);
+
+  const svg = renderBadgeSvg({
+    label: label ?? data.label,
+    value: data.value,
+    theme: themeName,
+    style,
+  });
+  const etag = await computeCardEtag(svg);
+
+  const value: CardCacheValue = { svg, etag, generated_at: new Date().toISOString() };
+  await c.env.KV.put(cacheKey, JSON.stringify(value), {
+    expirationTtl: cardCacheTtlSeconds(settings.freshness_minutes),
+  });
+
+  return svgResponse(svg, etag, settings.freshness_minutes, ifNoneMatch);
+});
+
+async function loadBadgeData(
+  db: D1Database,
+  badgeType: BadgeTypeParam,
+  user: PublicUserRow,
+  badgeRange: NonNullable<ReturnType<typeof resolveBadgeRange>>,
+  goal: EligibleGoal | null,
+): Promise<BadgeData> {
+  if (badgeType === "coding_time") {
+    return getCodingTimeBadgeData(db, user.id, user.timezone, user.timeout, badgeRange);
+  }
+  if (badgeType === "top_language") {
+    return getTopLanguageBadgeData(db, user.id, user.timezone, user.timeout, badgeRange);
+  }
+  if (badgeType === "current_streak") {
+    return getCurrentStreakBadgeData(db, user.id, user.timezone, user.timeout);
+  }
+  // goal_progress: the route resolved and validated the goal before the cache.
+  if (!goal) throw new Error("goal_progress badge reached data load without a resolved goal");
+  return getGoalProgressBadgeData(db, user.id, user.timezone, goal);
+}
+
+function parseProfileMetrics(
+  raw: string,
+): { ok: true; metrics: ProfileMetricKey[] } | { ok: false; error: string } {
+  const entries = raw.split(",");
+  if (entries.length < 1 || entries.length > PROFILE_METRICS_MAX) {
+    return { ok: false, error: `metrics must contain 1-${PROFILE_METRICS_MAX} entries` };
+  }
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (!PROFILE_METRIC_SET.has(entry)) {
+      return { ok: false, error: `unknown metric: ${entry || "(empty)"}` };
+    }
+    if (seen.has(entry)) {
+      return { ok: false, error: `duplicate metric: ${entry}` };
+    }
+    seen.add(entry);
+  }
+  return { ok: true, metrics: entries as ProfileMetricKey[] };
+}
+
 async function renderPublicCardSvg(
   db: D1Database,
   cardType: string,
@@ -396,7 +645,45 @@ async function renderPublicCardSvg(
   themeName: string,
   cardRange: CardRange,
   template: EmbedTemplate | null,
+  profile: { metrics: readonly ProfileMetricKey[]; layout: ProfileLayoutParam; goal: EligibleGoal | null },
 ): Promise<string> {
+  if (cardType === "profile") {
+    if (template) {
+      // Template placeholders are a fixed vocabulary, so the template path
+      // renders a fixed profile view: trailing-week totals plus streak stats.
+      // The `metrics` selection only affects the built-in renderer.
+      const summary = await getSummaryCardData(db, user.id, user.timezone, user.timeout, 7);
+      const streak = await getStreakData(db, user.id, user.timezone, user.timeout);
+      const rendered = renderTemplateSvg(template.template_svg, defaultTemplateValues({
+        username: user.username,
+        card_type: cardType,
+        range: "the last 7 days",
+        theme: themeName,
+        total_time: formatHumanReadable(summary.totalSeconds),
+        daily_average: formatHumanReadable(summary.dailyAverageSeconds),
+        best_day: summary.bestDay
+          ? `${summary.bestDay.date} / ${formatHumanReadable(summary.bestDay.seconds)}`
+          : "No activity",
+        top_language: summary.topLanguage
+          ? `${summary.topLanguage.language} / ${formatTemplatePercent(summary.topLanguage.percent)}`
+          : "No language",
+        current_streak: formatDays(streak.currentStreak),
+        longest_streak: formatDays(streak.longestStreak),
+        tracked_days: formatDays(streak.trackedDays),
+      }));
+      if (!rendered.ok) throw new TemplateRenderError(rendered.error);
+      return rendered.svg;
+    }
+    const sections = await getProfileCardData(db, user.id, user.timezone, user.timeout, profile.metrics, profile.goal);
+    if (!sections) throw new UnavailableDataError("no eligible goal");
+    return renderProfileCardSvg({
+      username: user.username,
+      sections,
+      theme: themeName,
+      layout: profile.layout,
+    });
+  }
+
   if (cardType === "heatmap") {
     const data = await getHeatmapData(db, user.id, user.timezone, user.timeout);
     if (template) {

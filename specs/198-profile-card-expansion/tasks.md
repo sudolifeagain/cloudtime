@@ -12,20 +12,20 @@
 - [x] T008 Run `npm run generate`.
 - [x] T009 Run `npm run lint:api`.
 - [x] T010 Run `npm run typecheck`.
-- [ ] T011 Commit PR1 in spec-first order and open a draft PR against `develop`.
+- [x] T011 Commit PR1 in spec-first order and open a draft PR against `develop`.
 
 ## PR2 - Implementation
 
-- [ ] T101 Add badge/profile request parsing and validation in `src/routes/cards.ts`.
-- [ ] T102 Add badge/profile cache-key support in `src/utils/cards/cache.ts`.
-- [ ] T103 Add data helpers for badge metrics and profile metric sections.
-- [ ] T104 Add SVG renderers for `flat` and `pill` badges.
-- [ ] T105 Add SVG renderer for default and compact profile composite card layouts.
-- [ ] T106 Add dashboard snippets and previews for badges and profile card.
-- [ ] T107 Add unit tests for badge/profile renderers.
-- [ ] T108 Add unit tests for badge/profile snippets and alt text.
-- [ ] T109 Add integration tests for public badge routes.
-- [ ] T110 Add integration tests for `cards/profile.svg`.
-- [ ] T111 Add privacy tests proving disabled embeds return `404` before cache hits.
-- [ ] T112 Update deployment guide with badge/profile card usage.
-- [ ] T113 Run `npm run typecheck && npm test`.
+- [x] T101 Add badge/profile request parsing and validation in `src/routes/cards.ts`.
+- [x] T102 Add badge/profile cache-key support in `src/utils/cards/cache.ts`.
+- [x] T103 Add data helpers for badge metrics and profile metric sections.
+- [x] T104 Add SVG renderers for `flat` and `pill` badges.
+- [x] T105 Add SVG renderer for default and compact profile composite card layouts.
+- [x] T106 Add dashboard snippets and previews for badges and profile card.
+- [x] T107 Add unit tests for badge/profile renderers.
+- [x] T108 Add unit tests for badge/profile snippets and alt text.
+- [x] T109 Add integration tests for public badge routes.
+- [x] T110 Add integration tests for `cards/profile.svg`.
+- [x] T111 Add privacy tests proving disabled embeds return `404` before cache hits.
+- [x] T112 Update deployment guide with badge/profile card usage.
+- [x] T113 Run `npm run typecheck && npm test`.
