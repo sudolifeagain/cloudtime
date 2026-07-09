@@ -37,6 +37,45 @@ export type ComputedDurations = {
   hourly: Map<string, HourlyTuple>;
 };
 
+/**
+ * AI telemetry columns read alongside the base aggregation fields for the
+ * `ai_daily_usage` rollup (Issue #200). `user_agent_id` is only an FK — the
+ * agent label lives in `user_agents` and is resolved via {@link getAgentLabels}.
+ */
+export type AiTelemetryFields = {
+  user_agent_id: string | null;
+  ai_provider: string | null;
+  ai_model: string | null;
+  ai_prompt_length: number | null;
+  ai_input_tokens: number | null;
+  ai_output_tokens: number | null;
+  ai_cached_input_tokens: number | null;
+  ai_reasoning_output_tokens: number | null;
+  ai_cache_write_tokens: number | null;
+  ai_cache_read_tokens: number | null;
+};
+
+export type AiHeartbeatForAggregation = HeartbeatForAggregation & AiTelemetryFields;
+
+/** One `ai_daily_usage` rollup bucket accumulated in-memory before the UPSERT. */
+export type AiUsageTuple = {
+  userId: string;
+  day: string;
+  provider: string;
+  model: string;
+  agent: string;
+  project: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  reasoningOutputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  promptLengthTotal: number;
+  promptLengthCount: number;
+  heartbeatCount: number;
+};
+
 const DEFAULT_TIMEOUT = 15 * 60; // 15 minutes in seconds
 export const MAX_USER_TIMEOUT = 60 * 60; // 60 minutes - max allowed by validation
 export const HEARTBEAT_LIMIT = 5000;
@@ -79,6 +118,123 @@ export async function getUserSettings(
     }
   }
   return map;
+}
+
+/**
+ * Resolve the `agent` label for the AI usage rollup from `user_agents`, keyed by
+ * the distinct `user_agent_id`s in the batch (the `getUserSettings` precedent).
+ * The label is the stored `editor`/plugin identifier; rows with a null editor or
+ * an id absent from `user_agents` are simply omitted (the caller falls back to
+ * `unknown`). Batched in chunks of {@link BIND_CHUNK_SIZE} to stay under SQLite's
+ * bound-variable limit.
+ */
+export async function getAgentLabels(
+  db: D1Database,
+  userAgentIds: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (userAgentIds.length === 0) return map;
+
+  const stmts: D1PreparedStatement[] = [];
+  for (let i = 0; i < userAgentIds.length; i += BIND_CHUNK_SIZE) {
+    const chunk = userAgentIds.slice(i, i + BIND_CHUNK_SIZE);
+    const placeholders = chunk.map(() => "?").join(", ");
+    stmts.push(
+      db.prepare(`SELECT id, editor FROM user_agents WHERE id IN (${placeholders})`).bind(...chunk),
+    );
+  }
+
+  const batchResults = await db.batch<{ id: string; editor: string | null }>(stmts);
+  for (const response of batchResults) {
+    for (const row of response.results) {
+      if (row.editor) map.set(row.id, row.editor);
+    }
+  }
+  return map;
+}
+
+/** Priced token columns; presence of any one makes an `ai coding` row contribute. */
+const AI_PRICED_TOKEN_FIELDS = [
+  "ai_input_tokens",
+  "ai_output_tokens",
+  "ai_cached_input_tokens",
+  "ai_reasoning_output_tokens",
+  "ai_cache_write_tokens",
+  "ai_cache_read_tokens",
+] as const;
+
+/**
+ * A contributing heartbeat (FR-026): `category = 'ai coding'` carrying at least
+ * one priced token field (presence, not value — `ai_input_tokens: 0` qualifies).
+ * A prompt-length-only heartbeat creates no rollup bucket.
+ */
+function isContributingAi(hb: AiHeartbeatForAggregation): boolean {
+  if (hb.category !== "ai coding") return false;
+  return AI_PRICED_TOKEN_FIELDS.some((f) => hb[f] != null);
+}
+
+/**
+ * Build the incremental `ai_daily_usage` rollup from the NEW heartbeats only
+ * (never the prepended lookback rows, or their tokens re-add on every run). Each
+ * bucket's `day` is keyed by the heartbeat's OWN `time` in the fixed aggregation
+ * timezone (the owner's profile tz) — not `prev.time`, which is the summaries
+ * duration-interval key and would misattribute a token heartbeat across midnight.
+ * `provider`/`model` fall back to `unknown`; `agent` is the resolved user-agent
+ * label (else `unknown`); a null `project` is coalesced to the `''` sentinel so
+ * the unique index dedups exactly.
+ */
+export function computeAiDailyUsage(
+  heartbeats: AiHeartbeatForAggregation[],
+  userSettings: Map<string, UserSettings>,
+  agentLabels: Map<string, string>,
+): Map<string, AiUsageTuple> {
+  const result = new Map<string, AiUsageTuple>();
+  for (const hb of heartbeats) {
+    if (!isContributingAi(hb)) continue;
+    const tz = userSettings.get(hb.user_id)?.timezone ?? "UTC";
+    const day = getDateForTimestamp(hb.time, tz);
+    const provider = hb.ai_provider ?? "unknown";
+    const model = hb.ai_model ?? "unknown";
+    const agent = (hb.user_agent_id ? agentLabels.get(hb.user_agent_id) : undefined) ?? "unknown";
+    const project = hb.project ?? "";
+
+    // Pipe-joined key mirrors the summaries pass (aggregate.ts computeDurations);
+    // the ai_daily_usage unique index is the authoritative dedup on write.
+    const key = `${hb.user_id}|${day}|${provider}|${model}|${agent}|${project}`;
+    let tuple = result.get(key);
+    if (!tuple) {
+      tuple = {
+        userId: hb.user_id,
+        day,
+        provider,
+        model,
+        agent,
+        project,
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedInputTokens: 0,
+        reasoningOutputTokens: 0,
+        cacheWriteTokens: 0,
+        cacheReadTokens: 0,
+        promptLengthTotal: 0,
+        promptLengthCount: 0,
+        heartbeatCount: 0,
+      };
+      result.set(key, tuple);
+    }
+    tuple.inputTokens += hb.ai_input_tokens ?? 0;
+    tuple.outputTokens += hb.ai_output_tokens ?? 0;
+    tuple.cachedInputTokens += hb.ai_cached_input_tokens ?? 0;
+    tuple.reasoningOutputTokens += hb.ai_reasoning_output_tokens ?? 0;
+    tuple.cacheWriteTokens += hb.ai_cache_write_tokens ?? 0;
+    tuple.cacheReadTokens += hb.ai_cache_read_tokens ?? 0;
+    if (hb.ai_prompt_length != null) {
+      tuple.promptLengthTotal += hb.ai_prompt_length;
+      tuple.promptLengthCount += 1;
+    }
+    tuple.heartbeatCount += 1;
+  }
+  return result;
 }
 
 export function computeDurations(
@@ -187,18 +343,24 @@ export async function aggregateHeartbeats(db: D1Database): Promise<void> {
         .all<HeartbeatForAggregation>()
     : { results: [] as HeartbeatForAggregation[] };
 
-  // 2. Fetch new heartbeats strictly after cursor
+  // 2. Fetch new heartbeats strictly after cursor. Also reads the AI telemetry
+  // columns and user_agent_id (Issue #200) so the ai_daily_usage rollup is built
+  // from the same single heartbeat scan; the lookback rows are duration-only and
+  // never feed the AI sums.
   const { results: newHeartbeats } = await db
     .prepare(
       `SELECT user_id, time, project, branch, language, editor,
-              operating_system, category, machine
+              operating_system, category, machine, user_agent_id,
+              ai_provider, ai_model, ai_prompt_length, ai_input_tokens,
+              ai_output_tokens, ai_cached_input_tokens, ai_reasoning_output_tokens,
+              ai_cache_write_tokens, ai_cache_read_tokens
        FROM heartbeats
        WHERE time > ?
        ORDER BY time ASC
        LIMIT ?`,
     )
     .bind(lastAggregatedAt, HEARTBEAT_LIMIT)
-    .all<HeartbeatForAggregation>();
+    .all<AiHeartbeatForAggregation>();
 
   if (newHeartbeats.length === 0) return;
 
@@ -256,6 +418,62 @@ DO UPDATE SET total_seconds = total_seconds + excluded.total_seconds`;
         tuple.date,
         tuple.hour,
         Math.round(tuple.seconds),
+      ),
+    );
+  }
+
+  // AI daily usage rollup (Issue #200). Summed ONLY from newHeartbeats (never the
+  // lookback rows, or their tokens would re-add every run); the agent label comes
+  // from user_agents, resolved by a batched lookup keyed on the distinct
+  // user_agent_ids. UPSERTed into the SAME batch as the cursor advance below so
+  // the rollup and watermark move atomically (no double-count, no dropped rows).
+  const aiAgentIds = [
+    ...new Set(
+      newHeartbeats
+        .map((hb) => hb.user_agent_id)
+        .filter((id): id is string => id != null),
+    ),
+  ];
+  const agentLabels = await getAgentLabels(db, aiAgentIds);
+  const aiDaily = computeAiDailyUsage(newHeartbeats, userSettings, agentLabels);
+
+  const aiUpsertSql = `INSERT INTO ai_daily_usage
+  (user_id, day, provider, model, agent, project,
+   input_tokens, output_tokens, cached_input_tokens, reasoning_output_tokens,
+   cache_write_tokens, cache_read_tokens, prompt_length_total, prompt_length_count,
+   heartbeat_count, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+ON CONFLICT (user_id, day, provider, model, agent, project)
+DO UPDATE SET
+  input_tokens = input_tokens + excluded.input_tokens,
+  output_tokens = output_tokens + excluded.output_tokens,
+  cached_input_tokens = cached_input_tokens + excluded.cached_input_tokens,
+  reasoning_output_tokens = reasoning_output_tokens + excluded.reasoning_output_tokens,
+  cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens,
+  cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+  prompt_length_total = prompt_length_total + excluded.prompt_length_total,
+  prompt_length_count = prompt_length_count + excluded.prompt_length_count,
+  heartbeat_count = heartbeat_count + excluded.heartbeat_count,
+  updated_at = datetime('now')`;
+
+  for (const tuple of aiDaily.values()) {
+    statements.push(
+      db.prepare(aiUpsertSql).bind(
+        tuple.userId,
+        tuple.day,
+        tuple.provider,
+        tuple.model,
+        tuple.agent,
+        tuple.project,
+        tuple.inputTokens,
+        tuple.outputTokens,
+        tuple.cachedInputTokens,
+        tuple.reasoningOutputTokens,
+        tuple.cacheWriteTokens,
+        tuple.cacheReadTokens,
+        tuple.promptLengthTotal,
+        tuple.promptLengthCount,
+        tuple.heartbeatCount,
       ),
     );
   }
