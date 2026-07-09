@@ -39,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_commits_user_project_author_date
   ON commits(user_id, project, author_date);
 ```
 
-Orders the previous-commit `SELECT MAX(author_date) … WHERE user_id = ? AND project = ? AND author_date < ?` on large commit tables. Not required for boundedness: `commits`' `UNIQUE(user_id, project, hash)` constraint already provides an auto-index whose `(user_id, project)` prefix scopes this lookup to the user+project's rows (no full scan), so this migration is a marginal optimization, cheap and unnecessary at single-user volumes — decided in PR2.
+Orders the previous-commit `SELECT MAX(author_date) … WHERE user_id = ? AND project = ? AND author_date < ?` on large commit tables. Not required for boundedness: `commits`' `UNIQUE(user_id, project, hash)` constraint already provides an auto-index ordered `(user_id, project, hash)`, whose `(user_id, project)` prefix scopes this lookup to the user+project's rows (no full *table* scan). Because that auto-index is not ordered by `author_date`, the `MAX(author_date)` still partition-scans every commit row under the prefix, so this migration is a **scaling guard** that bounds per-commit D1 row-reads as a project's commit history grows — cheap and unnecessary at single-user volumes, decided in PR2.
 
 ## Correlation algorithm (PR2)
 
@@ -99,7 +99,7 @@ function sessionGapSeconds(prevTime: number, currTime: number, timeout: number):
 
 `computeDurations` (aggregate.ts) is refactored to call this same primitive for its `gap > timeout || gap <= 0` skip, so the daily `summaries` and the per-commit derivation apply an identical **per-pair rule** (FR-005). Correlation additionally replicates `computeDurations`' **`prev.project` attribution** — it gaps the same unfiltered user stream and credits each interval to its earlier heartbeat's project (step 6) — so the two never disagree on whether a given interval counts for the project or is idle. They can still differ *numerically* because `summaries` day-bucket and round per bucket while correlation sums one previous-commit-partitioned window and rounds once; the rule and attribution are shared, the aggregation boundaries are not.
 
-Steps 1–5 are all bounded (single-row reads + one capped-window `LIMIT` read); step 6 sums ≤ 5000 in-memory values. Total: 3 small reads + 1 upsert, within the request CPU budget (FR-007).
+Steps 1–5 are all bounded (single-row reads + one capped-window `LIMIT` read); step 6 sums ≤ 5000 in-memory values. Total: 2 single-row reads + 1 capped-window read (≤ 5000 rows) + 1 upsert, within the request CPU budget (FR-007).
 
 ## Request → row mapping (PR2, changed cell only)
 
