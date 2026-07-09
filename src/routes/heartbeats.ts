@@ -28,6 +28,20 @@ const VALID_CATEGORIES = new Set([
 ]);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// AI telemetry token/length fields are non-negative integers bounded to keep
+// cost accumulation within a safe numeric range and reject garbage magnitudes
+// (Issue #200; mirrors the OpenAPI minimum/maximum on HeartbeatInput).
+const AI_TOKEN_MAX = 1_000_000_000;
+const AI_TOKEN_FIELDS = [
+  "ai_prompt_length",
+  "ai_input_tokens",
+  "ai_output_tokens",
+  "ai_cached_input_tokens",
+  "ai_reasoning_output_tokens",
+  "ai_cache_write_tokens",
+  "ai_cache_read_tokens",
+] as const;
+
 function parseDateString(date: string): boolean {
   if (!DATE_RE.test(date)) return false;
   const [y, m, d] = date.split("-").map(Number);
@@ -40,8 +54,8 @@ function parseDateString(date: string): boolean {
   );
 }
 
-const INSERT_HEARTBEAT_SQL = `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+const INSERT_HEARTBEAT_SQL = `INSERT INTO heartbeats (id, user_id, entity, type, time, category, project, project_root_count, branch, language, dependencies, lines, ai_line_changes, human_line_changes, ai_session, ai_subscription_plan, ai_prompt_length, ai_input_tokens, ai_output_tokens, ai_cached_input_tokens, ai_reasoning_output_tokens, ai_cache_write_tokens, ai_cache_read_tokens, ai_provider, ai_model, lineno, cursorpos, is_write, editor, operating_system, machine, user_agent_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 const UPSERT_PROJECT_SQL = `INSERT INTO user_projects (user_id, project, first_heartbeat_at, last_heartbeat_at)
 VALUES (?, ?, ?, ?)
@@ -63,6 +77,11 @@ function bindHeartbeatParams(
     input.category ?? null, input.project ?? null, input.project_root_count ?? null,
     input.branch ?? null, input.language ?? null, normalizeDependencies(input.dependencies),
     input.lines ?? null, input.ai_line_changes ?? null, input.human_line_changes ?? null,
+    input.ai_session ?? null, input.ai_subscription_plan ?? null,
+    input.ai_prompt_length ?? null, input.ai_input_tokens ?? null,
+    input.ai_output_tokens ?? null, input.ai_cached_input_tokens ?? null,
+    input.ai_reasoning_output_tokens ?? null, input.ai_cache_write_tokens ?? null,
+    input.ai_cache_read_tokens ?? null, input.ai_provider ?? null, input.ai_model ?? null,
     input.lineno ?? null, input.cursorpos ?? null, input.is_write ? 1 : 0,
     input.editor ?? null, input.operating_system ?? null,
     machine ?? null,
@@ -417,12 +436,31 @@ function validateHeartbeatInput(input: HeartbeatInput): string | null {
     ["operating_system", INPUT_LIMITS.name],
     ["machine", INPUT_LIMITS.name],
     ["user_agent", INPUT_LIMITS.userAgent],
+    // AI telemetry string fields (Issue #200); stored verbatim, grouping only.
+    ["ai_session", INPUT_LIMITS.name],
+    ["ai_subscription_plan", INPUT_LIMITS.name],
+    ["ai_provider", INPUT_LIMITS.name],
+    ["ai_model", INPUT_LIMITS.name],
   ] as const;
   for (const [field, cap] of cappedFields) {
     const val = input[field];
     if (val === undefined || val === null) continue;
     if (typeof val !== "string") return `${field} must be a string`;
     if (tooLong(val, cap)) return `${field} must be at most ${cap} characters`;
+  }
+
+  // AI telemetry token/length fields: non-negative integers, bounded (#200).
+  // Explicit null is treated as "not reported" (skipped), matching the capped
+  // string fields above; only present numeric values are validated.
+  for (const field of AI_TOKEN_FIELDS) {
+    const val = input[field];
+    if (val === undefined || val === null) continue;
+    if (typeof val !== "number" || !Number.isInteger(val)) {
+      return `${field} must be an integer`;
+    }
+    if (val < 0 || val > AI_TOKEN_MAX) {
+      return `${field} must be between 0 and ${AI_TOKEN_MAX}`;
+    }
   }
 
   // Validate optional numeric fields when present

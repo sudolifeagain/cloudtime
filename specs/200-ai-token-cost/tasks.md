@@ -24,9 +24,9 @@
 
 ### User Story 1 - Ingest and return AI telemetry (P1)
 
-- [ ] T103 [US1] Validate and bind AI telemetry fields in single and bulk heartbeat ingestion in `src/routes/heartbeats.ts` (bulk via `db.batch()`).
-- [ ] T104 [US1] Include stored AI telemetry fields in `GET /users/current/heartbeats` responses.
-- [ ] T105 [US1] Integration tests for single + bulk AI ingestion, round-trip, omitted-field compatibility, and `400` on malformed token values in `tests/integration/ai-heartbeats.test.ts`.
+- [x] T103 [US1] Validate and bind AI telemetry fields in single and bulk heartbeat ingestion in `src/routes/heartbeats.ts` (bulk via `db.batch()`).
+- [x] T104 [US1] Include stored AI telemetry fields in `GET /users/current/heartbeats` responses.
+- [x] T105 [US1] Integration tests for single + bulk AI ingestion, round-trip, omitted-field compatibility, and `400` on malformed token values in `tests/integration/ai-heartbeats.test.ts`.
 
 ### User Story 3 - Owner-managed pricing table (P2, precedes cost in US2)
 
