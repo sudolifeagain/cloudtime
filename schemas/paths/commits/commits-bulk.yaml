@@ -1,0 +1,57 @@
+post:
+  operationId: createProjectCommitsBulk
+  tags:
+    - commits
+  summary: Ingest up to 100 commits for a project at once
+  description: |
+    Batch-ingests commits for the authenticated user under `project` (taken from
+    the path; any `project` in an element is ignored) — the multi-commit
+    counterpart to `POST .../commits`, for a git push or a history import.
+
+    All-or-nothing: every element is validated first (the same rules as the
+    single ingest), and any invalid element returns 400 identifying its array
+    index, with nothing written. Valid elements are upserted idempotently on
+    `(user_id, project, hash)` in a single batch, so re-sent hashes update in
+    place rather than duplicating. Returns 201 with the stored commits in request
+    order. A body that is not an array returns 400; an empty array returns 201
+    with an empty `data`. The cap is 100 commits per request.
+
+    Unlike the single-commit endpoint, bulk ingestion does NOT derive
+    `total_seconds` from heartbeats: an element's `total_seconds` is stored
+    verbatim when supplied (including an explicit 0) and stored absent when
+    omitted (its `human_readable_total` then reads "0 secs"). A caller that needs
+    server-side heartbeat correlation posts that commit through the single
+    `POST .../commits` endpoint or supplies `total_seconds` here.
+  parameters:
+    - name: project
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: array
+          items:
+            $ref: ../../components/schemas/CommitInput.yaml
+          maxItems: 100
+  responses:
+    '201':
+      description: Commits ingested
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/Commit.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

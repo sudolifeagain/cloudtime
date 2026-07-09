@@ -164,6 +164,8 @@ paths:
   # --- commits ---
   /users/current/projects/{project}/commits:
     $ref: paths/commits/commits.yaml
+  /users/current/projects/{project}/commits.bulk:
+    $ref: paths/commits/commits-bulk.yaml
   /users/current/projects/{project}/commits/{hash}:
     $ref: paths/commits/commit.yaml
 

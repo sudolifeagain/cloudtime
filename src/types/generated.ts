@@ -1189,6 +1189,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/current/projects/{project}/commits.bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest up to 100 commits for a project at once
+         * @description Batch-ingests commits for the authenticated user under `project` (taken from
+         *     the path; any `project` in an element is ignored) — the multi-commit
+         *     counterpart to `POST .../commits`, for a git push or a history import.
+         *
+         *     All-or-nothing: every element is validated first (the same rules as the
+         *     single ingest), and any invalid element returns 400 identifying its array
+         *     index, with nothing written. Valid elements are upserted idempotently on
+         *     `(user_id, project, hash)` in a single batch, so re-sent hashes update in
+         *     place rather than duplicating. Returns 201 with the stored commits in request
+         *     order. A body that is not an array returns 400; an empty array returns 201
+         *     with an empty `data`. The cap is 100 commits per request.
+         *
+         *     Unlike the single-commit endpoint, bulk ingestion does NOT derive
+         *     `total_seconds` from heartbeats: an element's `total_seconds` is stored
+         *     verbatim when supplied (including an explicit 0) and stored absent when
+         *     omitted (its `human_readable_total` then reads "0 secs"). A caller that needs
+         *     server-side heartbeat correlation posts that commit through the single
+         *     `POST .../commits` endpoint or supplies `total_seconds` here.
+         */
+        post: operations["createProjectCommitsBulk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/current/projects/{project}/commits/{hash}": {
         parameters: {
             query?: never;
@@ -2230,7 +2267,7 @@ export interface components {
             committer_date?: string;
             /**
              * Format: double
-             * @description Coding time in seconds for the commit. Either client-supplied at ingest or server-derived from surrounding heartbeats when the client omitted it. Absent when no time was supplied and none could be derived.
+             * @description Coding time in seconds for the commit. Either client-supplied at ingest or, for the single `POST .../commits` endpoint only, server-derived from surrounding heartbeats when the client omitted it; bulk ingestion (`commits.bulk`) never derives it. Absent when no time was supplied and none could be derived.
              */
             total_seconds?: number;
             /** @description Human-readable duration derived from total_seconds, treating missing stored time as zero. */
@@ -2254,7 +2291,7 @@ export interface components {
             committer_date?: string;
             /**
              * Format: double
-             * @description Client-supplied coding time in seconds for the commit. Optional: when omitted the server derives it by correlating heartbeats around the commit (see the ingestion operation). An explicit value (including 0) is stored verbatim and is never overwritten by correlation.
+             * @description Client-supplied coding time in seconds for the commit. Optional; an explicit value (including 0) is stored verbatim. When omitted, the single `POST .../commits` endpoint derives it by correlating heartbeats around the commit, whereas bulk ingestion (`commits.bulk`) stores it absent — it does not correlate. See each operation.
              */
             total_seconds?: number;
             ref?: string;
@@ -4479,6 +4516,36 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Commit"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createProjectCommitsBulk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommitInput"][];
+            };
+        };
+        responses: {
+            /** @description Commits ingested */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Commit"][];
                     };
                 };
             };
