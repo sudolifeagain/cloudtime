@@ -404,6 +404,24 @@ interface GoalRow {
   type: string;
   delta: string;
   target_seconds: number;
+  is_inverse: number;
+  modified_at: string;
+  languages: string | null;
+  editors: string | null;
+  projects: string | null;
+}
+
+// A resolved, publicly-eligible goal (enabled + non-snoozed). Carries the row's
+// `modifiedAt` so the caller can fold it into the cache key (an edit to the goal
+// invalidates a warm public card/badge immediately).
+export interface EligibleGoal {
+  id: string;
+  title: string;
+  type: string;
+  delta: string;
+  targetSeconds: number;
+  isInverse: boolean;
+  modifiedAt: string;
   languages: string | null;
   editors: string | null;
   projects: string | null;
@@ -415,6 +433,8 @@ export interface GoalProgressData {
   actualSeconds: number;
   targetSeconds: number;
   delta: string;
+  /** Cap-style goal: `percent` is the share of the cap consumed, not achievement. */
+  isInverse: boolean;
 }
 
 /**
@@ -430,32 +450,57 @@ export function goalPeriodStartDate(todayStr: string, delta: string): string {
   return formatDate(addDays(today, -weekdayMonZero));
 }
 
-// Progress for one publicly rendered goal. Only enabled, non-snoozed goals are
-// eligible — a goal the owner disabled or snoozed is never exposed on a public
-// badge, even when addressed by id. Returns null when no eligible goal exists
-// (the route answers 404). Actuals read pre-aggregated summaries only, matching
-// the authenticated goals chart (no current-day heartbeat overlay).
-export async function getGoalProgressData(
+const GOAL_COLUMNS = "id, title, type, delta, target_seconds, is_inverse, modified_at, languages, editors, projects";
+
+// Resolve the single publicly-eligible goal (enabled + non-snoozed) before any
+// cache lookup. A goal the owner disabled, snoozed, or deleted is never exposed
+// on a public badge/card, even when addressed by id — resolving pre-cache means
+// such a goal answers 404 without ever serving a stale cached image (the
+// public-badge contract: "no cached badge image is served" for an unavailable
+// metric). Returns null when no eligible goal exists.
+export async function resolveEligibleGoal(
   db: D1Database,
   userId: string,
-  tz: string,
   goalId?: string,
-): Promise<GoalProgressData | null> {
-  const columns = "id, title, type, delta, target_seconds, languages, editors, projects";
-  const goal = goalId
+): Promise<EligibleGoal | null> {
+  const row = goalId
     ? await db
-        .prepare(`SELECT ${columns} FROM goals WHERE id = ? AND user_id = ? AND is_enabled = 1 AND is_snoozed = 0`)
+        .prepare(`SELECT ${GOAL_COLUMNS} FROM goals WHERE id = ? AND user_id = ? AND is_enabled = 1 AND is_snoozed = 0`)
         .bind(goalId, userId)
         .first<GoalRow>()
     : await db
         .prepare(
-          `SELECT ${columns} FROM goals WHERE user_id = ? AND is_enabled = 1 AND is_snoozed = 0
+          `SELECT ${GOAL_COLUMNS} FROM goals WHERE user_id = ? AND is_enabled = 1 AND is_snoozed = 0
            ORDER BY created_at ASC, id ASC LIMIT 1`,
         )
         .bind(userId)
         .first<GoalRow>();
-  if (!goal) return null;
+  if (!row) return null;
+  return {
+    id: row.id,
+    title: row.title,
+    type: row.type,
+    delta: row.delta,
+    targetSeconds: Number(row.target_seconds),
+    isInverse: row.is_inverse === 1,
+    modifiedAt: row.modified_at,
+    languages: row.languages,
+    editors: row.editors,
+    projects: row.projects,
+  };
+}
 
+// Progress for one already-resolved goal. Actuals read pre-aggregated summaries
+// only, matching the authenticated goals chart (no current-day heartbeat
+// overlay). For inverse (cap-style) goals `percent` is the share of the cap
+// consumed — the caller renders honest cap copy so a blown cap is never shown
+// as overachievement.
+export async function computeGoalProgress(
+  db: D1Database,
+  userId: string,
+  tz: string,
+  goal: EligibleGoal,
+): Promise<GoalProgressData> {
   const todayStr = formatDate(getToday(tz));
   const startStr = goalPeriodStartDate(todayStr, goal.delta);
 
@@ -477,20 +522,29 @@ export async function getGoalProgressData(
   const row = await db.prepare(sql).bind(...binds).first<{ seconds: number | null }>();
 
   const actualSeconds = Number(row?.seconds ?? 0);
-  const targetSeconds = Number(goal.target_seconds);
+  const targetSeconds = goal.targetSeconds;
   const percent = targetSeconds > 0 ? (actualSeconds / targetSeconds) * 100 : 0;
-  return { title: goal.title, percent, actualSeconds, targetSeconds, delta: goal.delta };
+  return {
+    title: goal.title,
+    percent,
+    actualSeconds,
+    targetSeconds,
+    delta: goal.delta,
+    isInverse: goal.isInverse,
+  };
 }
 
 export async function getGoalProgressBadgeData(
   db: D1Database,
   userId: string,
   tz: string,
-  goalId?: string,
-): Promise<BadgeData | null> {
-  const progress = await getGoalProgressData(db, userId, tz, goalId);
-  if (!progress) return null;
-  return { label: "goal", value: formatBadgePercent(progress.percent) };
+  goal: EligibleGoal,
+): Promise<BadgeData> {
+  const progress = await computeGoalProgress(db, userId, tz, goal);
+  const percent = formatBadgePercent(progress.percent);
+  // Inverse goals cap activity; render "% of cap" so an exceeded cap reads as a
+  // blown budget, not achievement.
+  return { label: "goal", value: progress.isInverse ? `${percent} of cap` : percent };
 }
 
 export type ProfileMetricKey =
@@ -531,9 +585,10 @@ export interface ProfileMetricSection {
 
 /**
  * Build the composite profile card sections in requested order, running only
- * the bounded reads the requested metrics need. Returns null when
- * `goal_progress` is requested but the user has no eligible goal (the route
- * answers 404 per the spec's privacy rules).
+ * the bounded reads the requested metrics need. When `goal_progress` is
+ * requested the caller must pass the goal it pre-resolved before the cache (so
+ * an ineligible goal answers 404 without serving a stale image); returns null
+ * if that goal is missing, per the spec's privacy rules.
  */
 export async function getProfileCardData(
   db: D1Database,
@@ -541,6 +596,7 @@ export async function getProfileCardData(
   tz: string,
   timeoutMinutes: number,
   metrics: readonly ProfileMetricKey[],
+  goal: EligibleGoal | null,
 ): Promise<ProfileMetricSection[] | null> {
   const requested = new Set(metrics);
   const today = getToday(tz);
@@ -589,13 +645,15 @@ export async function getProfileCardData(
     values.set("current_streak", formatDays(stats.currentStreak));
   }
   if (requested.has("goal_progress")) {
-    const progress = await getGoalProgressData(db, userId, tz);
-    if (!progress) return null;
+    // The route pre-resolved and validated the eligible goal before the cache.
+    if (!goal) return null;
+    const progress = await computeGoalProgress(db, userId, tz, goal);
     const cadence = progress.delta === "week" ? "week" : "day";
-    values.set(
-      "goal_progress",
-      `${formatBadgePercent(progress.percent)} of ${formatHumanReadable(progress.targetSeconds)} / ${cadence}`,
-    );
+    const target = formatHumanReadable(progress.targetSeconds);
+    // Inverse goals cap activity; label the target as a cap so an exceeded cap
+    // is not presented as overachievement.
+    const suffix = progress.isInverse ? ` cap / ${cadence}` : ` / ${cadence}`;
+    values.set("goal_progress", `${formatBadgePercent(progress.percent)} of ${target}${suffix}`);
   }
 
   return metrics.map((key) => ({
@@ -655,7 +713,7 @@ function resolveBadgeWindow(tz: string, range: BadgeRange): { todayStr: string; 
   return { todayStr, startStr: formatDate(addDays(today, -(range.days - 1))) };
 }
 
-function parseGoalFilterList(goal: GoalRow, filterColumn: string): string[] {
+function parseGoalFilterList(goal: EligibleGoal, filterColumn: string): string[] {
   const raw = filterColumn === "language" ? goal.languages : filterColumn === "editor" ? goal.editors : goal.projects;
   if (!raw) return [];
   try {

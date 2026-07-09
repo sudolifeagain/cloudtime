@@ -25,6 +25,12 @@ export interface CardCacheKeyParts {
   metrics?: string;
   /** Normalized layout for the `profile` composite card; empty otherwise. */
   layout?: string;
+  /**
+   * `<goalId>:<goal.modified_at>` of the eligible goal when the profile card's
+   * metrics include `goal_progress`; empty otherwise. Folding it in means a
+   * disabled/edited goal invalidates the warm card immediately.
+   */
+  goalModifiedAt?: string;
   v: string;
   settingsModifiedAt: string;
 }
@@ -40,6 +46,7 @@ export function buildCardCacheKey(p: CardCacheKeyParts): string {
     p.templateModifiedAt ?? "",
     p.metrics ?? "",
     p.layout ?? "",
+    p.goalModifiedAt ?? "",
     p.v,
     p.settingsModifiedAt,
   ].join(":");
@@ -52,7 +59,13 @@ export interface BadgeCacheKeyParts {
   theme: string;
   style: string;
   label: string;
+  /** Resolved goal id for `goal_progress` badges; empty otherwise. */
   goalId: string;
+  /**
+   * `modified_at` of the resolved goal for `goal_progress` badges; empty
+   * otherwise. Folding it in invalidates a warm badge when the goal is edited.
+   */
+  goalModifiedAt?: string;
   v: string;
   settingsModifiedAt: string;
 }
@@ -70,6 +83,7 @@ export function buildBadgeCacheKey(p: BadgeCacheKeyParts): string {
     p.style,
     encodeURIComponent(p.label),
     p.goalId,
+    p.goalModifiedAt ?? "",
     p.v,
     p.settingsModifiedAt,
   ].join(":");

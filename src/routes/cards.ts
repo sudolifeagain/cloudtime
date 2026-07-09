@@ -18,8 +18,10 @@ import {
   getTopLanguageBadgeData,
   resolveBadgeRange,
   resolveCardRange,
+  resolveEligibleGoal,
   type BadgeData,
   type CardRange,
+  type EligibleGoal,
   type ProfileMetricKey,
 } from "../utils/cards/data";
 import {
@@ -415,6 +417,16 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
     }
   }
 
+  // Only the built-in profile renderer surfaces goal_progress (the template
+  // path renders a fixed non-goal view). Resolve the eligible goal BEFORE the
+  // cache so a disabled/edited goal answers 404 (or re-renders) without serving
+  // a stale image, and fold its id + modified_at into the cache key.
+  let profileGoal: EligibleGoal | null = null;
+  if (cardType === "profile" && !template && profileMetrics.includes("goal_progress")) {
+    profileGoal = await resolveEligibleGoal(c.env.DB, user.id);
+    if (!profileGoal) return notFound(c);
+  }
+
   const ifNoneMatch = c.req.raw.headers.get("If-None-Match");
   // The profile card has no range selector, so its cache entry is range-fixed.
   const cacheRange = cardType === "heatmap" ? "year" : cardType === "profile" ? "profile" : cardRange.key;
@@ -428,6 +440,7 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
     templateModifiedAt: template?.modified_at ?? "",
     metrics: cardType === "profile" ? profileMetrics.join("+") : "",
     layout: cardType === "profile" ? profileLayout : "",
+    goalModifiedAt: profileGoal ? `${profileGoal.id}:${profileGoal.modifiedAt}` : "",
     v,
     settingsModifiedAt: settings.modified_at ?? "",
   });
@@ -442,6 +455,7 @@ cardsPublic.get("/users/:username/cards/:file", async (c) => {
     svg = await renderPublicCardSvg(c.env.DB, cardType, user, themeName, cardRange, template, {
       metrics: profileMetrics,
       layout: profileLayout,
+      goal: profileGoal,
     });
   } catch (err) {
     if (err instanceof TemplateRenderError) {
@@ -487,8 +501,10 @@ cardsPublic.get("/users/:username/badges/:file", async (c) => {
   const settings = await loadEmbedSettings(c.env.DB, user.id);
   if (!settings.enabled) return notFound(c);
 
-  // Badges share the per-user public-image budget with cards: one binding,
-  // one key, so adding badge embeds does not multiply a profile's rate limit.
+  // Badges share the single public-image rate-limit binding with cards. The
+  // limiter keys on the truncated client IP (see rate-limit.ts); the
+  // `embed-cards:${user.id}` argument is only a log tag, not the rate key.
+  // Runs after the OFF gate and before the cache/render work a miss triggers.
   if (
     await rateLimitExceeded(
       c.env.RATE_LIMIT_EMBED_CARDS,
@@ -533,6 +549,15 @@ cardsPublic.get("/users/:username/badges/:file", async (c) => {
     return badRequest(c, `v must be at most ${CACHE_BUSTER_MAX} characters`);
   }
 
+  // Resolve the goal before the cache for goal_progress: an unavailable,
+  // disabled, or edited goal must never serve a cached badge image
+  // (public-badge contract). The resolved id + modified_at fold into the key.
+  let goal: EligibleGoal | null = null;
+  if (badgeType === "goal_progress") {
+    goal = await resolveEligibleGoal(c.env.DB, user.id, goalId.length > 0 ? goalId : undefined);
+    if (!goal) return notFound(c);
+  }
+
   const ifNoneMatch = c.req.raw.headers.get("If-None-Match");
   // Range only fragments the cache for range-aware badges.
   const rangeAware = badgeType === "coding_time" || badgeType === "top_language";
@@ -543,7 +568,8 @@ cardsPublic.get("/users/:username/badges/:file", async (c) => {
     theme: themeName,
     style,
     label: label ?? "",
-    goalId: badgeType === "goal_progress" ? goalId : "",
+    goalId: goal?.id ?? "",
+    goalModifiedAt: goal?.modifiedAt ?? "",
     v,
     settingsModifiedAt: settings.modified_at ?? "",
   });
@@ -553,8 +579,7 @@ cardsPublic.get("/users/:username/badges/:file", async (c) => {
     return svgResponse(cached.svg, cached.etag, settings.freshness_minutes, ifNoneMatch);
   }
 
-  const data = await loadBadgeData(c.env.DB, badgeType as BadgeTypeParam, user, badgeRange, goalId);
-  if (!data) return notFound(c);
+  const data = await loadBadgeData(c.env.DB, badgeType as BadgeTypeParam, user, badgeRange, goal);
 
   const svg = renderBadgeSvg({
     label: label ?? data.label,
@@ -577,8 +602,8 @@ async function loadBadgeData(
   badgeType: BadgeTypeParam,
   user: PublicUserRow,
   badgeRange: NonNullable<ReturnType<typeof resolveBadgeRange>>,
-  goalId: string,
-): Promise<BadgeData | null> {
+  goal: EligibleGoal | null,
+): Promise<BadgeData> {
   if (badgeType === "coding_time") {
     return getCodingTimeBadgeData(db, user.id, user.timezone, user.timeout, badgeRange);
   }
@@ -588,7 +613,9 @@ async function loadBadgeData(
   if (badgeType === "current_streak") {
     return getCurrentStreakBadgeData(db, user.id, user.timezone, user.timeout);
   }
-  return getGoalProgressBadgeData(db, user.id, user.timezone, goalId.length > 0 ? goalId : undefined);
+  // goal_progress: the route resolved and validated the goal before the cache.
+  if (!goal) throw new Error("goal_progress badge reached data load without a resolved goal");
+  return getGoalProgressBadgeData(db, user.id, user.timezone, goal);
 }
 
 function parseProfileMetrics(
@@ -618,7 +645,7 @@ async function renderPublicCardSvg(
   themeName: string,
   cardRange: CardRange,
   template: EmbedTemplate | null,
-  profile: { metrics: readonly ProfileMetricKey[]; layout: ProfileLayoutParam },
+  profile: { metrics: readonly ProfileMetricKey[]; layout: ProfileLayoutParam; goal: EligibleGoal | null },
 ): Promise<string> {
   if (cardType === "profile") {
     if (template) {
@@ -647,7 +674,7 @@ async function renderPublicCardSvg(
       if (!rendered.ok) throw new TemplateRenderError(rendered.error);
       return rendered.svg;
     }
-    const sections = await getProfileCardData(db, user.id, user.timezone, user.timeout, profile.metrics);
+    const sections = await getProfileCardData(db, user.id, user.timezone, user.timeout, profile.metrics, profile.goal);
     if (!sections) throw new UnavailableDataError("no eligible goal");
     return renderProfileCardSvg({
       username: user.username,

@@ -66,13 +66,14 @@ async function seedGoal(
     targetSeconds: number;
     enabled: boolean;
     snoozed: boolean;
+    inverse: boolean;
     createdAt: string;
   }> = {},
 ): Promise<string> {
   const id = crypto.randomUUID();
   await env.DB.prepare(
-    `INSERT INTO goals (id, user_id, title, type, delta, target_seconds, is_enabled, is_snoozed, created_at, modified_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    `INSERT INTO goals (id, user_id, title, type, delta, target_seconds, is_enabled, is_snoozed, is_inverse, created_at, modified_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
   )
     .bind(
       id,
@@ -83,6 +84,7 @@ async function seedGoal(
       overrides.targetSeconds ?? 7200,
       overrides.enabled === false ? 0 : 1,
       overrides.snoozed ? 1 : 0,
+      overrides.inverse ? 1 : 0,
       overrides.createdAt ?? "2026-01-01 00:00:00",
     )
     .run();
@@ -717,6 +719,67 @@ describe("public badges - goal progress", () => {
     );
     expect(disabled.status).toBe(404);
   });
+
+  it("renders an inverse goal under its cap as percent of cap", async () => {
+    const user = await seedUser({ username: "goal_inverse_under" });
+    await enableEmbeds(user.apiKey);
+    await seedGoal(user.userId, { targetSeconds: 7200, inverse: true });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain(">50% of cap</text>");
+  });
+
+  it("renders an exceeded inverse cap without overachievement framing", async () => {
+    const user = await seedUser({ username: "goal_inverse_over" });
+    await enableEmbeds(user.apiKey);
+    await seedGoal(user.userId, { targetSeconds: 3600, inverse: true });
+    await seedSummary(user.userId, formatUtcDate(0), 10800);
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    // 3 hrs against a 1-hr cap: honest "300% of cap", not a bare achievement %.
+    expect(svg).toContain(">300% of cap</text>");
+  });
+
+  it("returns 404 for a goal_progress badge with a warm cache after the goal is disabled", async () => {
+    const user = await seedUser({ username: "goal_warm_disable" });
+    await enableEmbeds(user.apiKey);
+    const goalId = await seedGoal(user.userId, { targetSeconds: 7200 });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const warm = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(warm.status).toBe(200);
+    expect(await warm.text()).toContain(">50%</text>");
+
+    await env.DB.prepare("UPDATE goals SET is_enabled = 0 WHERE id = ?").bind(goalId).run();
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(404);
+  });
+
+  it("re-renders a goal_progress badge after the goal target changes", async () => {
+    const user = await seedUser({ username: "goal_edit" });
+    await enableEmbeds(user.apiKey);
+    const goalId = await seedGoal(user.userId, { targetSeconds: 7200 });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const warm = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(await warm.text()).toContain(">50%</text>");
+
+    // Editing the goal bumps modified_at, which the cache key folds in so the
+    // warm entry cannot mask the new target.
+    await env.DB.prepare("UPDATE goals SET target_seconds = 3600, modified_at = ? WHERE id = ?")
+      .bind("2026-02-02 00:00:00", goalId)
+      .run();
+
+    const res = await call(`/api/v1/users/${user.username}/badges/goal_progress.svg`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(">100%</text>");
+  });
 });
 
 describe("public profile card", () => {
@@ -835,6 +898,18 @@ describe("public profile card", () => {
     expect(svg).toContain("1 hr");
     expect(svg).toContain("1 day");
   });
+
+  it("labels an inverse goal as a cap in the profile card", async () => {
+    const user = await seedUser({ username: "profile_inverse_goal" });
+    await enableEmbeds(user.apiKey);
+    await seedGoal(user.userId, { targetSeconds: 7200, delta: "day", inverse: true });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const res = await call(`/api/v1/users/${user.username}/cards/profile.svg?metrics=goal_progress`);
+    expect(res.status).toBe(200);
+    const svg = await res.text();
+    expect(svg).toContain("50% of 2 hrs cap / day");
+  });
 });
 
 describe("public badges and profile card - privacy", () => {
@@ -861,6 +936,22 @@ describe("public badges and profile card - privacy", () => {
     await call(`/api/v1/users/current/embed_settings`, authPatch(user.apiKey, { enabled: false }));
 
     const res = await call(`/api/v1/users/${user.username}/cards/profile.svg`);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for the profile goal section with a warm cache after the goal is disabled", async () => {
+    const user = await seedUser({ username: "profile_goal_disable" });
+    await enableEmbeds(user.apiKey);
+    const goalId = await seedGoal(user.userId, { targetSeconds: 7200, delta: "day" });
+    await seedSummary(user.userId, formatUtcDate(0), 3600);
+
+    const warm = await call(`/api/v1/users/${user.username}/cards/profile.svg?metrics=goal_progress`);
+    expect(warm.status).toBe(200);
+    expect(await warm.text()).toContain("50% of 2 hrs / day");
+
+    await env.DB.prepare("UPDATE goals SET is_enabled = 0 WHERE id = ?").bind(goalId).run();
+
+    const res = await call(`/api/v1/users/${user.username}/cards/profile.svg?metrics=goal_progress`);
     expect(res.status).toBe(404);
   });
 
