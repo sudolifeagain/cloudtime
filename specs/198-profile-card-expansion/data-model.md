@@ -43,7 +43,7 @@ Metric sections supported by the profile composite card.
 | all_time | Total CloudTime coding time | existing all-time/summaries semantics |
 | top_language | Top language for the selected/default range | summaries |
 | current_streak | Current CloudTime tracked-day streak | summaries + bounded current-day heartbeat overlay |
-| goal_progress | Progress for a selected/default enabled goal | goals + summaries |
+| goal_progress | Progress for a selected/default enabled goal; inverse (cap) goals are framed as share of the cap, not achievement (FR-018) | goals + summaries |
 
 ## Cache Keys
 

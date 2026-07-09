@@ -74,7 +74,9 @@ get:
       description: |
         Optional comma-separated metric list for the `profile` composite card.
         Omit to use the server default. Repeated, unknown, or unsupported metric
-        names return `400`.
+        names return `400`. The `goal_progress` section renders an inverse (cap)
+        goal as the share of the cap consumed, labeled as a cap so an exceeded
+        cap reads as a blown budget rather than achievement.
       schema:
         type: array
         minItems: 1

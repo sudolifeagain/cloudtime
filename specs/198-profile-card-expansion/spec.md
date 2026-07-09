@@ -5,6 +5,19 @@
 **Status**: Draft
 **Input**: GitHub Issue #198
 
+## Clarifications
+
+### Session 2026-07-10
+
+- Q: How should `goal_progress` (badge and profile metric) present an inverse
+  (cap) goal — one whose target is a limit not to exceed rather than an amount
+  to reach? → A: Report the share of the cap consumed (actual ÷ cap) and label
+  the value as a cap, so an exceeded cap reads as a blown budget rather than
+  achievement. Goal eligibility and default selection stay identical for
+  standard and inverse goals — `is_inverse` never affects which goal is chosen.
+  No pass/fail flag is exposed; the public surface stays a single
+  percentage-of-cap presentation.
+
 ## User Stories & Testing
 
 ### User Story 1 - Add focused profile badges (Priority: P1)
@@ -35,6 +48,10 @@ non-empty accessible image name, and never includes API keys or session data.
 4. Given public embeds are disabled, when any badge URL is requested, then the
    response is `404`, no cached image is served, and no private stats are
    disclosed.
+5. Given the owner's selected goal is an inverse (cap) goal, when
+   `/badges/goal_progress.svg` is requested, then the badge frames the value as
+   a share of the cap so an exceeded cap reads as a blown budget, never as
+   achievement.
 
 ---
 
@@ -130,6 +147,12 @@ secret query parameter.
 - **FR-017**: PR1 MUST include only SpecKit artifacts, OpenAPI changes, and
   regenerated OpenAPI types. It MUST NOT include route handlers, renderers, UI
   code, DB migrations, or docs behavior changes.
+- **FR-018**: The `goal_progress` badge and profile metric MUST present inverse
+  (cap) goals as the share of the cap consumed and MUST label the value as a
+  cap, so that exceeding the cap is never rendered as achievement or
+  overachievement. Goal eligibility and default selection MUST be identical for
+  standard and inverse goals; `is_inverse` MUST NOT affect which goal is
+  selected.
 
 ### Entities
 
@@ -160,6 +183,8 @@ secret query parameter.
   bounded current-day heartbeat overlays.
 - Goal progress badge behavior is owner-scoped; selecting the first enabled,
   non-snoozed goal is deterministic and avoids adding a new setting in PR1.
+  Inverse (cap) goals reuse that same selection and are framed as a share of the
+  cap (FR-018) rather than as achievement.
 - All-time values may read aggregate summaries directly in PR2; if that is too
   expensive, PR2 may introduce a bounded cache or reuse existing all-time
   helpers without changing the public contract.

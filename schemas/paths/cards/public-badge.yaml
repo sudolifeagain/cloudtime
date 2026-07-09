@@ -62,7 +62,10 @@ get:
       required: false
       description: |
         Optional goal identifier for the `goal_progress` badge. When omitted,
-        the first enabled, non-snoozed goal ordered by creation time is used.
+        the first enabled, non-snoozed goal ordered by creation time is used;
+        `is_inverse` never affects which goal is selected. For an inverse (cap)
+        goal the badge renders the share of the cap consumed and labels it as a
+        cap, so an exceeded cap reads as a blown budget rather than achievement.
       schema:
         type: string
         format: uuid

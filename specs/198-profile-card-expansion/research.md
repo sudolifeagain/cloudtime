@@ -134,6 +134,32 @@ generated types.
 **Rationale**: The project uses the two-PR SpecKit workflow. The implementation
 will be easier to review after the badge/profile contract is agreed.
 
+## Decision 9: Frame inverse (cap) goal progress as share of the cap
+
+**Decision**: When the resolved goal is an inverse (cap) goal, `goal_progress`
+(badge and profile metric) reports the share of the cap consumed
+(actual ÷ cap) and labels the value as a cap, so an exceeded cap reads as a
+blown budget rather than achievement. Goal eligibility and default selection are
+identical for standard and inverse goals; `is_inverse` never affects which goal
+is chosen.
+
+**Rationale**: A cap goal's percentage is a budget-consumed figure, not an
+achievement figure. Presenting 130% of a cap as "over target" would invert the
+owner's intent (they wanted to stay *under* the cap). Labeling it as a cap keeps
+the public surface honest without adding a pass/fail flag or a second selection
+rule. Reusing the standard enabled + non-snoozed, first-by-creation selection
+avoids a new setting and keeps the badge deterministic.
+
+**Alternatives considered**:
+
+- Expose a boolean pass/fail (met/blown) field. Rejected: adds public surface
+  and a success/failure judgment the contract does not otherwise make; the
+  labeled percentage already conveys the state honestly.
+- Clamp the percentage at 100%. Rejected: hides that the cap was exceeded, which
+  is exactly the signal a cap goal owner wants to see.
+- Treat inverse goals as ineligible for the public badge. Rejected: they are
+  ordinary enabled goals and excluding them would surprise owners who set a cap.
+
 ## Open Questions
 
 - Should PR2 expose a `goal_id` picker in the settings UI immediately, or start
