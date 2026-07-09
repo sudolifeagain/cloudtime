@@ -123,10 +123,17 @@ different-user/unknown id returns `404`.
   When both `start` and `end` are supplied the explicit inclusive range is used
   and `days` is ignored; supplying exactly one of `start`/`end` MUST return
   `400`; otherwise a trailing `days` window (default 30) ending on the current
-  local day is used. Day bucketing and "today" MUST use the resolved `timezone`
-  (owner profile timezone by default). The endpoint MUST return `400` when
-  `start > end`, when the resolved span exceeds 366 days, or when `timezone` is
-  not a valid IANA name.
+  local day is used. The resolved `timezone` (owner profile timezone by default)
+  governs only how "today" and the `start`/`end` calendar days are resolved for
+  range selection and how the window is labeled; it MUST NOT re-bucket historical
+  days at read time. Day boundaries are materialized once at aggregation time in a
+  fixed *aggregation timezone* — defined as the owner's profile timezone — and are
+  read back by day key (FR-025), consistent with the existing `summaries` rollup,
+  which likewise uses `timezone` only for range selection and labeling, never to
+  re-bucket already-aggregated days. A `timezone` differing from the aggregation
+  timezone therefore shifts only the range endpoints, not the internal day
+  boundaries. The endpoint MUST return `400` when `start > end`, when the resolved
+  span exceeds 366 days, or when `timezone` is not a valid IANA name.
 - **FR-009**: `estimated_cost` MUST be an API-equivalent estimate derived from
   stored token counts and the effective enabled price row for each heartbeat's
   timestamp; it MUST NOT be presented as an actual subscription bill.
@@ -158,8 +165,9 @@ different-user/unknown id returns `404`.
 - **FR-018**: AI agent/tool MUST be derived best-effort from stored user-agent
   metadata (the editor/plugin identifier already captured on each heartbeat),
   with unresolved rows labeled `unknown`; raw user-agent rows MUST be preserved.
-  (No dedicated `ai_agent` wire field is added; agent grouping is a read-side
-  derivation over existing user-agent data.)
+  (No dedicated `ai_agent` wire field is added. Per FR-025 the agent is resolved
+  from the stored user-agent at aggregation time and stored on the daily rollup —
+  it is never parsed per row at read time.)
 - **FR-019**: All feature naming (routes, schemas, identifiers, docs) MUST follow
   `docs/implementation-boundaries.md`; third-party names appear only as
   `WakaTime-compatible` wording in documentation.
@@ -192,14 +200,21 @@ different-user/unknown id returns `404`.
   cron-maintained daily AI usage rollup (consistent with the existing
   summary/hourly rollup architecture), aggregating token classes per
   `(day, provider, model, agent, project)` and resolving the effective price once
-  per bucket (aggregate-then-price). Provider/model/agent MUST be resolved at
-  ingestion/aggregation time and stored on the rollup, never parsed per-row at
-  read time. This requirement is contract-neutral (no OpenAPI change) and binds
-  PR2's storage/cron design only.
+  per bucket (aggregate-then-price). The rollup's `day` key MUST be materialized
+  in the fixed aggregation timezone (the owner's profile timezone), exactly as
+  `summaries` builds its `date` key, so day boundaries are stable and never
+  recomputed against a request `timezone` (FR-008). Provider/model/agent MUST be
+  resolved at ingestion/aggregation time and stored on the rollup, never parsed
+  per-row at read time. This requirement is contract-neutral (no OpenAPI change)
+  and binds PR2's storage/cron design only.
 - **FR-026**: A *contributing heartbeat* is defined as one with
   `category: "ai coding"` carrying at least one priced token field; heartbeats
   with only `ai_prompt_length` and no priced token field MUST NOT contribute to
-  any token total, `heartbeat_count`, or `missing_price_count`.
+  any token total, `heartbeat_count`, or `missing_price_count`. "Carrying" a
+  priced token field is decided by presence, not value: a heartbeat sending
+  `ai_input_tokens: 0` (field present, value `0`) IS a contributing heartbeat and
+  counts toward `heartbeat_count` (and `missing_price_count` when no price row
+  matches), whereas a heartbeat that omits every priced token field does not.
 
 ### Entities
 

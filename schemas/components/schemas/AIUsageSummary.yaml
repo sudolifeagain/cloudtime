@@ -30,7 +30,10 @@ properties:
     description: Inclusive last local day of the summary window.
   timezone:
     type: string
-    description: IANA timezone used to bucket heartbeats into local days.
+    description: |
+      IANA timezone used to resolve the range's local calendar days and "today".
+      Historical day boundaries are fixed at aggregation time in the owner's
+      profile timezone and are not re-bucketed per request.
     example: Asia/Tokyo
   currency:
     type: string

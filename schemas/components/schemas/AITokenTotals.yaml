@@ -6,8 +6,11 @@ description: |
   A *contributing heartbeat* is one with `category: "ai coding"` that carries at
   least one priced token field (`ai_input_tokens`, `ai_output_tokens`,
   `ai_cached_input_tokens`, `ai_reasoning_output_tokens`, `ai_cache_write_tokens`,
-  or `ai_cache_read_tokens`). Heartbeats that carry only `ai_prompt_length` and
-  no priced token field do not contribute and are excluded from every field here.
+  or `ai_cache_read_tokens`). "Carries" is decided by presence, not value: a
+  field present with value `0` still counts, so a heartbeat sending
+  `ai_input_tokens: 0` contributes, while a heartbeat that omits every priced
+  token field does not. Heartbeats that carry only `ai_prompt_length` and no
+  priced token field do not contribute and are excluded from every field here.
 
   `estimated_cost` is an API-equivalent estimate computed from stored token
   counts and the effective owner pricing rows for each heartbeat's timestamp. It
@@ -24,6 +27,7 @@ required:
   - cache_write_tokens
   - cache_read_tokens
   - prompt_length_total
+  - prompt_length_avg
   - heartbeat_count
   - estimated_cost
   - missing_price_count

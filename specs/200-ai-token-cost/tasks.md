@@ -36,10 +36,10 @@
 
 ### User Story 2 - Owner-only usage & cost summary (P1)
 
-- [ ] T109 [US2] Extend `src/cron/aggregate.ts` to incrementally build the `ai_daily_usage` rollup: resolve `provider`/`model`/`agent`, sum token classes per `(day, provider, model, agent, project)` via `db.batch()`, watermark-driven.
+- [ ] T109 [US2] Extend `src/cron/aggregate.ts` to incrementally build the `ai_daily_usage` rollup: resolve `provider`/`model`/`agent`, sum token classes per `(day, provider, model, agent, project)` via `db.batch()`, watermark-driven. Coalesce nullable `project` to a `''` sentinel before the UPSERT (as the existing summaries pass does) so the unique index dedups exactly. **Sum only `newHeartbeats` (`time > watermark`), never the prepended `lookbackHeartbeats`, or lookback tokens are re-added every run; extend the fetch SELECT to read the `ai_*` columns.**
 - [ ] T110 [US2] Implement effective-price selection (owner-over-default precedence) and aggregate-then-price cost calculation in `src/utils/ai/pricing.ts`.
 - [ ] T111 [US2] Implement rollup-based daily + dimensional aggregation builders, single-currency selection, and cross-currency exclusion in `src/utils/ai/usage.ts`.
-- [ ] T112 [US2] Implement `GET /users/current/ai/usage` reading the `ai_daily_usage` rollup with deterministic range resolution (start+end vs days, `start>end`/one-sided/`>366d`/bad-timezone `400`), timezone bucketing, and owner-only access; mount the `ai` router in `src/index.ts`.
+- [ ] T112 [US2] Implement `GET /users/current/ai/usage` reading the `ai_daily_usage` rollup with deterministic range resolution (start+end vs days, `start>end`/one-sided/`>366d`/bad-timezone `400`), the `timezone` used only for range/"today" resolution and labeling (never re-bucketing stored days, FR-008), and owner-only access; mount the `ai` router in `src/index.ts`. Security seed: the usage/price routes inherit the API-wide `apiKeyQuery` scheme; prefer header/bearer auth on these owner-private cost reads and scrub `api_key` from access logs/Referer so credentials do not leak.
 - [ ] T113 [US2] Integration tests for token trends, estimated cost with/without prices (`null` + `missing_price_count`), single-currency selection + `mixed_currency` exclusion, range resolution `400`s, and owner-only `401` in `tests/integration/ai-usage.test.ts`; rollup aggregation tests in `tests/aggregation/ai-rollup.test.ts`.
 
 ### Dashboard & Docs

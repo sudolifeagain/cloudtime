@@ -19,10 +19,15 @@ get:
     - If neither is supplied, a trailing `days` window ending on "today" is
       used (`days` defaults to 30).
 
-    "Today" and all day bucketing use the resolved `timezone` (the owner's
-    profile timezone by default). The request returns 400 when `start > end`,
-    when the resolved span exceeds 366 days, or when `timezone` is not a valid
-    IANA name.
+    The resolved `timezone` (the owner's profile timezone by default) is used to
+    resolve "today" for the trailing `days` window and to interpret `start`/`end`
+    as local calendar days for range selection and labeling. It does not
+    re-bucket historical days: each day is materialized once at aggregation time
+    in a fixed aggregation timezone (the owner's profile timezone), so a
+    `timezone` differing from the profile timezone shifts only the range
+    endpoints, not the internal day boundaries. The request returns 400 when
+    `start > end`, when the resolved span exceeds 366 days, or when `timezone` is
+    not a valid IANA name.
 
     Cost is an estimate of API-equivalent spend, not the owner's actual
     subscription bill. Buckets that reference token facts with no matching
@@ -63,8 +68,11 @@ get:
       in: query
       required: false
       description: |
-        IANA timezone used to bucket heartbeats into local days. Defaults to the
-        authenticated user's profile timezone when omitted.
+        IANA timezone used to resolve "today" and to interpret `start`/`end` as
+        local calendar days for range selection and labeling. Defaults to the
+        authenticated user's profile timezone when omitted. Historical day
+        boundaries are fixed at aggregation time in the owner's profile timezone
+        and are not re-bucketed per request.
       schema:
         type: string
         example: Asia/Tokyo

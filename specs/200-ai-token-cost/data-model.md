@@ -92,14 +92,22 @@ time (FR-025). The cron job derives `provider`/`model`/`agent` once (from the
 stored `ai_provider`/`ai_model` fields, else user-agent metadata, else
 `unknown`) and writes summed token classes per bucket via `db.batch()`.
 
+The `day` key is materialized in a fixed **aggregation timezone** — the owner's
+profile timezone — exactly as `summaries` builds its `date` key
+(`getDateForTimestamp(prev.time, tz)`, `src/cron/aggregate.ts:125`). Day
+boundaries are therefore stable once written; the request `timezone` param
+selects and labels the range but never re-buckets already-aggregated days
+(FR-008).
+
 | Column | Type | Notes |
 |---|---|---|
+| id | INTEGER PK | `AUTOINCREMENT` surrogate key (mirrors `summaries`) |
 | user_id | TEXT NOT NULL | FK -> users(id) |
-| day | TEXT NOT NULL | local-day key (`YYYY-MM-DD`) in the aggregation timezone |
+| day | TEXT NOT NULL | local-day key (`YYYY-MM-DD`) in the fixed aggregation timezone (owner profile tz) |
 | provider | TEXT NOT NULL | resolved at aggregation; `unknown` fallback |
 | model | TEXT NOT NULL | resolved at aggregation; `unknown` fallback |
 | agent | TEXT NOT NULL | resolved from user-agent; `unknown` fallback |
-| project | TEXT | null for heartbeats with no project |
+| project | TEXT NOT NULL DEFAULT '' | `''` sentinel for heartbeats with no project; mapped back to `null` in `by_project[]` |
 | input_tokens | INTEGER NOT NULL DEFAULT 0 | sum of `ai_input_tokens` |
 | output_tokens | INTEGER NOT NULL DEFAULT 0 | sum of `ai_output_tokens` |
 | cached_input_tokens | INTEGER NOT NULL DEFAULT 0 | |
@@ -111,11 +119,28 @@ stored `ai_provider`/`ai_model` fields, else user-agent metadata, else
 | heartbeat_count | INTEGER NOT NULL DEFAULT 0 | contributing heartbeats (FR-026) |
 | updated_at | TEXT NOT NULL DEFAULT (datetime('now')) | |
 
-PK `(user_id, day, provider, model, agent, project)`; index
-`idx_ai_daily_usage_user_day ON ai_daily_usage(user_id, day)` for range reads.
-Aggregation is incremental (only heartbeats newer than the watermark) and
-UPSERTs bucket sums, so a wide `/ai/usage` call reads a bounded number of
-rollup rows, not raw heartbeats.
+Uniqueness follows the working `summaries` pattern, not a nullable composite
+PRIMARY KEY: a surrogate `id INTEGER PRIMARY KEY AUTOINCREMENT` plus
+`CREATE UNIQUE INDEX idx_ai_daily_usage_unique ON ai_daily_usage(user_id, day, provider, model, agent, project)`
+as the UPSERT conflict target, and `idx_ai_daily_usage_user_day ON ai_daily_usage(user_id, day)`
+for range reads. Every rollup key column is `NOT NULL` (nullable source
+dimensions — currently only `project` — are coalesced to a `''` sentinel by the
+cron *before* the `ON CONFLICT DO UPDATE`, mirroring `prev.project ?? ""` in
+`src/cron/aggregate.ts:126`), so no `NULL` ever reaches the conflict target. This
+matters because SQLite does **not** implicitly make `PRIMARY KEY` columns of a
+rowid table `NOT NULL`, and `NULL`s compare distinct in a unique index; a
+nullable-`project` composite key would let `DO UPDATE` silently miss on
+null-project buckets, INSERTing a fresh duplicate every incremental run and
+double-counting token sums. Aggregation is incremental (only heartbeats newer
+than the watermark) and UPSERTs bucket sums, so a wide `/ai/usage` call reads a
+bounded number of rollup rows, not raw heartbeats.
+
+**PR2 cron note (double-count hazard):** `aggregateHeartbeats` prepends
+`lookbackHeartbeats` (`time <= watermark`) for session-gap continuity
+(`src/cron/aggregate.ts:212`); the AI token SUMs MUST include only
+`newHeartbeats` (`time > watermark`), or each lookback heartbeat's tokens are
+re-added on every run. The fetch SELECT (`aggregate.ts:180-201`) must also be
+extended to read the new `ai_*` columns.
 
 ## AIModelPrice (contract shape)
 
@@ -151,8 +176,10 @@ For each rollup bucket `(day, provider, model, agent, project)`:
 1. Select the effective enabled `ai_model_prices` row for the bucket's
    `(user_id, provider, model)` whose `[effective_from, effective_to)` window
    contains the bucket's day (resolved at the bucket day's local start-of-day
-   instant, in the summary timezone, converted to UTC — a fixed, reproducible
-   instant). When more than one enabled row matches, apply the
+   instant, in the same fixed aggregation timezone the `day` key was materialized
+   in — the owner's profile timezone — converted to UTC, so the price window is
+   evaluated against the same boundaries the bucket was built on and stays a
+   fixed, reproducible instant). When more than one enabled row matches, apply the
    deterministic precedence (FR-021): **owner row over default row, then latest
    `effective_from`**. Overlapping enabled windows within one default class are
    forbidden at write time, so this yields exactly one row.
@@ -170,9 +197,13 @@ Costs are never summed across currencies; buckets priced in another currency set
 
 A bucket's / summary's `estimated_cost` is the sum of matched same-currency
 contributions, or `null` when no contributing heartbeat matched an enabled price
-row in the summary currency. Token sums accumulate as bounded integers
-(per-field `<= 1e9`, FR-023) and cost accumulates as a double, keeping every
-aggregate within safe numeric range.
+row in the summary currency. Per-heartbeat token fields are bounded to `<= 1e9`
+(FR-023) and bucket sums are stored as D1 `INTEGER` (64-bit), so storage never
+overflows. The `<= 1e9` cap is per-field-per-heartbeat, not a per-aggregate
+bound: a single bucket summing more than ~9e6 max-value heartbeats can still
+exceed JavaScript's `2^53` safe-integer range when serialized to JSON, so PR2
+MUST keep such sums exact at the JSON boundary (or document the observed
+ceiling). Cost accumulates as a double.
 
 Estimated cost is an API-equivalent estimate, never the owner's subscription
 bill.
