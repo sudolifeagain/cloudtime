@@ -19,8 +19,8 @@
 
 ### Foundational
 
-- [ ] T101 Add migration `migrations/0007_ai_telemetry_and_prices.sql`: AI telemetry columns on `heartbeats`, the `ai_model_prices` table, and the `ai_daily_usage` rollup table; mirror in `src/db/schema.sql`.
-- [ ] T102 Add `(user_id, category, time)`, pricing lookup, and `ai_daily_usage(user_id, day)` indexes.
+- [x] T101 Add migration `migrations/0007_ai_telemetry_and_prices.sql`: AI telemetry columns on `heartbeats`, the `ai_model_prices` table, and the `ai_daily_usage` rollup table; mirror in `src/db/schema.sql`.
+- [x] T102 Add `(user_id, category, time)`, pricing lookup, and `ai_daily_usage(user_id, day)` indexes.
 
 ### User Story 1 - Ingest and return AI telemetry (P1)
 

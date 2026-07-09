@@ -112,6 +112,19 @@ CREATE TABLE IF NOT EXISTS heartbeats (
   lines INTEGER,
   ai_line_changes INTEGER,
   human_line_changes INTEGER,
+  -- AI coding telemetry (Issue #200). All nullable; numeric fields are
+  -- non-negative integers bounded <=1e9 at the API layer.
+  ai_session TEXT,
+  ai_subscription_plan TEXT,
+  ai_prompt_length INTEGER,
+  ai_input_tokens INTEGER,
+  ai_output_tokens INTEGER,
+  ai_cached_input_tokens INTEGER,
+  ai_reasoning_output_tokens INTEGER,
+  ai_cache_write_tokens INTEGER,
+  ai_cache_read_tokens INTEGER,
+  ai_provider TEXT,
+  ai_model TEXT,
   lineno INTEGER,
   cursorpos INTEGER,
   is_write INTEGER NOT NULL DEFAULT 0,
@@ -127,6 +140,9 @@ CREATE INDEX IF NOT EXISTS idx_heartbeats_user_time ON heartbeats(user_id, time)
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_project ON heartbeats(user_id, project);
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_date ON heartbeats(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_heartbeats_time ON heartbeats(time);
+-- Bounded reads for the AI usage rollup cron and category-scoped scans (#200).
+CREATE INDEX IF NOT EXISTS idx_heartbeats_user_category_time
+  ON heartbeats(user_id, category, time);
 
 -- ============================================================
 -- Summaries (daily aggregated, populated by cron)
@@ -426,3 +442,74 @@ CREATE TABLE IF NOT EXISTS embed_templates (
 
 CREATE INDEX IF NOT EXISTS idx_embed_templates_user_created
   ON embed_templates(user_id, created_at DESC);
+
+-- ============================================================
+-- AI Model Prices (owner-managed, effective-dated; Issue #200)
+-- Append-only rate rows (per 1,000,000 tokens in `currency`). Supersede a rate
+-- by inserting a new row or setting `effective_to`, never by rewriting history.
+-- Rows are always user-scoped; shipped starter defaults are seeded per user
+-- with is_default=1 (read-only via the owner endpoints), so every price lookup
+-- stays a plain WHERE user_id = ? with no global/nullable-user_id special case.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ai_model_prices (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'USD',
+  input_cost_per_mtok REAL,
+  cached_input_cost_per_mtok REAL,
+  output_cost_per_mtok REAL,
+  reasoning_output_cost_per_mtok REAL,
+  cache_write_cost_per_mtok REAL,
+  cache_read_cost_per_mtok REAL,
+  effective_from TEXT NOT NULL,
+  effective_to TEXT,
+  source_url TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  is_enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_model_prices_user ON ai_model_prices(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_model_prices_lookup
+  ON ai_model_prices(user_id, provider, model, effective_from);
+
+-- ============================================================
+-- AI Daily Usage (cron-maintained rollup; Issue #200)
+-- One row per (user, local day, provider, model, agent, project), summed from
+-- contributing `ai coding` heartbeats by src/cron/aggregate.ts off the same
+-- last_aggregated_at watermark as `summaries`. GET /ai/usage reads this rollup
+-- (aggregate-then-price) so the request path never scans raw heartbeats. The
+-- `day` key is materialized in the owner's fixed aggregation timezone; nullable
+-- source dimensions (currently only `project`) are coalesced to a '' sentinel
+-- before the UPSERT so a NULL never reaches the unique conflict target (SQLite
+-- compares NULLs distinct, which would defeat the ON CONFLICT dedup).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ai_daily_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  agent TEXT NOT NULL,
+  project TEXT NOT NULL DEFAULT '',
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+  reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  prompt_length_total INTEGER NOT NULL DEFAULT 0,
+  prompt_length_count INTEGER NOT NULL DEFAULT 0,
+  heartbeat_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_daily_usage_unique
+  ON ai_daily_usage(user_id, day, provider, model, agent, project);
+CREATE INDEX IF NOT EXISTS idx_ai_daily_usage_user_day
+  ON ai_daily_usage(user_id, day);
