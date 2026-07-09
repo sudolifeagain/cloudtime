@@ -2267,7 +2267,7 @@ export interface components {
             committer_date?: string;
             /**
              * Format: double
-             * @description Coding time in seconds for the commit. Either client-supplied at ingest or server-derived from surrounding heartbeats when the client omitted it. Absent when no time was supplied and none could be derived.
+             * @description Coding time in seconds for the commit. Either client-supplied at ingest or, for the single `POST .../commits` endpoint only, server-derived from surrounding heartbeats when the client omitted it; bulk ingestion (`commits.bulk`) never derives it. Absent when no time was supplied and none could be derived.
              */
             total_seconds?: number;
             /** @description Human-readable duration derived from total_seconds, treating missing stored time as zero. */
