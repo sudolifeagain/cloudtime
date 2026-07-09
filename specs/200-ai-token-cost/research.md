@@ -57,7 +57,10 @@ model, effective_from)`, append-only, with `effective_to`, `source_url`,
 
 **Rationale**: Provider prices change over time; owners need custom/local model
 rates. Effective-dating keeps historical estimates reproducible by computing
-cost from the row effective at each heartbeat's timestamp.
+cost from the row effective for each aggregation bucket's day — the row whose
+`[effective_from, effective_to)` window contains the bucket day's start-of-day
+instant in the fixed aggregation timezone (aggregate-then-price, Decision 11),
+not each individual heartbeat's timestamp.
 
 **Alternatives considered**: Mutating a single current-rate row per model.
 Rejected because it silently rewrites historical cost estimates.
@@ -171,11 +174,12 @@ price join is non-indexable.
 
 ## Decision 12: Deterministic price precedence
 
-**Decision**: When more than one enabled price row matches a heartbeat's
-`(provider, model)` and timestamp — legitimately possible when an owner row and
-a still-enabled default row coexist — select **owner over default, then latest
-`effective_from`**. PR2 additionally forbids overlapping enabled windows within
-one default class per `(user_id, provider, model)`.
+**Decision**: When more than one enabled price row matches a rollup bucket's
+`(provider, model)` at its resolution instant — the bucket day's start-of-day in
+the fixed aggregation timezone (Decision 11), legitimately possible when an owner
+row and a still-enabled default row coexist — select **owner over default, then
+latest `effective_from`**. PR2 additionally forbids overlapping enabled windows
+within one default class per `(user_id, provider, model)`.
 
 **Rationale**: Effective-dating exists to make historical estimates
 reproducible; without a tie-break two matching rows make cost non-deterministic.

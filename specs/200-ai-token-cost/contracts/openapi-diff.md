@@ -26,10 +26,10 @@ Because `Heartbeat` is `allOf: [HeartbeatInput, ...]`, and
 
 ## Added Schemas
 
-- `AITokenTotals`: token-class totals (`input`, `cached_input`, `output`,
-  `reasoning_output`, `cache_write`, `cache_read`), `prompt_length_total`,
-  nullable `prompt_length_avg`, `heartbeat_count`, nullable `estimated_cost`,
-  and `missing_price_count`.
+- `AITokenTotals`: token-class totals (`input_tokens`, `cached_input_tokens`,
+  `output_tokens`, `reasoning_output_tokens`, `cache_write_tokens`,
+  `cache_read_tokens`), `prompt_length_total`, nullable `prompt_length_avg`,
+  `heartbeat_count`, nullable `estimated_cost`, and `missing_price_count`.
 - `AIUsageSummary`: `start`, `end`, `timezone`, `currency`, optional
   `mixed_currency`, `totals`, and `daily` / `by_project` / `by_agent` /
   `by_provider` / `by_model` arrays composed with `AITokenTotals` via `allOf`.

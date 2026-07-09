@@ -144,19 +144,24 @@ different-user/unknown id returns `404`.
   bucket day's start-of-day instant in the fixed aggregation timezone, not each
   heartbeat's individual timestamp; it MUST NOT be presented as an actual
   subscription bill.
-- **FR-010**: When no enabled price row in the summary `currency` matches a
-  contributing heartbeat, that heartbeat MUST count toward `missing_price_count`
-  and be excluded from the cost sum; `estimated_cost` MUST be `null` (never a
-  silent zero) when no contributing heartbeat matches an enabled price row in the
-  summary `currency`.
+- **FR-010**: When no enabled price row in the summary `currency` *fully prices*
+  a contributing heartbeat's bucket — no row matched its `(provider, model)`, the
+  matched row is a different currency, or the matched row leaves a token class the
+  bucket used unpriced (a null rate) — that heartbeat MUST count toward
+  `missing_price_count` and be excluded from the cost sum; `estimated_cost` MUST
+  be `null` (never a silent zero) when no contributing heartbeat falls in a
+  fully-priced bucket in the summary `currency`. A price row prices only the token
+  classes for which it defines a rate, so a row that leaves a nonzero class
+  unpriced does not fully price the bucket (a used-but-unpriced class is never
+  silently valued at zero).
 - **FR-011**: The API MUST add owner-only pricing endpoints:
   `GET`/`POST /users/current/ai/prices` and
   `GET`/`PATCH`/`DELETE /users/current/ai/prices/{price_id}`.
 - **FR-012**: A price row (`AIModelPrice`) MUST be effective-dated with
-  `effective_from` and optional `effective_to`, carry per-1M-token rates for at
-  least input, cached input, output, reasoning output, cache write, and cache
-  read classes, and include `currency`, `source_url`, `is_default`, and
-  `is_enabled`.
+  `effective_from` and optional `effective_to`, carry per-1M-token rates across
+  the input, cached input, output, reasoning output, cache write, and cache read
+  classes (at least one of which MUST be present), and include `currency`,
+  `source_url`, `is_default`, and `is_enabled`.
 - **FR-013**: `provider`, `model`, and `effective_from` MUST be immutable after
   creation (changing them returns `400`); owners supersede rows by creating new
   ones or toggling `is_enabled`.

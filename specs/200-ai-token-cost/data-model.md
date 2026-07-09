@@ -88,15 +88,28 @@ To stay within the request CPU budget and match the existing cron-rollup
 architecture (`summaries` / `hourly_summaries`, built incrementally by
 `cron/aggregate.ts` from a `last_aggregated_at` watermark), `/ai/usage` reads a
 pre-aggregated daily rollup rather than scanning raw `heartbeats` at request
-time (FR-025). The cron job derives `provider`/`model`/`agent` once (from the
-stored `ai_provider`/`ai_model` fields, else user-agent metadata, else
-`unknown`) and writes summed token classes per bucket via `db.batch()`.
+time (FR-025). The cron job derives `provider`/`model`/`agent` once and writes
+summed token classes per bucket via `db.batch()`. `provider`/`model` come from
+the stored `ai_provider`/`ai_model` fields (else `unknown`); `agent` comes from
+the heartbeat's user-agent, whose label lives in the separate `user_agents`
+table — `heartbeats.user_agent_id` is only an FK, so the label is not on the
+heartbeat row. The cron resolves it with a `LEFT JOIN user_agents` on the
+heartbeat fetch (or a batched lookup keyed by the distinct `user_agent_id`s in
+the batch, the `getUserSettings` precedent in `aggregate.ts`), falling back to
+`unknown`; the heartbeat table itself is still scanned once.
 
 The `day` key is materialized in a fixed **aggregation timezone** — the owner's
-profile timezone — exactly as `summaries` builds its `date` key
-(`getDateForTimestamp(prev.time, tz)`, `src/cron/aggregate.ts:125`). Day
-boundaries are therefore stable once written; the request `timezone` param
-selects and labels the range but never re-buckets already-aggregated days
+profile timezone — with the same `getDateForTimestamp(time, tz)` helper
+`summaries` uses for its `date` key (`src/cron/aggregate.ts:125`), but keyed on
+the **token heartbeat's own `time`**, not the previous heartbeat's. `summaries`
+attributes a *duration interval* `[prev.time, curr.time)` and so keys it by
+`prev.time`; AI tokens instead belong to the single heartbeat that reported them
+and are summed only from `newHeartbeats`, so each token heartbeat's tokens land
+in the local day of its **own** `time`. Keying a 00:01-local token heartbeat by
+`prev.time` (e.g. 23:59 the previous day) would misattribute both its `daily[]`
+bucket and its price window (pricing it against the previous day's effective
+row). Day boundaries are therefore stable once written; the request `timezone`
+param selects and labels the range but never re-buckets already-aggregated days
 (FR-008).
 
 | Column | Type | Notes |
@@ -114,9 +127,9 @@ selects and labels the range but never re-buckets already-aggregated days
 | reasoning_output_tokens | INTEGER NOT NULL DEFAULT 0 | |
 | cache_write_tokens | INTEGER NOT NULL DEFAULT 0 | |
 | cache_read_tokens | INTEGER NOT NULL DEFAULT 0 | |
-| prompt_length_total | INTEGER NOT NULL DEFAULT 0 | sum of reported `ai_prompt_length` |
-| prompt_length_count | INTEGER NOT NULL DEFAULT 0 | count with `ai_prompt_length` (for avg) |
-| heartbeat_count | INTEGER NOT NULL DEFAULT 0 | contributing heartbeats (FR-026) |
+| prompt_length_total | INTEGER NOT NULL DEFAULT 0 | sum of reported `ai_prompt_length` across the bucket's *contributing* heartbeats |
+| prompt_length_count | INTEGER NOT NULL DEFAULT 0 | count of *contributing* heartbeats that carried `ai_prompt_length` (for avg) |
+| heartbeat_count | INTEGER NOT NULL DEFAULT 0 | count of *contributing* heartbeats (FR-026): `ai coding` rows with ≥1 priced token field |
 | updated_at | TEXT NOT NULL DEFAULT (datetime('now')) | |
 
 Uniqueness follows the working `summaries` pattern, not a nullable composite
@@ -135,12 +148,38 @@ double-counting token sums. Aggregation is incremental (only heartbeats newer
 than the watermark) and UPSERTs bucket sums, so a wide `/ai/usage` call reads a
 bounded number of rollup rows, not raw heartbeats.
 
+**Rollup build predicate & counts (FR-026).** The cron inserts/updates a bucket
+only for *contributing* heartbeats — `category = 'ai coding'` with at least one
+priced token field present (`ai_input_tokens`, `ai_output_tokens`,
+`ai_cached_input_tokens`, `ai_reasoning_output_tokens`, `ai_cache_write_tokens`,
+or `ai_cache_read_tokens`, decided by presence not value, so `ai_input_tokens: 0`
+still qualifies). A heartbeat carrying only `ai_prompt_length` and no priced
+token field is **not** contributing and **creates no rollup bucket**, so it is
+excluded from every rollup column. Concretely the build filter is
+`category = 'ai coding' AND (ai_input_tokens IS NOT NULL OR ai_output_tokens IS
+NOT NULL OR ai_cached_input_tokens IS NOT NULL OR ai_reasoning_output_tokens IS
+NOT NULL OR ai_cache_write_tokens IS NOT NULL OR ai_cache_read_tokens IS NOT
+NULL)`. `heartbeat_count` therefore counts only contributing heartbeats, and
+`prompt_length_total`/`prompt_length_count` sum/count `ai_prompt_length` across
+those contributing heartbeats that also reported it (so `prompt_length_avg =
+prompt_length_total / prompt_length_count`, `null` when the count is 0). This
+keeps the rollup columns byte-consistent with `AITokenTotals` — which excludes
+prompt-length-only heartbeats from every field — and avoids writing all-zero-token
+buckets that would bloat the rollup and inflate the `missing_price_count`
+denominator.
+
 **PR2 cron note (double-count hazard):** `aggregateHeartbeats` prepends
 `lookbackHeartbeats` (`time <= watermark`) for session-gap continuity
 (`src/cron/aggregate.ts:212`); the AI token SUMs MUST include only
 `newHeartbeats` (`time > watermark`), or each lookback heartbeat's tokens are
 re-added on every run. The fetch SELECT (`aggregate.ts:180-201`) must also be
-extended to read the new `ai_*` columns.
+extended to read the new `ai_*` columns and the `user_agent_id` (joined or
+looked up against `user_agents` for the `agent` dimension, per above). The
+`ai_daily_usage` UPSERTs MUST be enqueued in the **same** `db.batch()` as the
+`last_aggregated_at` watermark advance (exactly as the existing `summaries`
+aggregation does), so the watermark can never advance without the rollup rows
+persisting (which would drop those heartbeats) and the rollup can never persist
+without the watermark advancing (which would reprocess and double-count).
 
 ## AIModelPrice (contract shape)
 
@@ -183,11 +222,23 @@ For each rollup bucket `(day, provider, model, agent, project)`:
    deterministic precedence (FR-021): **owner row over default row, then latest
    `effective_from`**. Overlapping enabled windows within one default class are
    forbidden at write time, so this yields exactly one row.
-2. If a row matches **and its currency equals the summary currency**, add
+2. A matched row **fully prices** the bucket only when its currency equals the
+   summary currency **and it defines a non-null rate for every token class the
+   bucket has nonzero usage in**; then add
    `sum(token_class_total * rate_class) / 1e6` to the bucket cost. If no row
-   matches, or the matched row's currency differs from the summary currency,
-   count the bucket's contributing heartbeats in `missing_price_count` and add
-   nothing to the cost.
+   matches `(provider, model)` at the resolution instant, the matched row's
+   currency differs from the summary currency, **or the matched row leaves a
+   nonzero token class unpriced (a null rate for a class the bucket used)**, the
+   bucket is treated as unpriced: count its contributing heartbeats in
+   `missing_price_count` and add nothing to the cost. Because a price row may
+   legitimately define only some rate classes (validation requires only one), a
+   row is a *full match* for a bucket only when it covers all of that bucket's
+   nonzero classes. This preserves the "never a silent zero" guarantee
+   (FR-010 / SC-003): a partial-rate row can never value a used-but-unpriced
+   class at 0 inside a non-null `estimated_cost`; the whole bucket surfaces in
+   `missing_price_count` instead. `estimated_cost` thus reflects only
+   fully-priced buckets — a clean partition, no bucket is both partly summed and
+   flagged.
 
 **Summary currency selection (FR-022):** the summary reports one `currency`,
 chosen as the currency of the enabled price rows matching the most contributing
