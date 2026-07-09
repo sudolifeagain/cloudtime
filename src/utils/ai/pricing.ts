@@ -32,6 +32,57 @@ export const RATE_FIELDS = [
 
 export type RateField = (typeof RATE_FIELDS)[number];
 
+/**
+ * The six summed token-class fields, positionally aligned with {@link RATE_FIELDS}
+ * so `TOKEN_FIELDS[i]` is priced by `RATE_FIELDS[i]`. This ordering (which pairs
+ * `output_tokens` with `output_cost_per_mtok`, not the `ai_daily_usage` column
+ * order) is what {@link TOKEN_RATE_PAIRS} zips on — keep the two lists in lockstep.
+ */
+export const TOKEN_FIELDS = [
+  "input_tokens",
+  "cached_input_tokens",
+  "output_tokens",
+  "reasoning_output_tokens",
+  "cache_write_tokens",
+  "cache_read_tokens",
+] as const;
+
+export type TokenField = (typeof TOKEN_FIELDS)[number];
+
+/** Summed token totals for one rollup bucket (the priced token classes only). */
+export type BucketTokens = Record<TokenField, number>;
+
+/** The subset of a price row that carries the six per-1M-token rates. */
+export type PriceRates = Record<RateField, number | null>;
+
+/** `token_field -> rate_field` pairs, positionally aligned. */
+export const TOKEN_RATE_PAIRS: ReadonlyArray<readonly [TokenField, RateField]> =
+  TOKEN_FIELDS.map((t, i) => [t, RATE_FIELDS[i]] as const);
+
+/**
+ * Aggregate-then-price a single rollup bucket against an already-selected,
+ * same-currency enabled price row. Returns the API-equivalent cost in the row's
+ * currency, or `null` when the row leaves a token class the bucket actually used
+ * (nonzero total) unpriced (a null rate) — a *partial* match. A partial match
+ * never values a used class at 0: the caller treats the whole bucket as unpriced
+ * and counts it in `missing_price_count` instead (FR-010, "never a silent zero").
+ *
+ * A class with zero usage is skipped, so a row that only prices the classes the
+ * bucket used still fully prices it; a bucket with no nonzero class costs 0.
+ * Rates are per 1,000,000 tokens; cost accumulates as a double.
+ */
+export function priceBucket(tokens: BucketTokens, rates: PriceRates): number | null {
+  let cost = 0;
+  for (const [tokenField, rateField] of TOKEN_RATE_PAIRS) {
+    const qty = tokens[tokenField];
+    if (qty === 0) continue; // unused class → its rate is irrelevant
+    const rate = rates[rateField];
+    if (rate == null) return null; // used-but-unpriced class → partial match
+    cost += (qty * rate) / 1_000_000;
+  }
+  return cost;
+}
+
 /** Raw `ai_model_prices` row shape as read from D1. */
 export interface AiModelPriceRow {
   id: string;

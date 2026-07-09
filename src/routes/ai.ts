@@ -9,8 +9,9 @@
  */
 import { Hono } from "hono";
 import type { AuthEnv } from "../types";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, getUserTimezone } from "../middleware/auth";
 import { isValidDateTime } from "../utils/datetime";
+import { isValidTimezone } from "../utils/time-format";
 import {
   PRICE_SELECT_COLUMNS,
   rowToAiModelPrice,
@@ -20,9 +21,16 @@ import {
   windowsOverlap,
   type AiModelPriceRow,
 } from "../utils/ai/pricing";
+import {
+  AI_DAILY_USAGE_SELECT_COLUMNS,
+  buildUsageSummary,
+  resolveUsageRange,
+  type AiDailyUsageRow,
+} from "../utils/ai/usage";
 
 const ai = new Hono<AuthEnv>();
 
+ai.use("/ai/usage", authMiddleware);
 ai.use("/ai/prices", authMiddleware);
 ai.use("/ai/prices/*", authMiddleware);
 
@@ -287,6 +295,74 @@ ai.delete("/ai/prices/:price_id", async (c) => {
     return c.body(null, 204);
   } catch (err) {
     console.error("DELETE /ai/prices/:price_id error:", err);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+// GET /ai/usage — owner-only AI coding usage + estimated cost summary (US2).
+// Served entirely from the cron-built `ai_daily_usage` rollup (aggregate-then-
+// price); never scans raw heartbeats at request time. Owner-only via
+// authMiddleware (401 when unauthenticated); in single-user mode the sole
+// authenticated user is the owner. authMiddleware sets `Cache-Control: no-store`
+// so these cost reads are never cached. Prefer Authorization: Bearer over
+// ?api_key= on this endpoint so the key is not exposed in URLs/access logs.
+ai.get("/ai/usage", async (c) => {
+  const userId = c.get("userId");
+
+  // Aggregation timezone = the owner's profile tz, the fixed tz the rollup `day`
+  // keys and price windows were materialized in (FR-008/FR-025). The request
+  // `timezone` only anchors "today"/labels the range; it never re-buckets days.
+  const aggregationTz = await getUserTimezone(c);
+
+  const tzParam = c.req.query("timezone");
+  if (tzParam !== undefined && !isValidTimezone(tzParam)) {
+    return c.json({ error: "timezone must be a valid IANA name (e.g. Asia/Tokyo)" }, 400);
+  }
+  const requestTz = tzParam ?? aggregationTz;
+
+  const range = resolveUsageRange(
+    c.req.query("start"),
+    c.req.query("end"),
+    c.req.query("days"),
+    requestTz,
+  );
+  if (!range.ok) return c.json({ error: range.error }, 400);
+
+  const project = c.req.query("project");
+
+  try {
+    let sql =
+      `SELECT ${AI_DAILY_USAGE_SELECT_COLUMNS} FROM ai_daily_usage ` +
+      "WHERE user_id = ? AND day >= ? AND day <= ?";
+    const binds: (string | number)[] = [userId, range.start, range.end];
+    if (project !== undefined) {
+      sql += " AND project = ?";
+      binds.push(project);
+    }
+
+    const { results: rows } = await c.env.DB.prepare(sql)
+      .bind(...binds)
+      .all<AiDailyUsageRow>();
+
+    // Only enabled price rows participate in cost estimation.
+    const { results: prices } = await c.env.DB.prepare(
+      `SELECT ${PRICE_SELECT_COLUMNS} FROM ai_model_prices WHERE user_id = ? AND is_enabled = 1`,
+    )
+      .bind(userId)
+      .all<AiModelPriceRow>();
+
+    const summary = buildUsageSummary({
+      start: range.start,
+      end: range.end,
+      timezone: requestTz,
+      aggregationTz,
+      rows,
+      prices,
+    });
+
+    return c.json({ data: summary });
+  } catch (err) {
+    console.error("GET /ai/usage error:", err);
     return c.json({ error: "Internal server error" }, 500);
   }
 });
