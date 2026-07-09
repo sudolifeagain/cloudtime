@@ -1333,12 +1333,15 @@ export interface paths {
          *     body change; omitted fields are left untouched. Returns the updated row in
          *     the `AIModelPrice` shape.
          *
-         *     `provider`, `model`, and `effective_from` are immutable — sending any
-         *     returns 400. An empty body, an `effective_to` not strictly after
+         *     The existence and ownership check runs first: unknown ids, CloudTime-shipped
+         *     default rows (`is_default=true`), and rows owned by a different user return
+         *     404 before any body validation, so a 400 is never used to confirm that an id
+         *     the caller cannot edit exists (FR-015). Once the row is confirmed
+         *     owner-editable, `provider`, `model`, and `effective_from` are immutable —
+         *     sending any returns 400; an empty body, an `effective_to` not strictly after
          *     `effective_from`, a negative rate, or an invalid currency also return 400.
-         *     CloudTime-shipped default rows (`is_default=true`) and rows owned by a
-         *     different user return 404; the owner supersedes a default by creating an
-         *     owner row or toggling `is_enabled`.
+         *     The owner supersedes a default by creating an owner row or toggling
+         *     `is_enabled`.
          */
         patch: operations["updateAiPrice"];
         trace?: never;
@@ -2260,13 +2263,16 @@ export interface components {
          *     token field does not. Heartbeats that carry only `ai_prompt_length` and no
          *     priced token field do not contribute and are excluded from every field here.
          *
-         *     `estimated_cost` is an API-equivalent estimate computed from stored token
-         *     counts and the effective owner pricing rows for each heartbeat's timestamp. It
-         *     is NOT the owner's actual subscription bill. When no enabled price row in the
-         *     summary `currency` matches a contributing heartbeat, that heartbeat is counted
-         *     in `missing_price_count` and excluded from the cost sum. When no contributing
-         *     heartbeat matches an enabled price row in the summary `currency`,
-         *     `estimated_cost` is `null` (never a silent zero).
+         *     `estimated_cost` is an API-equivalent estimate computed from the rollup's
+         *     aggregated token counts and the effective owner pricing row resolved once per
+         *     daily bucket (aggregate-then-price) — the row whose
+         *     `[effective_from, effective_to)` window contains the bucket day's start-of-day
+         *     instant in the fixed aggregation timezone, not each individual heartbeat's
+         *     timestamp. It is NOT the owner's actual subscription bill. When no enabled
+         *     price row in the summary `currency` matches a contributing heartbeat, that
+         *     heartbeat is counted in `missing_price_count` and excluded from the cost sum.
+         *     When no contributing heartbeat matches an enabled price row in the summary
+         *     `currency`, `estimated_cost` is `null` (never a silent zero).
          */
         AITokenTotals: {
             input_tokens: number;
@@ -2275,11 +2281,11 @@ export interface components {
             reasoning_output_tokens: number;
             cache_write_tokens: number;
             cache_read_tokens: number;
-            /** @description Sum of reported `ai_prompt_length` for the bucket. */
+            /** @description Sum of reported `ai_prompt_length` across the bucket's contributing heartbeats. */
             prompt_length_total: number;
             /**
-             * @description Mean reported prompt length across heartbeats that carried
-             *     `ai_prompt_length`, or null when none did.
+             * @description Mean reported prompt length across the bucket's contributing heartbeats
+             *     that carried `ai_prompt_length`, or null when none did.
              */
             prompt_length_avg: number | null;
             /**
@@ -2297,7 +2303,9 @@ export interface components {
             estimated_cost: number | null;
             /**
              * @description Number of contributing heartbeats that have no enabled price row matching
-             *     their `(provider, model)` and timestamp in the summary `currency` — either
+             *     their `(provider, model)` in the summary `currency` at the bucket day's
+             *     start-of-day instant in the fixed aggregation timezone (the same
+             *     aggregate-then-price resolution used for `estimated_cost`) — either
              *     because no price row matched at all, or the matched row's currency differs
              *     from the summary `currency` (so its cost cannot be summed in).
              */
@@ -2386,9 +2394,11 @@ export interface components {
          *     discounted/subscription-equivalent assumptions.
          *
          *     Rows are effective-dated rather than mutated in place so historical cost
-         *     estimates stay reproducible: cost for a heartbeat is computed from the row
-         *     whose `[effective_from, effective_to)` window contains the heartbeat's
-         *     timestamp. Rates are expressed per 1,000,000 tokens in `currency`.
+         *     estimates stay reproducible: cost is resolved once per daily rollup bucket
+         *     (aggregate-then-price) from the row whose `[effective_from, effective_to)`
+         *     window contains the bucket day's start-of-day instant in the fixed aggregation
+         *     timezone, not each individual heartbeat's timestamp. Rates are expressed per
+         *     1,000,000 tokens in `currency`.
          *
          *     Estimated cost derived from these rows is an API-equivalent estimate, NOT the
          *     owner's actual subscription bill.
