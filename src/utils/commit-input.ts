@@ -98,3 +98,32 @@ export function validateCommitInput(body: unknown): ValidationResult<ValidatedCo
     },
   };
 }
+
+/**
+ * Validate a bulk ingestion request body: a JSON array of at most `maxItems`
+ * commit inputs (specs/147-commits-bulk-ingestion/). All-or-nothing — the first
+ * invalid element fails the whole batch with its index (`item {i}: {message}`),
+ * so the caller writes nothing. An empty array is valid and yields no rows.
+ * Pure: no D1, no correlation — the bulk path stores `total_seconds` verbatim.
+ */
+export function validateCommitInputBatch(
+  inputs: unknown,
+  maxItems: number,
+): ValidationResult<ValidatedCommit[]> {
+  if (!Array.isArray(inputs)) {
+    return fail("Request body must be an array");
+  }
+  if (inputs.length > maxItems) {
+    return fail(`Maximum ${maxItems} commits per request`);
+  }
+
+  const values: ValidatedCommit[] = [];
+  for (let i = 0; i < inputs.length; i++) {
+    const parsed = validateCommitInput(inputs[i]);
+    if (!parsed.ok) {
+      return fail(`item ${i}: ${parsed.error}`);
+    }
+    values.push(parsed.value);
+  }
+  return { ok: true, value: values };
+}
