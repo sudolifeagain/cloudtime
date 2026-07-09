@@ -1,0 +1,122 @@
+type: object
+description: |
+  Owner-only AI coding usage summary over a bounded date range. Aggregates
+  stored AI token facts into a daily trend plus breakdowns by project, AI
+  agent/tool, provider, and model, each carrying token totals and an
+  API-equivalent `estimated_cost`.
+
+  Costs are estimates derived from the owner's effective pricing table, not
+  authoritative billing. Buckets with no matching enabled price row surface a
+  `missing_price_count` and a `null` `estimated_cost` rather than a silent zero.
+required:
+  - start
+  - end
+  - timezone
+  - currency
+  - totals
+  - daily
+  - by_project
+  - by_agent
+  - by_provider
+  - by_model
+properties:
+  start:
+    type: string
+    format: date
+    description: Inclusive first local day of the summary window.
+  end:
+    type: string
+    format: date
+    description: Inclusive last local day of the summary window.
+  timezone:
+    type: string
+    description: IANA timezone used to bucket heartbeats into local days.
+    example: Asia/Tokyo
+  currency:
+    type: string
+    minLength: 3
+    maxLength: 3
+    description: |
+      ISO 4217 currency all `estimated_cost` values are expressed in. Derived
+      from the owner's pricing rows; mixed-currency price rows are reported via
+      `mixed_currency`.
+    example: USD
+  mixed_currency:
+    type: boolean
+    description: |
+      True when matched price rows used more than one currency, in which case
+      `estimated_cost` values may combine currencies and should be treated as
+      indicative only.
+  totals:
+    $ref: ./AITokenTotals.yaml
+  daily:
+    type: array
+    description: Per-day token totals and estimated cost, ordered by `date`.
+    items:
+      allOf:
+        - type: object
+          required:
+            - date
+          properties:
+            date:
+              type: string
+              format: date
+        - $ref: ./AITokenTotals.yaml
+  by_project:
+    type: array
+    description: Token totals and estimated cost grouped by project.
+    items:
+      allOf:
+        - type: object
+          required:
+            - project
+          properties:
+            project:
+              oneOf:
+                - type: string
+                - type: 'null'
+              description: Project name, or null for heartbeats with no project.
+        - $ref: ./AITokenTotals.yaml
+  by_agent:
+    type: array
+    description: |
+      Token totals and estimated cost grouped by AI agent/tool. The agent is
+      taken from an explicit client field when present, otherwise derived
+      best-effort from stored user-agent metadata; unresolved rows use
+      `unknown`.
+    items:
+      allOf:
+        - type: object
+          required:
+            - agent
+          properties:
+            agent:
+              type: string
+        - $ref: ./AITokenTotals.yaml
+  by_provider:
+    type: array
+    description: Token totals and estimated cost grouped by provider.
+    items:
+      allOf:
+        - type: object
+          required:
+            - provider
+          properties:
+            provider:
+              type: string
+        - $ref: ./AITokenTotals.yaml
+  by_model:
+    type: array
+    description: Token totals and estimated cost grouped by provider + model.
+    items:
+      allOf:
+        - type: object
+          required:
+            - provider
+            - model
+          properties:
+            provider:
+              type: string
+            model:
+              type: string
+        - $ref: ./AITokenTotals.yaml

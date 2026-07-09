@@ -54,6 +54,8 @@ tags:
     description: Git commit time tracking
   - name: embeddable_cards
     description: Public SVG stat cards and authenticated embed configuration
+  - name: ai
+    description: Owner-only AI coding token usage, pricing, and estimated cost analytics
   - name: orgs
     description: Organization and team management
   - name: meta
@@ -164,6 +166,14 @@ paths:
     $ref: paths/commits/commits.yaml
   /users/current/projects/{project}/commits/{hash}:
     $ref: paths/commits/commit.yaml
+
+  # --- ai ---
+  /users/current/ai/usage:
+    $ref: paths/ai/usage.yaml
+  /users/current/ai/prices:
+    $ref: paths/ai/prices.yaml
+  /users/current/ai/prices/{price_id}:
+    $ref: paths/ai/price.yaml
 
   # --- orgs ---
   /users/current/orgs:

@@ -1,0 +1,54 @@
+type: object
+description: |
+  Request body for partially updating an owner-created AI model price row. Only
+  fields present in the body change; omitted fields keep their current value. At
+  least one field MUST be provided (an empty body returns 400).
+
+  `provider`, `model`, and `effective_from` are immutable after creation because
+  changing them would reinterpret historical cost estimates; callers must create
+  a new row instead, and sending any of them returns 400. CloudTime-shipped
+  default rows (`is_default=true`) are not editable through this endpoint and
+  return 404; the owner supersedes them by creating an owner row or toggling
+  `is_enabled`. When `effective_to` is provided it MUST be strictly after the
+  row's `effective_from`, otherwise 400.
+properties:
+  currency:
+    type: string
+    minLength: 3
+    maxLength: 3
+  input_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+  cached_input_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+  output_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+  reasoning_output_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+  cache_write_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+  cache_read_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+  effective_to:
+    oneOf:
+      - type: string
+        format: date-time
+      - type: 'null'
+  source_url:
+    oneOf:
+      - type: string
+        maxLength: 2048
+      - type: 'null'
+  is_enabled:
+    type: boolean
