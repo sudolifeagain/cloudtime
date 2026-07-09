@@ -3335,7 +3335,9 @@ export interface operations {
                 /**
                  * @description Optional comma-separated metric list for the `profile` composite card.
                  *     Omit to use the server default. Repeated, unknown, or unsupported metric
-                 *     names return `400`.
+                 *     names return `400`. The `goal_progress` section renders an inverse (cap)
+                 *     goal as the share of the cap consumed, labeled as a cap so an exceeded
+                 *     cap reads as a blown budget rather than achievement.
                  */
                 metrics?: ("today" | "week" | "all_time" | "top_language" | "current_streak" | "goal_progress")[];
                 /** @description Optional layout for the `profile` composite card. */
@@ -3383,7 +3385,10 @@ export interface operations {
                 range?: "today" | "last_7_days" | "last_30_days" | "last_6_months" | "last_year" | "all_time";
                 /**
                  * @description Optional goal identifier for the `goal_progress` badge. When omitted,
-                 *     the first enabled, non-snoozed goal ordered by creation time is used.
+                 *     the first enabled, non-snoozed goal ordered by creation time is used;
+                 *     `is_inverse` never affects which goal is selected. For an inverse (cap)
+                 *     goal the badge renders the share of the cap consumed and labels it as a
+                 *     cap, so an exceeded cap reads as a blown budget rather than achievement.
                  */
                 goal_id?: string;
                 /** @description Optional short label override for the left side of the badge. */
