@@ -24,7 +24,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await truncate("commits", "users");
+  await truncate("commits", "heartbeats", "users");
   await env.KV.delete(`apikey:${user.apiKeyHash}`);
 });
 
@@ -77,6 +77,26 @@ async function seedCommits(userId: string, items: SeedCommit[]): Promise<void> {
     ),
   );
   await env.DB.batch(stmts);
+}
+
+interface HeartbeatSeed {
+  time: number;
+  project?: string;
+}
+
+/** Seed raw heartbeats (epoch-second `time`, project) for correlation tests. */
+async function seedHeartbeats(userId: string, items: HeartbeatSeed[]): Promise<void> {
+  const stmts = items.map((h) =>
+    env.DB.prepare(
+      "INSERT INTO heartbeats (id, user_id, entity, time, project) VALUES (?, ?, 'file.ts', ?, ?)",
+    ).bind(crypto.randomUUID(), userId, h.time, h.project ?? PROJECT),
+  );
+  await env.DB.batch(stmts);
+}
+
+/** Epoch seconds → RFC3339 string for an `author_date` body field. */
+function rfc(sec: number): string {
+  return new Date(sec * 1000).toISOString();
 }
 
 interface CommitShape {
@@ -289,5 +309,161 @@ describe("POST .../commits (ingestion)", () => {
     const bobList = await call(COMMITS, { headers: bearer(bob.apiKey) });
     expect(((await bobList.json()) as { data: CommitShape[] }).data).toEqual([]);
     await env.KV.delete(`apikey:${bob.apiKeyHash}`);
+  });
+});
+
+describe("POST .../commits (heartbeat correlation, #145)", () => {
+  // Fixed base instant; the seeded user's timeout defaults to 15 minutes (900s).
+  const BASE = Math.floor(Date.parse("2026-06-05T00:00:00Z") / 1000);
+
+  it("US1: derives total_seconds from surrounding heartbeats when omitted", async () => {
+    // 16 beats at a 2-minute cadence → 15 gaps × 120s = 1800s of active coding.
+    const beats = Array.from({ length: 16 }, (_, i) => ({ time: BASE + i * 120 }));
+    await seedHeartbeats(user.userId, beats);
+
+    const res = await postCommit(PROJECT, { hash: "derive", author_date: rfc(BASE + 1800) }, user.apiKey);
+    expect(res.status).toBe(201);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.total_seconds).toBe(1800);
+    expect(data.human_readable_total).toBe("30 mins");
+  });
+
+  it("US2: a client-supplied total_seconds wins over correlation", async () => {
+    await seedHeartbeats(
+      user.userId,
+      Array.from({ length: 16 }, (_, i) => ({ time: BASE + i * 120 })),
+    );
+
+    const res = await postCommit(
+      PROJECT,
+      { hash: "supplied", author_date: rfc(BASE + 1800), total_seconds: 1234 },
+      user.apiKey,
+    );
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.total_seconds).toBe(1234); // not the correlated ~1800
+  });
+
+  it("US2: an explicit 0 is a supplied value (correlation skipped)", async () => {
+    await seedHeartbeats(user.userId, [{ time: BASE }, { time: BASE + 120 }, { time: BASE + 240 }]);
+
+    const res = await postCommit(
+      PROJECT,
+      { hash: "zero", author_date: rfc(BASE + 240), total_seconds: 0 },
+      user.apiKey,
+    );
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.total_seconds).toBe(0); // stored 0, not the correlated 240
+    expect(data.human_readable_total).toBe("0 secs");
+  });
+
+  it("no heartbeats in window → total_seconds absent, '0 secs' (pre-#145 output)", async () => {
+    const res = await postCommit("empty", { hash: "notime", author_date: rfc(BASE + 100) }, user.apiKey);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data).not.toHaveProperty("total_seconds");
+    expect(data.human_readable_total).toBe("0 secs");
+  });
+
+  it("US3: consecutive commits split the session without double-counting", async () => {
+    // One continuous 40-minute session at a 2-minute cadence.
+    await seedHeartbeats(
+      user.userId,
+      Array.from({ length: 21 }, (_, i) => ({ time: BASE + i * 120 })),
+    );
+
+    const a = await postCommit(PROJECT, { hash: "A", author_date: rfc(BASE + 1200) }, user.apiKey);
+    const b = await postCommit(PROJECT, { hash: "B", author_date: rfc(BASE + 2400) }, user.apiKey);
+    const aSecs = ((await a.json()) as { data: CommitShape }).data.total_seconds;
+    const bSecs = ((await b.json()) as { data: CommitShape }).data.total_seconds;
+
+    expect(aSecs).toBe(1200);
+    expect(bSecs).toBe(1200); // window lower bound is A's author_date — no re-count
+    expect((aSecs ?? 0) + (bSecs ?? 0)).toBe(2400);
+  });
+
+  it("US3: an idle gap beyond the timeout is excluded (matches summaries)", async () => {
+    // t,+60,+120,[30-min idle],+1920,+1980 → 60 + 60 + 0 + 60 = 180
+    await seedHeartbeats(user.userId, [
+      { time: BASE },
+      { time: BASE + 60 },
+      { time: BASE + 120 },
+      { time: BASE + 1920 },
+      { time: BASE + 1980 },
+    ]);
+
+    const res = await postCommit(PROJECT, { hash: "idle", author_date: rfc(BASE + 1980) }, user.apiKey);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.total_seconds).toBe(180);
+  });
+
+  it("interleaved other-project heartbeats are attributed by project, not absorbed", async () => {
+    await seedHeartbeats(user.userId, [
+      { time: BASE, project: PROJECT },
+      { time: BASE + 120, project: "other-proj" },
+      { time: BASE + 240, project: PROJECT },
+    ]);
+
+    const res = await postCommit(PROJECT, { hash: "multi", author_date: rfc(BASE + 240) }, user.apiKey);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.total_seconds).toBe(120); // the other-proj detour (would be 240 under a pre-filter) is excluded
+  });
+
+  it("heartbeats only in other projects → total_seconds absent", async () => {
+    await seedHeartbeats(user.userId, [
+      { time: BASE, project: "other-proj" },
+      { time: BASE + 120, project: "other-proj" },
+    ]);
+
+    const res = await postCommit(PROJECT, { hash: "elsewhere", author_date: rfc(BASE + 120) }, user.apiKey);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data).not.toHaveProperty("total_seconds");
+  });
+
+  it("re-posting an omitted commit re-derives as heartbeats arrive late", async () => {
+    const T = BASE + 240;
+    const first = await postCommit(PROJECT, { hash: "late", author_date: rfc(T) }, user.apiKey);
+    expect(((await first.json()) as { data: CommitShape }).data).not.toHaveProperty("total_seconds");
+
+    // Heartbeats flush after the first post, then the same commit is re-posted.
+    await seedHeartbeats(user.userId, [{ time: T - 240 }, { time: T - 120 }, { time: T }]);
+    const again = await postCommit(PROJECT, { hash: "late", author_date: rfc(T) }, user.apiKey);
+    const { data } = (await again.json()) as { data: CommitShape };
+    expect(data.total_seconds).toBe(240); // now derived from the late heartbeats
+  });
+
+  it("omitted author_date correlates against a window ending at now", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    // Two 120s gaps well before now, safely inside [now - 24h, now].
+    await seedHeartbeats(user.userId, [{ time: now - 300 }, { time: now - 180 }, { time: now - 60 }]);
+
+    const res = await postCommit(PROJECT, { hash: "nodate" }, user.apiKey);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.total_seconds).toBe(240);
+  });
+
+  it("excludes the previous commit's own hash from the boundary lookup", async () => {
+    // A prior same-project commit at BASE+1200 partitions this commit's window.
+    await seedHeartbeats(
+      user.userId,
+      Array.from({ length: 21 }, (_, i) => ({ time: BASE + i * 120 })),
+    );
+    await postCommit(PROJECT, { hash: "prev", author_date: rfc(BASE + 1200) }, user.apiKey);
+
+    // Re-posting the SAME hash must not use itself as its own lower bound.
+    const res = await postCommit(PROJECT, { hash: "prev", author_date: rfc(BASE + 1200) }, user.apiKey);
+    const { data } = (await res.json()) as { data: CommitShape };
+    expect(data.total_seconds).toBe(1200); // window [BASE, BASE+1200], not [BASE+1200, BASE+1200]
+  });
+
+  it("does not modify the summaries aggregate (commits stay an independent series)", async () => {
+    await seedHeartbeats(
+      user.userId,
+      Array.from({ length: 16 }, (_, i) => ({ time: BASE + i * 120 })),
+    );
+    await postCommit(PROJECT, { hash: "indep", author_date: rfc(BASE + 1800) }, user.apiKey);
+
+    const summaries = await env.DB.prepare("SELECT COUNT(*) AS n FROM summaries WHERE user_id = ?")
+      .bind(user.userId)
+      .first<{ n: number }>();
+    expect(summaries?.n).toBe(0);
   });
 });

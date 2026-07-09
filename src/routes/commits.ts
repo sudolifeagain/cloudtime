@@ -1,18 +1,29 @@
 /**
- * Per-commit coding-time endpoints (specs/107-commits/, specs/135-commits-ingestion/).
+ * Per-commit coding-time endpoints (specs/107-commits/, specs/135-commits-ingestion/,
+ * specs/145-commit-duration-correlation/).
  *
  * Read: a paginated list and a single-commit lookup over the `commits` table.
  * Write: `POST .../commits` ingests one commit (a git post-commit hook or a
- * webhook adapter), idempotent on (user_id, project, hash). `total_seconds`
- * is client-supplied; the server does not correlate heartbeats.
+ * webhook adapter), idempotent on (user_id, project, hash). A client-supplied
+ * `total_seconds` (including an explicit `0`) is stored verbatim; when omitted,
+ * the server derives it at ingest time by correlating the user's heartbeats
+ * around the commit (Issue #145 — see {@link correlateCommitSeconds}).
  */
+import type { Context } from "hono";
 import { Hono } from "hono";
 import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, getUserTimeout } from "../middleware/auth";
 import { normalizeDateTime } from "../utils/user";
 import { formatHumanReadable } from "../utils/time-format";
 import { validateCommitInput } from "../utils/commit-input";
+import {
+  CORRELATION_HEARTBEAT_LIMIT,
+  MAX_CORRELATION_WINDOW,
+  resolveWindow,
+  sumActiveSeconds,
+  type CorrelationRow,
+} from "../utils/commit-correlation";
 
 type Commit = components["schemas"]["Commit"];
 
@@ -80,6 +91,63 @@ function parsePage(raw: string | undefined): number | null {
   return n >= 1 ? n : null;
 }
 
+/**
+ * Derive a commit's coding time from the authenticated user's heartbeats around
+ * it (Issue #145), run only when the client omitted `total_seconds`. Bounded:
+ * a previous-commit-partitioned, 24h-capped window and a heartbeat read capped
+ * at {@link CORRELATION_HEARTBEAT_LIMIT} rows — never a full scan (FR-007).
+ *
+ * The window is `[lower, upper]` (upper inclusive): `upper` is the commit's
+ * `author_date` epoch (or ingest `now` when omitted); `lower` is the greater of
+ * the previous same-project commit's `author_date` and `upper - 24h`. Epochs are
+ * resolved in SQLite via `strftime('%s', …)` to avoid JS parse ambiguity on the
+ * stored space-separated datetime text. The heartbeat read is NOT project-
+ * filtered — the full in-window user stream is gapped and each interval credited
+ * to its earlier heartbeat's project, so attribution matches `computeDurations`
+ * (research D-4). Returns the rounded seconds when `> 0`, else `null`.
+ */
+async function correlateCommitSeconds(
+  c: Context<AuthEnv>,
+  userId: string,
+  project: string,
+  hash: string,
+  authorDateText: string | null,
+): Promise<number | null> {
+  // Resolve both window epochs server-side: the upper bound (author_date, or
+  // `now` when omitted) and the previous same-project commit's boundary
+  // (greatest author_date strictly before upper, excluding this commit's hash;
+  // a null-author_date prior is not eligible via MAX).
+  const bounds = await c.env.DB.prepare(
+    `SELECT
+       CAST(strftime('%s', COALESCE(?, 'now')) AS INTEGER) AS upper_epoch,
+       CAST(strftime('%s', (
+         SELECT MAX(author_date) FROM commits
+         WHERE user_id = ? AND project = ? AND hash != ?
+           AND author_date < COALESCE(?, datetime('now'))
+       )) AS INTEGER) AS prev_epoch`,
+  )
+    .bind(authorDateText, userId, project, hash, authorDateText)
+    .first<{ upper_epoch: number | null; prev_epoch: number | null }>();
+
+  const upperEpoch = bounds?.upper_epoch;
+  if (upperEpoch == null) return null; // unparseable author_date guarded upstream
+
+  const lowerEpoch = resolveWindow(upperEpoch, bounds?.prev_epoch ?? null, MAX_CORRELATION_WINDOW);
+  const timeoutSec = (await getUserTimeout(c)) * 60; // stored minutes → seconds
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT time, project FROM heartbeats
+      WHERE user_id = ? AND time >= ? AND time <= ?
+      ORDER BY time ASC
+      LIMIT ?`,
+  )
+    .bind(userId, lowerEpoch, upperEpoch, CORRELATION_HEARTBEAT_LIMIT)
+    .all<CorrelationRow>();
+
+  const derived = sumActiveSeconds(results, project, timeoutSec);
+  return derived > 0 ? derived : null;
+}
+
 const commits = new Hono<AuthEnv>();
 
 commits.use("/projects/:project/commits", authMiddleware);
@@ -103,6 +171,14 @@ commits.post("/projects/:project/commits", async (c) => {
   const v = parsed.value;
 
   try {
+    // A client-supplied value (incl. explicit 0) wins and skips correlation,
+    // preserving the fast single-upsert path (FR-002). Only an omitted/null
+    // total_seconds triggers the heartbeat correlation query (FR-001).
+    const totalSeconds =
+      v.total_seconds !== null
+        ? v.total_seconds
+        : await correlateCommitSeconds(c, userId, project, v.hash, v.author_date);
+
     const row = await c.env.DB.prepare(UPSERT_SQL)
       .bind(
         crypto.randomUUID(),
@@ -116,7 +192,7 @@ commits.post("/projects/:project/commits", async (c) => {
         v.committer_name,
         v.committer_email,
         v.committer_date,
-        v.total_seconds,
+        totalSeconds,
         v.ref,
         v.url,
       )
