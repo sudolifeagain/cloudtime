@@ -1,6 +1,6 @@
 /**
  * Per-commit coding-time endpoints (specs/107-commits/, specs/135-commits-ingestion/,
- * specs/145-commit-duration-correlation/).
+ * specs/145-commit-duration-correlation/, specs/147-commits-bulk-ingestion/).
  *
  * Read: a paginated list and a single-commit lookup over the `commits` table.
  * Write: `POST .../commits` ingests one commit (a git post-commit hook or a
@@ -8,6 +8,11 @@
  * `total_seconds` (including an explicit `0`) is stored verbatim; when omitted,
  * the server derives it at ingest time by correlating the user's heartbeats
  * around the commit (Issue #145 — see {@link correlateCommitSeconds}).
+ * `POST .../commits.bulk` ingests up to 100 commits in one all-or-nothing
+ * `db.batch()`; it stores each `total_seconds` verbatim and never correlates
+ * heartbeats (Issue #147 — a per-commit scan over the batch would blow the
+ * Workers per-request subrequest/CPU budget; callers wanting derived time use
+ * the single endpoint).
  */
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -16,7 +21,11 @@ import type { components } from "../types/generated";
 import { authMiddleware, getUserTimeout } from "../middleware/auth";
 import { normalizeDateTime } from "../utils/user";
 import { formatHumanReadable } from "../utils/time-format";
-import { validateCommitInput } from "../utils/commit-input";
+import {
+  validateCommitInput,
+  validateCommitInputBatch,
+  type ValidatedCommit,
+} from "../utils/commit-input";
 import {
   CORRELATION_HEARTBEAT_LIMIT,
   MAX_CORRELATION_WINDOW,
@@ -28,6 +37,7 @@ import {
 type Commit = components["schemas"]["Commit"];
 
 const PAGE_SIZE = 100;
+const MAX_BULK = 100;
 
 interface CommitRow {
   hash: string;
@@ -81,6 +91,37 @@ function rowToCommit(row: CommitRow): Commit {
     ref: row.ref ?? undefined,
     url: row.url ?? undefined,
   };
+}
+
+/**
+ * Bind the idempotent commit upsert for one validated commit. Shared by the
+ * single-commit `POST` (which passes the correlated or client-supplied
+ * `totalSeconds`) and the bulk `POST` (which passes the supplied value
+ * verbatim, no correlation). `project` comes from the path, not the body.
+ */
+function commitUpsertStmt(
+  db: D1Database,
+  userId: string,
+  project: string,
+  v: ValidatedCommit,
+  totalSeconds: number | null,
+): D1PreparedStatement {
+  return db.prepare(UPSERT_SQL).bind(
+    crypto.randomUUID(),
+    userId,
+    project,
+    v.hash,
+    v.message,
+    v.author_name,
+    v.author_email,
+    v.author_date,
+    v.committer_name,
+    v.committer_email,
+    v.committer_date,
+    totalSeconds,
+    v.ref,
+    v.url,
+  );
 }
 
 /** Parse the 1-based `page` query param; null when invalid (non-integer or < 1). */
@@ -151,6 +192,7 @@ async function correlateCommitSeconds(
 const commits = new Hono<AuthEnv>();
 
 commits.use("/projects/:project/commits", authMiddleware);
+commits.use("/projects/:project/commits.bulk", authMiddleware);
 commits.use("/projects/:project/commits/*", authMiddleware);
 
 commits.post("/projects/:project/commits", async (c) => {
@@ -179,24 +221,7 @@ commits.post("/projects/:project/commits", async (c) => {
         ? v.total_seconds
         : await correlateCommitSeconds(c, userId, project, v.hash, v.author_date);
 
-    const row = await c.env.DB.prepare(UPSERT_SQL)
-      .bind(
-        crypto.randomUUID(),
-        userId,
-        project,
-        v.hash,
-        v.message,
-        v.author_name,
-        v.author_email,
-        v.author_date,
-        v.committer_name,
-        v.committer_email,
-        v.committer_date,
-        totalSeconds,
-        v.ref,
-        v.url,
-      )
-      .first<CommitRow>();
+    const row = await commitUpsertStmt(c.env.DB, userId, project, v, totalSeconds).first<CommitRow>();
     if (!row) {
       console.error("POST /projects/:project/commits error: upsert returned no row");
       return c.json({ error: "Internal server error" }, 500);
@@ -204,6 +229,51 @@ commits.post("/projects/:project/commits", async (c) => {
     return c.json({ data: rowToCommit(row) }, 201);
   } catch (err) {
     console.error("POST /projects/:project/commits error:", err);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+commits.post("/projects/:project/commits.bulk", async (c) => {
+  const userId = c.get("userId");
+  const project = c.req.param("project");
+
+  let inputs: unknown;
+  try {
+    inputs = await c.req.json();
+  } catch {
+    return c.json({ error: "Request body must be valid JSON" }, 400);
+  }
+
+  // All-or-nothing: reject a non-array / over-cap body and validate every
+  // element before writing anything (FR-003); the first failure reports its
+  // index and nothing is persisted.
+  const parsed = validateCommitInputBatch(inputs, MAX_BULK);
+  if (!parsed.ok) {
+    return c.json({ error: parsed.error }, 400);
+  }
+  const validated = parsed.value;
+
+  if (validated.length === 0) {
+    return c.json({ data: [] }, 201);
+  }
+
+  try {
+    // Bulk stores each supplied total_seconds verbatim (an explicit 0 included,
+    // omitted → null) and NEVER correlates heartbeats (FR-005, FR-011): a
+    // per-commit scan across the batch would exceed the Workers per-request
+    // subrequest/CPU budget. One db.batch() runs the idempotent upserts in a
+    // single transaction, so an in-batch duplicate (project, hash) applies
+    // last-wins while the response still returns one entry per input in order.
+    const batchResults = await c.env.DB.batch<CommitRow>(
+      validated.map((v) => commitUpsertStmt(c.env.DB, userId, project, v, v.total_seconds)),
+    );
+    const data = batchResults
+      .map((res) => res.results?.[0])
+      .filter((row): row is CommitRow => row !== undefined)
+      .map(rowToCommit);
+    return c.json({ data }, 201);
+  } catch (err) {
+    console.error("POST /projects/:project/commits.bulk error:", err);
     return c.json({ error: "Internal server error" }, 500);
   }
 });
