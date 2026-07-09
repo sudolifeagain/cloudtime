@@ -1171,11 +1171,15 @@ export interface paths {
          *     can be retried safely. Always returns 201 with the stored `Commit`.
          *
          *     `hash` is required and must be non-empty. `total_seconds` is the optional
-         *     client-supplied coding time for the commit (the server does not correlate
-         *     heartbeats); when present it must be a number >= 0. `author_date` and
-         *     `committer_date`, when present, must be valid date-times. `ref` is the
-         *     branch (the read endpoints filter `branch` against it). Validation
-         *     failures return 400.
+         *     coding time for the commit; when present it must be a number >= 0 and is
+         *     stored verbatim. When it is omitted, the server derives the commit's coding
+         *     time by correlating the user's heartbeats for this project in a bounded
+         *     window ending at `author_date` (falling back to the ingest time) and bounded
+         *     below by the previous commit, using the same session-timeout rule as the
+         *     daily summaries; if no heartbeats fall in the window the value stays absent.
+         *     `author_date` and `committer_date`, when present, must be valid date-times.
+         *     `ref` is the branch (the read endpoints filter `branch` against it).
+         *     Validation failures return 400.
          */
         post: operations["createProjectCommit"];
         delete?: never;
@@ -2223,7 +2227,10 @@ export interface components {
             committer_email?: string;
             /** Format: date-time */
             committer_date?: string;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Coding time in seconds for the commit. Either client-supplied at ingest or server-derived from surrounding heartbeats when the client omitted it. Absent when no time was supplied and none could be derived.
+             */
             total_seconds?: number;
             /** @description Human-readable duration derived from total_seconds, treating missing stored time as zero. */
             human_readable_total: string;
@@ -2244,7 +2251,10 @@ export interface components {
             committer_email?: string;
             /** Format: date-time */
             committer_date?: string;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Client-supplied coding time in seconds for the commit. Optional: when omitted the server derives it by correlating heartbeats around the commit (see the ingestion operation). An explicit value (including 0) is stored verbatim and is never overwritten by correlation.
+             */
             total_seconds?: number;
             ref?: string;
             /** Format: uri */
