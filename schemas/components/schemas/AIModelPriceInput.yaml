@@ -1,0 +1,78 @@
+type: object
+description: |
+  Request body for creating an owner-scoped AI model price row.
+
+  Server-generated fields (`id`, `is_default`, `created_at`, `updated_at`) are
+  omitted and ignored if sent. Owner-created rows always have `is_default`
+  false. At least one rate field MUST be provided (a row with no rates cannot
+  produce an estimate and returns 400). `currency` defaults to `USD`.
+  `is_enabled` defaults to true. When `effective_to` is provided it MUST be
+  strictly after `effective_from`, otherwise 400.
+required:
+  - provider
+  - model
+  - effective_from
+properties:
+  provider:
+    type: string
+    minLength: 1
+    maxLength: 255
+  model:
+    type: string
+    minLength: 1
+    maxLength: 255
+  currency:
+    type: string
+    pattern: '^[A-Z]{3}$'
+    description: |
+      Upper-case ISO 4217 currency code. Defaults to `USD` when omitted;
+      lower-case or non-alphabetic codes are rejected with 400.
+  input_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+  cached_input_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+  output_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+  reasoning_output_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+  cache_write_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+  cache_read_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+  effective_from:
+    type: string
+    format: date-time
+  effective_to:
+    oneOf:
+      - type: string
+        format: date-time
+      - type: 'null'
+  source_url:
+    oneOf:
+      - type: string
+        format: uri
+        maxLength: 2048
+        pattern: '^https?://'
+      - type: 'null'
+    description: Provenance URL; must be `http`/`https` (rejects other schemes).
+  is_enabled:
+    type: boolean
+    description: Defaults to `true` when omitted.

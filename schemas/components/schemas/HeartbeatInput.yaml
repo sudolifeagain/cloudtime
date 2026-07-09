@@ -51,6 +51,79 @@ properties:
     type: integer
   human_line_changes:
     type: integer
+  ai_session:
+    type: string
+    maxLength: 255
+    description: |
+      Opaque identifier for the AI coding session the heartbeat belongs to,
+      as reported by a compatible client. Stored verbatim; never parsed for
+      prompt or response content.
+  ai_subscription_plan:
+    type: string
+    maxLength: 255
+    description: |
+      Subscription/plan label reported by a compatible client (e.g. a plan
+      name). Retained for grouping only; CloudTime never treats it as a
+      billing source.
+  ai_prompt_length:
+    type: integer
+    minimum: 0
+    maximum: 1000000000
+    description: |
+      Prompt length as reported by the client. The unit (characters vs tokens)
+      is client-defined and not normalized across clients, so it is aggregated
+      and displayed for trend context only and is never used to compute
+      `estimated_cost`. Bounded to reject garbage values.
+  ai_input_tokens:
+    type: integer
+    minimum: 0
+    maximum: 1000000000
+    description: |
+      Input (prompt) tokens billed for this AI interaction. Bounded to keep cost
+      accumulation within safe numeric range and reject garbage values.
+  ai_output_tokens:
+    type: integer
+    minimum: 0
+    maximum: 1000000000
+    description: Output (completion) tokens billed for this AI interaction.
+  ai_cached_input_tokens:
+    type: integer
+    minimum: 0
+    maximum: 1000000000
+    description: |
+      Input tokens served from a provider prompt cache, priced separately from
+      fresh input tokens by some providers.
+  ai_reasoning_output_tokens:
+    type: integer
+    minimum: 0
+    maximum: 1000000000
+    description: |
+      Reasoning/thinking output tokens, priced separately from visible output
+      tokens by some providers.
+  ai_cache_write_tokens:
+    type: integer
+    minimum: 0
+    maximum: 1000000000
+    description: Tokens written to a provider prompt cache (cache-creation class).
+  ai_cache_read_tokens:
+    type: integer
+    minimum: 0
+    maximum: 1000000000
+    description: Tokens read from a provider prompt cache (cache-hit class).
+  ai_provider:
+    type: string
+    maxLength: 255
+    description: |
+      Provider identifier for the AI model, when a compatible client supplies
+      it (e.g. `openai`, `anthropic`). When absent, CloudTime derives it
+      best-effort from stored user-agent metadata.
+  ai_model:
+    type: string
+    maxLength: 255
+    description: |
+      Model identifier for the AI interaction, when a compatible client
+      supplies it (e.g. `gpt-4o`, `claude-opus-4`). When absent, CloudTime
+      derives it best-effort from stored user-agent metadata.
   lineno:
     type: integer
   cursorpos:

@@ -1,0 +1,95 @@
+get:
+  operationId: getAiPrices
+  tags:
+    - ai
+  summary: List AI model price rows
+  description: |
+    Returns the owner-visible AI model price rows: CloudTime-shipped defaults
+    (`is_default=true`) plus any owner-created rows, ordered by `provider`,
+    `model`, then `effective_from` ascending.
+
+    Optional `provider` and `model` filters narrow the list. `active_on`
+    returns only rows whose `[effective_from, effective_to)` window contains the
+    given instant. Disabled rows are excluded unless `include_disabled=true`.
+
+    A malformed `active_on` (not RFC 3339 date-time) or a non-boolean
+    `include_disabled` returns 400.
+  parameters:
+    - name: provider
+      in: query
+      required: false
+      schema:
+        type: string
+    - name: model
+      in: query
+      required: false
+      schema:
+        type: string
+    - name: active_on
+      in: query
+      required: false
+      description: |
+        Return only rows effective at this instant (RFC 3339 date-time).
+      schema:
+        type: string
+        format: date-time
+    - name: include_disabled
+      in: query
+      required: false
+      description: When true, include rows with `is_enabled=false`.
+      schema:
+        type: boolean
+  responses:
+    '200':
+      description: List of AI model price rows
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/AIModelPrice.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+post:
+  operationId: createAiPrice
+  tags:
+    - ai
+  summary: Create an AI model price row
+  description: |
+    Creates an owner-scoped, effective-dated AI model price row and returns it
+    in the `AIModelPrice` shape. Server-generated fields (`id`, `is_default`,
+    `created_at`, `updated_at`) are assigned by the server and ignored if
+    present in the body; owner-created rows always have `is_default=false`.
+
+    Validation failures (missing `provider`/`model`/`effective_from`, no rate
+    field, `effective_to` not strictly after `effective_from`, negative rate,
+    or an invalid currency code) return 400.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../../components/schemas/AIModelPriceInput.yaml
+  responses:
+    '201':
+      description: AI model price row created
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/AIModelPrice.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml

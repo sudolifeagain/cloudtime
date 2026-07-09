@@ -1,0 +1,106 @@
+get:
+  operationId: getAiPrice
+  tags:
+    - ai
+  summary: Get a single AI model price row
+  description: |
+    Returns a single AI model price row visible to the owner (an owner-created
+    row or a CloudTime-shipped default). Unknown ids, and owner-created rows
+    belonging to a different user, return 404 to avoid leaking id existence.
+  parameters:
+    - name: price_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: AI model price row
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/AIModelPrice.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
+patch:
+  operationId: updateAiPrice
+  tags:
+    - ai
+  summary: Update an AI model price row
+  description: |
+    Partially updates an owner-created price row. Only fields present in the
+    body change; omitted fields are left untouched. Returns the updated row in
+    the `AIModelPrice` shape.
+
+    The existence and ownership check runs first: unknown ids, CloudTime-shipped
+    default rows (`is_default=true`), and rows owned by a different user return
+    404 before any body validation, so a 400 is never used to confirm that an id
+    the caller cannot edit exists (FR-015). Once the row is confirmed
+    owner-editable, `provider`, `model`, and `effective_from` are immutable —
+    sending any returns 400; an empty body, an `effective_to` not strictly after
+    `effective_from`, a negative rate, or an invalid currency also return 400.
+    The owner supersedes a default by creating an owner row or toggling
+    `is_enabled`.
+  parameters:
+    - name: price_id
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../../components/schemas/AIModelPriceUpdate.yaml
+  responses:
+    '200':
+      description: Updated AI model price row
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/AIModelPrice.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
+delete:
+  operationId: deleteAiPrice
+  tags:
+    - ai
+  summary: Delete an AI model price row
+  description: |
+    Permanently deletes an owner-created price row. Returns 204 with no body on
+    success. Disabling via `is_enabled=false` is preferred when historical cost
+    estimates should stay reproducible.
+
+    CloudTime-shipped default rows (`is_default=true`) cannot be deleted and
+    return 404 (disable them instead). Unknown ids, and rows owned by a
+    different user, also return 404 to avoid leaking id existence.
+  parameters:
+    - name: price_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '204':
+      description: AI model price row deleted
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml

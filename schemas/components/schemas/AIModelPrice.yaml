@@ -1,0 +1,119 @@
+type: object
+description: |
+  An effective-dated AI model price row used to compute API-equivalent
+  estimated costs from stored token facts. Prices are owner-scoped: the owner
+  may define rows for provider/hosted models, local/custom models, or
+  discounted/subscription-equivalent assumptions.
+
+  Rows are effective-dated rather than mutated in place so historical cost
+  estimates stay reproducible: cost is resolved once per daily rollup bucket
+  (aggregate-then-price) from the row whose `[effective_from, effective_to)`
+  window contains the bucket day's start-of-day instant in the fixed aggregation
+  timezone, not each individual heartbeat's timestamp. Rates are expressed per
+  1,000,000 tokens in `currency`.
+
+  Estimated cost derived from these rows is an API-equivalent estimate, NOT the
+  owner's actual subscription bill.
+required:
+  - id
+  - provider
+  - model
+  - currency
+  - effective_from
+  - is_default
+  - is_enabled
+  - created_at
+  - updated_at
+properties:
+  id:
+    type: string
+  provider:
+    type: string
+    maxLength: 255
+    description: Provider identifier, e.g. `openai`, `anthropic`, or `local`.
+  model:
+    type: string
+    maxLength: 255
+    description: Model identifier, e.g. `gpt-4o` or `claude-opus-4`.
+  currency:
+    type: string
+    pattern: '^[A-Z]{3}$'
+    description: |
+      Upper-case ISO 4217 currency code for all rate fields. Defaults to `USD`.
+      Case-sensitive: lower-case or non-alphabetic codes are rejected with 400.
+    example: USD
+  input_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+    description: Cost per 1,000,000 fresh input tokens.
+  cached_input_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+    description: Cost per 1,000,000 cached input tokens.
+  output_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+    description: Cost per 1,000,000 output tokens.
+  reasoning_output_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+    description: Cost per 1,000,000 reasoning output tokens.
+  cache_write_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+    description: Cost per 1,000,000 cache-write tokens.
+  cache_read_cost_per_mtok:
+    type: number
+    format: double
+    minimum: 0
+    maximum: 1000000
+    description: Cost per 1,000,000 cache-read tokens.
+  effective_from:
+    type: string
+    format: date-time
+    description: Inclusive start of the price's effective window (UTC).
+  effective_to:
+    oneOf:
+      - type: string
+        format: date-time
+      - type: 'null'
+    description: |
+      Exclusive end of the price's effective window (UTC), or null when the
+      price is open-ended (currently effective).
+  source_url:
+    oneOf:
+      - type: string
+        format: uri
+        maxLength: 2048
+        pattern: '^https?://'
+      - type: 'null'
+    description: |
+      Provenance URL documenting where the rate came from, or null. Restricted
+      to `http`/`https` so it is safe to render as a link in the owner UI
+      (rejects `javascript:`/`data:` and other schemes with 400).
+  is_default:
+    type: boolean
+    description: |
+      True for CloudTime-shipped starter rows. Default rows can be disabled or
+      superseded by owner rows but are not owner-editable in place.
+  is_enabled:
+    type: boolean
+    description: |
+      When false the row is ignored during cost estimation. Disabling is
+      preferred over deletion because it preserves reproducibility.
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time

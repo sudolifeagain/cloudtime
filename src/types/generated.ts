@@ -1208,6 +1208,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/current/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Owner-only AI coding usage and estimated cost summary
+         * @description Returns the authenticated owner's AI coding usage over a bounded date
+         *     range: a daily token trend plus breakdowns by project, AI agent/tool,
+         *     provider, and model. Each bucket carries token totals and an API-equivalent
+         *     `estimated_cost` computed from the owner's effective pricing table.
+         *
+         *     The range is bounded to protect the request-time CPU budget. Range
+         *     resolution is deterministic:
+         *
+         *     - If both `start` and `end` are supplied, the explicit inclusive range
+         *       `[start, end]` is used and `days` is ignored.
+         *     - If exactly one of `start`/`end` is supplied, the request returns 400
+         *       (they must be given together).
+         *     - If neither is supplied, a trailing `days` window ending on "today" is
+         *       used (`days` defaults to 30).
+         *
+         *     The resolved `timezone` (the owner's profile timezone by default) is used to
+         *     resolve "today" for the trailing `days` window and to interpret `start`/`end`
+         *     as local calendar days for range selection and labeling. It does not
+         *     re-bucket historical days: each day is materialized once at aggregation time
+         *     in a fixed aggregation timezone (the owner's profile timezone), so a
+         *     `timezone` differing from the profile timezone shifts only the range
+         *     endpoints, not the internal day boundaries. The request returns 400 when
+         *     `start > end`, when the resolved span exceeds 366 days, or when `timezone` is
+         *     not a valid IANA name.
+         *
+         *     Cost is an estimate of API-equivalent spend, not the owner's actual
+         *     subscription bill. Buckets that reference token facts with no matching
+         *     enabled price row report `missing_price_count` and a `null` `estimated_cost`
+         *     instead of a silent zero. This endpoint is owner-only: in single-user mode
+         *     the sole authenticated user is the owner, and no public or unauthenticated
+         *     access is exposed.
+         */
+        get: operations["getAiUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/current/ai/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List AI model price rows
+         * @description Returns the owner-visible AI model price rows: CloudTime-shipped defaults
+         *     (`is_default=true`) plus any owner-created rows, ordered by `provider`,
+         *     `model`, then `effective_from` ascending.
+         *
+         *     Optional `provider` and `model` filters narrow the list. `active_on`
+         *     returns only rows whose `[effective_from, effective_to)` window contains the
+         *     given instant. Disabled rows are excluded unless `include_disabled=true`.
+         *
+         *     A malformed `active_on` (not RFC 3339 date-time) or a non-boolean
+         *     `include_disabled` returns 400.
+         */
+        get: operations["getAiPrices"];
+        put?: never;
+        /**
+         * Create an AI model price row
+         * @description Creates an owner-scoped, effective-dated AI model price row and returns it
+         *     in the `AIModelPrice` shape. Server-generated fields (`id`, `is_default`,
+         *     `created_at`, `updated_at`) are assigned by the server and ignored if
+         *     present in the body; owner-created rows always have `is_default=false`.
+         *
+         *     Validation failures (missing `provider`/`model`/`effective_from`, no rate
+         *     field, `effective_to` not strictly after `effective_from`, negative rate,
+         *     or an invalid currency code) return 400.
+         */
+        post: operations["createAiPrice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/current/ai/prices/{price_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a single AI model price row
+         * @description Returns a single AI model price row visible to the owner (an owner-created
+         *     row or a CloudTime-shipped default). Unknown ids, and owner-created rows
+         *     belonging to a different user, return 404 to avoid leaking id existence.
+         */
+        get: operations["getAiPrice"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an AI model price row
+         * @description Permanently deletes an owner-created price row. Returns 204 with no body on
+         *     success. Disabling via `is_enabled=false` is preferred when historical cost
+         *     estimates should stay reproducible.
+         *
+         *     CloudTime-shipped default rows (`is_default=true`) cannot be deleted and
+         *     return 404 (disable them instead). Unknown ids, and rows owned by a
+         *     different user, also return 404 to avoid leaking id existence.
+         */
+        delete: operations["deleteAiPrice"];
+        options?: never;
+        head?: never;
+        /**
+         * Update an AI model price row
+         * @description Partially updates an owner-created price row. Only fields present in the
+         *     body change; omitted fields are left untouched. Returns the updated row in
+         *     the `AIModelPrice` shape.
+         *
+         *     The existence and ownership check runs first: unknown ids, CloudTime-shipped
+         *     default rows (`is_default=true`), and rows owned by a different user return
+         *     404 before any body validation, so a 400 is never used to confirm that an id
+         *     the caller cannot edit exists (FR-015). Once the row is confirmed
+         *     owner-editable, `provider`, `model`, and `effective_from` are immutable —
+         *     sending any returns 400; an empty body, an `effective_to` not strictly after
+         *     `effective_from`, a negative rate, or an invalid currency also return 400.
+         *     The owner supersedes a default by creating an owner row or toggling
+         *     `is_enabled`.
+         */
+        patch: operations["updateAiPrice"];
+        trace?: never;
+    };
     "/users/current/orgs": {
         parameters: {
             query?: never;
@@ -1575,6 +1713,58 @@ export interface components {
             lines?: number;
             ai_line_changes?: number;
             human_line_changes?: number;
+            /**
+             * @description Opaque identifier for the AI coding session the heartbeat belongs to,
+             *     as reported by a compatible client. Stored verbatim; never parsed for
+             *     prompt or response content.
+             */
+            ai_session?: string;
+            /**
+             * @description Subscription/plan label reported by a compatible client (e.g. a plan
+             *     name). Retained for grouping only; CloudTime never treats it as a
+             *     billing source.
+             */
+            ai_subscription_plan?: string;
+            /**
+             * @description Prompt length as reported by the client. The unit (characters vs tokens)
+             *     is client-defined and not normalized across clients, so it is aggregated
+             *     and displayed for trend context only and is never used to compute
+             *     `estimated_cost`. Bounded to reject garbage values.
+             */
+            ai_prompt_length?: number;
+            /**
+             * @description Input (prompt) tokens billed for this AI interaction. Bounded to keep cost
+             *     accumulation within safe numeric range and reject garbage values.
+             */
+            ai_input_tokens?: number;
+            /** @description Output (completion) tokens billed for this AI interaction. */
+            ai_output_tokens?: number;
+            /**
+             * @description Input tokens served from a provider prompt cache, priced separately from
+             *     fresh input tokens by some providers.
+             */
+            ai_cached_input_tokens?: number;
+            /**
+             * @description Reasoning/thinking output tokens, priced separately from visible output
+             *     tokens by some providers.
+             */
+            ai_reasoning_output_tokens?: number;
+            /** @description Tokens written to a provider prompt cache (cache-creation class). */
+            ai_cache_write_tokens?: number;
+            /** @description Tokens read from a provider prompt cache (cache-hit class). */
+            ai_cache_read_tokens?: number;
+            /**
+             * @description Provider identifier for the AI model, when a compatible client supplies
+             *     it (e.g. `openai`, `anthropic`). When absent, CloudTime derives it
+             *     best-effort from stored user-agent metadata.
+             */
+            ai_provider?: string;
+            /**
+             * @description Model identifier for the AI interaction, when a compatible client
+             *     supplies it (e.g. `gpt-4o`, `claude-opus-4`). When absent, CloudTime
+             *     derives it best-effort from stored user-agent metadata.
+             */
+            ai_model?: string;
             lineno?: number;
             cursorpos?: number;
             is_write?: boolean;
@@ -2059,6 +2249,310 @@ export interface components {
             ref?: string;
             /** Format: uri */
             url?: string;
+        };
+        /**
+         * @description Aggregated AI token facts and derived estimated cost for one grouping bucket
+         *     (a day, project, agent, provider, or model).
+         *
+         *     A *contributing heartbeat* is one with `category: "ai coding"` that carries at
+         *     least one priced token field (`ai_input_tokens`, `ai_output_tokens`,
+         *     `ai_cached_input_tokens`, `ai_reasoning_output_tokens`, `ai_cache_write_tokens`,
+         *     or `ai_cache_read_tokens`). "Carries" is decided by presence, not value: a
+         *     field present with value `0` still counts, so a heartbeat sending
+         *     `ai_input_tokens: 0` contributes, while a heartbeat that omits every priced
+         *     token field does not. Heartbeats that carry only `ai_prompt_length` and no
+         *     priced token field do not contribute and are excluded from every field here.
+         *
+         *     `estimated_cost` is an API-equivalent estimate computed from the rollup's
+         *     aggregated token counts and the effective owner pricing row resolved once per
+         *     daily bucket (aggregate-then-price) — the row whose
+         *     `[effective_from, effective_to)` window contains the bucket day's start-of-day
+         *     instant in the fixed aggregation timezone, not each individual heartbeat's
+         *     timestamp. It is NOT the owner's actual subscription bill. When no enabled
+         *     price row in the summary `currency` *fully prices* a contributing heartbeat's
+         *     bucket — no row matched, the matched row is a different currency, or it leaves
+         *     a token class the bucket actually used unpriced (a null rate) — that heartbeat
+         *     is counted in `missing_price_count` and excluded from the cost sum. When no
+         *     contributing heartbeat falls in a fully-priced bucket in the summary
+         *     `currency`, `estimated_cost` is `null` (never a silent zero).
+         */
+        AITokenTotals: {
+            input_tokens: number;
+            output_tokens: number;
+            cached_input_tokens: number;
+            reasoning_output_tokens: number;
+            cache_write_tokens: number;
+            cache_read_tokens: number;
+            /** @description Sum of reported `ai_prompt_length` across the bucket's contributing heartbeats. */
+            prompt_length_total: number;
+            /**
+             * @description Mean reported prompt length across the bucket's contributing heartbeats
+             *     that carried `ai_prompt_length`, or null when none did.
+             */
+            prompt_length_avg: number | null;
+            /**
+             * @description Number of contributing heartbeats in the bucket (`ai coding` heartbeats
+             *     that carry at least one priced token field). Heartbeats with only
+             *     `ai_prompt_length` are not counted.
+             */
+            heartbeat_count: number;
+            /**
+             * @description API-equivalent estimated cost in the summary `currency`, or null when no
+             *     contributing heartbeat fell in a bucket fully priced by an enabled price
+             *     row in that currency. Only buckets whose matched row covers every token
+             *     class the bucket used contribute; contributions priced in a different
+             *     currency, or in buckets the matched row leaves partly unpriced, are never
+             *     summed in — they are excluded and counted in `missing_price_count`.
+             */
+            estimated_cost: number | null;
+            /**
+             * @description Number of contributing heartbeats in buckets that could not be fully
+             *     priced in the summary `currency` at the bucket day's start-of-day instant
+             *     in the fixed aggregation timezone (the same aggregate-then-price resolution
+             *     used for `estimated_cost`) — because no enabled price row matched their
+             *     `(provider, model)`, the matched row's currency differs from the summary
+             *     `currency` (so its cost cannot be summed in), or the matched row leaves a
+             *     token class the bucket actually used unpriced (a null rate). Such a bucket
+             *     contributes nothing to `estimated_cost`, so a used-but-unpriced class is
+             *     never silently valued at zero.
+             */
+            missing_price_count: number;
+        };
+        /**
+         * @description Owner-only AI coding usage summary over a bounded date range. Aggregates
+         *     stored AI token facts into a daily trend plus breakdowns by project, AI
+         *     agent/tool, provider, and model, each carrying token totals and an
+         *     API-equivalent `estimated_cost`.
+         *
+         *     Costs are estimates derived from the owner's effective pricing table, not
+         *     authoritative billing. Buckets with no matching enabled price row surface a
+         *     `missing_price_count` and a `null` `estimated_cost` rather than a silent zero.
+         */
+        AIUsageSummary: {
+            /**
+             * Format: date
+             * @description Inclusive first local day of the summary window.
+             */
+            start: string;
+            /**
+             * Format: date
+             * @description Inclusive last local day of the summary window.
+             */
+            end: string;
+            /**
+             * @description IANA timezone used to resolve the range's local calendar days and "today".
+             *     Historical day boundaries are fixed at aggregation time in the owner's
+             *     profile timezone and are not re-bucketed per request.
+             * @example Asia/Tokyo
+             */
+            timezone: string;
+            /**
+             * @description Single upper-case ISO 4217 currency that every `estimated_cost` in this
+             *     summary is expressed in. Chosen deterministically: the currency of the
+             *     enabled price rows that matched the most contributing heartbeats in the
+             *     range, ties broken by the lexicographically smallest code. When no
+             *     contributing heartbeat matched any price row, this defaults to `USD` and
+             *     all `estimated_cost` values are `null`.
+             * @example USD
+             */
+            currency: string;
+            /**
+             * @description True when at least one contributing heartbeat matched an enabled price row
+             *     whose currency differs from the summary `currency`. Costs are never summed
+             *     across currencies: such contributions are excluded from every
+             *     `estimated_cost` and counted in `missing_price_count`, so a true value
+             *     warns that some priced usage is not reflected in the cost totals.
+             */
+            mixed_currency?: boolean;
+            totals: components["schemas"]["AITokenTotals"];
+            /** @description Per-day token totals and estimated cost, ordered by `date`. */
+            daily: ({
+                /** Format: date */
+                date: string;
+            } & components["schemas"]["AITokenTotals"])[];
+            /** @description Token totals and estimated cost grouped by project. */
+            by_project: ({
+                /** @description Project name, or null for heartbeats with no project. */
+                project: string | null;
+            } & components["schemas"]["AITokenTotals"])[];
+            /**
+             * @description Token totals and estimated cost grouped by AI agent/tool. The agent is
+             *     derived best-effort from stored user-agent metadata (the editor/plugin
+             *     identifier already captured on each heartbeat); heartbeats whose agent
+             *     cannot be resolved are grouped under `unknown`.
+             */
+            by_agent: ({
+                agent: string;
+            } & components["schemas"]["AITokenTotals"])[];
+            /** @description Token totals and estimated cost grouped by provider. */
+            by_provider: ({
+                provider: string;
+            } & components["schemas"]["AITokenTotals"])[];
+            /** @description Token totals and estimated cost grouped by provider + model. */
+            by_model: ({
+                provider: string;
+                model: string;
+            } & components["schemas"]["AITokenTotals"])[];
+        };
+        /**
+         * @description An effective-dated AI model price row used to compute API-equivalent
+         *     estimated costs from stored token facts. Prices are owner-scoped: the owner
+         *     may define rows for provider/hosted models, local/custom models, or
+         *     discounted/subscription-equivalent assumptions.
+         *
+         *     Rows are effective-dated rather than mutated in place so historical cost
+         *     estimates stay reproducible: cost is resolved once per daily rollup bucket
+         *     (aggregate-then-price) from the row whose `[effective_from, effective_to)`
+         *     window contains the bucket day's start-of-day instant in the fixed aggregation
+         *     timezone, not each individual heartbeat's timestamp. Rates are expressed per
+         *     1,000,000 tokens in `currency`.
+         *
+         *     Estimated cost derived from these rows is an API-equivalent estimate, NOT the
+         *     owner's actual subscription bill.
+         */
+        AIModelPrice: {
+            id: string;
+            /** @description Provider identifier, e.g. `openai`, `anthropic`, or `local`. */
+            provider: string;
+            /** @description Model identifier, e.g. `gpt-4o` or `claude-opus-4`. */
+            model: string;
+            /**
+             * @description Upper-case ISO 4217 currency code for all rate fields. Defaults to `USD`.
+             *     Case-sensitive: lower-case or non-alphabetic codes are rejected with 400.
+             * @example USD
+             */
+            currency: string;
+            /**
+             * Format: double
+             * @description Cost per 1,000,000 fresh input tokens.
+             */
+            input_cost_per_mtok?: number;
+            /**
+             * Format: double
+             * @description Cost per 1,000,000 cached input tokens.
+             */
+            cached_input_cost_per_mtok?: number;
+            /**
+             * Format: double
+             * @description Cost per 1,000,000 output tokens.
+             */
+            output_cost_per_mtok?: number;
+            /**
+             * Format: double
+             * @description Cost per 1,000,000 reasoning output tokens.
+             */
+            reasoning_output_cost_per_mtok?: number;
+            /**
+             * Format: double
+             * @description Cost per 1,000,000 cache-write tokens.
+             */
+            cache_write_cost_per_mtok?: number;
+            /**
+             * Format: double
+             * @description Cost per 1,000,000 cache-read tokens.
+             */
+            cache_read_cost_per_mtok?: number;
+            /**
+             * Format: date-time
+             * @description Inclusive start of the price's effective window (UTC).
+             */
+            effective_from: string;
+            /**
+             * @description Exclusive end of the price's effective window (UTC), or null when the
+             *     price is open-ended (currently effective).
+             */
+            effective_to?: string | null;
+            /**
+             * @description Provenance URL documenting where the rate came from, or null. Restricted
+             *     to `http`/`https` so it is safe to render as a link in the owner UI
+             *     (rejects `javascript:`/`data:` and other schemes with 400).
+             */
+            source_url?: string | null;
+            /**
+             * @description True for CloudTime-shipped starter rows. Default rows can be disabled or
+             *     superseded by owner rows but are not owner-editable in place.
+             */
+            is_default: boolean;
+            /**
+             * @description When false the row is ignored during cost estimation. Disabling is
+             *     preferred over deletion because it preserves reproducibility.
+             */
+            is_enabled: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /**
+         * @description Request body for creating an owner-scoped AI model price row.
+         *
+         *     Server-generated fields (`id`, `is_default`, `created_at`, `updated_at`) are
+         *     omitted and ignored if sent. Owner-created rows always have `is_default`
+         *     false. At least one rate field MUST be provided (a row with no rates cannot
+         *     produce an estimate and returns 400). `currency` defaults to `USD`.
+         *     `is_enabled` defaults to true. When `effective_to` is provided it MUST be
+         *     strictly after `effective_from`, otherwise 400.
+         */
+        AIModelPriceInput: {
+            provider: string;
+            model: string;
+            /**
+             * @description Upper-case ISO 4217 currency code. Defaults to `USD` when omitted;
+             *     lower-case or non-alphabetic codes are rejected with 400.
+             */
+            currency?: string;
+            /** Format: double */
+            input_cost_per_mtok?: number;
+            /** Format: double */
+            cached_input_cost_per_mtok?: number;
+            /** Format: double */
+            output_cost_per_mtok?: number;
+            /** Format: double */
+            reasoning_output_cost_per_mtok?: number;
+            /** Format: double */
+            cache_write_cost_per_mtok?: number;
+            /** Format: double */
+            cache_read_cost_per_mtok?: number;
+            /** Format: date-time */
+            effective_from: string;
+            effective_to?: string | null;
+            /** @description Provenance URL; must be `http`/`https` (rejects other schemes). */
+            source_url?: string | null;
+            /** @description Defaults to `true` when omitted. */
+            is_enabled?: boolean;
+        };
+        /**
+         * @description Request body for partially updating an owner-created AI model price row. Only
+         *     fields present in the body change; omitted fields keep their current value. At
+         *     least one field MUST be provided (an empty body returns 400).
+         *
+         *     `provider`, `model`, and `effective_from` are immutable after creation because
+         *     changing them would reinterpret historical cost estimates; callers must create
+         *     a new row instead, and sending any of them returns 400. CloudTime-shipped
+         *     default rows (`is_default=true`) are not editable through this endpoint and
+         *     return 404; the owner supersedes them by creating an owner row or toggling
+         *     `is_enabled`. When `effective_to` is provided it MUST be strictly after the
+         *     row's `effective_from`, otherwise 400.
+         */
+        AIModelPriceUpdate: {
+            /** @description Upper-case ISO 4217 currency code; other forms are rejected with 400. */
+            currency?: string;
+            /** Format: double */
+            input_cost_per_mtok?: number;
+            /** Format: double */
+            cached_input_cost_per_mtok?: number;
+            /** Format: double */
+            output_cost_per_mtok?: number;
+            /** Format: double */
+            reasoning_output_cost_per_mtok?: number;
+            /** Format: double */
+            cache_write_cost_per_mtok?: number;
+            /** Format: double */
+            cache_read_cost_per_mtok?: number;
+            effective_to?: string | null;
+            /** @description Provenance URL; must be `http`/`https` (rejects other schemes). */
+            source_url?: string | null;
+            is_enabled?: boolean;
         };
         Organization: {
             id: string;
@@ -4002,6 +4496,194 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAiUsage: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Inclusive first local day (`YYYY-MM-DD`). Required together with `end`
+                 *     unless `days` is provided.
+                 */
+                start?: string;
+                /**
+                 * @description Inclusive last local day (`YYYY-MM-DD`). Required together with `start`
+                 *     unless `days` is provided.
+                 */
+                end?: string;
+                /**
+                 * @description Trailing window size in days ending today, as an alternative to
+                 *     `start`+`end`. Defaults to 30 when no range is supplied.
+                 */
+                days?: number;
+                /**
+                 * @description IANA timezone used to resolve "today" and to interpret `start`/`end` as
+                 *     local calendar days for range selection and labeling. Defaults to the
+                 *     authenticated user's profile timezone when omitted. Historical day
+                 *     boundaries are fixed at aggregation time in the owner's profile timezone
+                 *     and are not re-bucketed per request.
+                 */
+                timezone?: string;
+                /** @description Restrict the summary to a single project. */
+                project?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description AI usage summary for the resolved range */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AIUsageSummary"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getAiPrices: {
+        parameters: {
+            query?: {
+                provider?: string;
+                model?: string;
+                /** @description Return only rows effective at this instant (RFC 3339 date-time). */
+                active_on?: string;
+                /** @description When true, include rows with `is_enabled=false`. */
+                include_disabled?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of AI model price rows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AIModelPrice"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createAiPrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AIModelPriceInput"];
+            };
+        };
+        responses: {
+            /** @description AI model price row created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AIModelPrice"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getAiPrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                price_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description AI model price row */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AIModelPrice"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteAiPrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                price_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description AI model price row deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAiPrice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                price_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AIModelPriceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated AI model price row */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AIModelPrice"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };

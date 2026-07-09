@@ -1,0 +1,100 @@
+get:
+  operationId: getAiUsage
+  tags:
+    - ai
+  summary: Owner-only AI coding usage and estimated cost summary
+  description: |
+    Returns the authenticated owner's AI coding usage over a bounded date
+    range: a daily token trend plus breakdowns by project, AI agent/tool,
+    provider, and model. Each bucket carries token totals and an API-equivalent
+    `estimated_cost` computed from the owner's effective pricing table.
+
+    The range is bounded to protect the request-time CPU budget. Range
+    resolution is deterministic:
+
+    - If both `start` and `end` are supplied, the explicit inclusive range
+      `[start, end]` is used and `days` is ignored.
+    - If exactly one of `start`/`end` is supplied, the request returns 400
+      (they must be given together).
+    - If neither is supplied, a trailing `days` window ending on "today" is
+      used (`days` defaults to 30).
+
+    The resolved `timezone` (the owner's profile timezone by default) is used to
+    resolve "today" for the trailing `days` window and to interpret `start`/`end`
+    as local calendar days for range selection and labeling. It does not
+    re-bucket historical days: each day is materialized once at aggregation time
+    in a fixed aggregation timezone (the owner's profile timezone), so a
+    `timezone` differing from the profile timezone shifts only the range
+    endpoints, not the internal day boundaries. The request returns 400 when
+    `start > end`, when the resolved span exceeds 366 days, or when `timezone` is
+    not a valid IANA name.
+
+    Cost is an estimate of API-equivalent spend, not the owner's actual
+    subscription bill. Buckets that reference token facts with no matching
+    enabled price row report `missing_price_count` and a `null` `estimated_cost`
+    instead of a silent zero. This endpoint is owner-only: in single-user mode
+    the sole authenticated user is the owner, and no public or unauthenticated
+    access is exposed.
+  parameters:
+    - name: start
+      in: query
+      required: false
+      description: |
+        Inclusive first local day (`YYYY-MM-DD`). Required together with `end`
+        unless `days` is provided.
+      schema:
+        type: string
+        format: date
+    - name: end
+      in: query
+      required: false
+      description: |
+        Inclusive last local day (`YYYY-MM-DD`). Required together with `start`
+        unless `days` is provided.
+      schema:
+        type: string
+        format: date
+    - name: days
+      in: query
+      required: false
+      description: |
+        Trailing window size in days ending today, as an alternative to
+        `start`+`end`. Defaults to 30 when no range is supplied.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 366
+    - name: timezone
+      in: query
+      required: false
+      description: |
+        IANA timezone used to resolve "today" and to interpret `start`/`end` as
+        local calendar days for range selection and labeling. Defaults to the
+        authenticated user's profile timezone when omitted. Historical day
+        boundaries are fixed at aggregation time in the owner's profile timezone
+        and are not re-bucketed per request.
+      schema:
+        type: string
+        example: Asia/Tokyo
+    - name: project
+      in: query
+      required: false
+      description: Restrict the summary to a single project.
+      schema:
+        type: string
+  responses:
+    '200':
+      description: AI usage summary for the resolved range
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/AIUsageSummary.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
