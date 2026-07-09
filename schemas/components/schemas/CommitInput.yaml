@@ -33,6 +33,11 @@ properties:
     type: number
     format: double
     minimum: 0
+    description: >-
+      Client-supplied coding time in seconds for the commit. Optional: when
+      omitted the server derives it by correlating heartbeats around the commit
+      (see the ingestion operation). An explicit value (including 0) is stored
+      verbatim and is never overwritten by correlation.
   ref:
     type: string
     maxLength: 255

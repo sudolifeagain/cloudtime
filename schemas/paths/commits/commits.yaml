@@ -77,11 +77,15 @@ post:
     can be retried safely. Always returns 201 with the stored `Commit`.
 
     `hash` is required and must be non-empty. `total_seconds` is the optional
-    client-supplied coding time for the commit (the server does not correlate
-    heartbeats); when present it must be a number >= 0. `author_date` and
-    `committer_date`, when present, must be valid date-times. `ref` is the
-    branch (the read endpoints filter `branch` against it). Validation
-    failures return 400.
+    coding time for the commit; when present it must be a number >= 0 and is
+    stored verbatim. When it is omitted, the server derives the commit's coding
+    time by correlating the user's heartbeats for this project in a bounded
+    window ending at `author_date` (falling back to the ingest time) and bounded
+    below by the previous commit, using the same session-timeout rule as the
+    daily summaries; if no heartbeats fall in the window the value stays absent.
+    `author_date` and `committer_date`, when present, must be valid date-times.
+    `ref` is the branch (the read endpoints filter `branch` against it).
+    Validation failures return 400.
   parameters:
     - name: project
       in: path
