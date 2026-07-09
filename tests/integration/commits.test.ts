@@ -49,6 +49,16 @@ async function postCommit(project: string, body: unknown, apiKey?: string): Prom
   });
 }
 
+async function postBulk(project: string, body: unknown, apiKey?: string): Promise<Response> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (apiKey) Object.assign(headers, bearer(apiKey));
+  return call(`/api/v1/users/current/projects/${project}/commits.bulk`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
 interface SeedCommit {
   hash: string;
   authorDate?: string | null;
@@ -465,5 +475,175 @@ describe("POST .../commits (heartbeat correlation, #145)", () => {
       .bind(user.userId)
       .first<{ n: number }>();
     expect(summaries?.n).toBe(0);
+  });
+});
+
+describe("POST .../commits.bulk (bulk ingestion, #147)", () => {
+  async function countCommits(userId: string, hash: string): Promise<number> {
+    const row = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM commits WHERE user_id = ? AND hash = ?",
+    )
+      .bind(userId, hash)
+      .first<{ n: number }>();
+    return row?.n ?? 0;
+  }
+
+  it("creates every commit in one batch and returns them in request order", async () => {
+    const res = await postBulk(
+      PROJECT,
+      [
+        { hash: "b1", message: "first", total_seconds: 1800 },
+        { hash: "b2", message: "second", total_seconds: 600 },
+        { hash: "b3", message: "third" },
+      ],
+      user.apiKey,
+    );
+    expect(res.status).toBe(201);
+    const { data } = (await res.json()) as { data: CommitShape[] };
+    expect(data.map((c) => c.hash)).toEqual(["b1", "b2", "b3"]);
+    expect(data[0].human_readable_total).toBe("30 mins");
+    expect(data[1].total_seconds).toBe(600);
+    expect(data[2]).not.toHaveProperty("total_seconds"); // omitted → absent
+    expect(data[2].human_readable_total).toBe("0 secs");
+
+    // Read-back via the list endpoint confirms all three persisted.
+    const list = await call(COMMITS, { headers: bearer(user.apiKey) });
+    const hashes = ((await list.json()) as { data: CommitShape[] }).data.map((c) => c.hash);
+    expect(hashes).toEqual(expect.arrayContaining(["b1", "b2", "b3"]));
+  });
+
+  it("is all-or-nothing: a mid-batch invalid element writes nothing (400)", async () => {
+    const res = await postBulk(
+      PROJECT,
+      [{ hash: "good1" }, { hash: "" }, { hash: "good2" }],
+      user.apiKey,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("item 1: hash is required and must be a non-empty string");
+
+    // Nothing from the rejected batch was persisted.
+    expect(await countCommits(user.userId, "good1")).toBe(0);
+    expect(await countCommits(user.userId, "good2")).toBe(0);
+  });
+
+  it("400s on a non-array body", async () => {
+    const res = await postBulk(PROJECT, { hash: "x" }, user.apiKey);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("Request body must be an array");
+  });
+
+  it("400s on more than 100 commits", async () => {
+    const items = Array.from({ length: 101 }, (_, i) => ({ hash: `c${i}` }));
+    const res = await postBulk(PROJECT, items, user.apiKey);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("Maximum 100 commits per request");
+    expect(await countCommits(user.userId, "c0")).toBe(0);
+  });
+
+  it("accepts an empty array and returns 201 { data: [] }", async () => {
+    const res = await postBulk(PROJECT, [], user.apiKey);
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({ data: [] });
+  });
+
+  it("stores omitted total_seconds as '0 secs' with NO correlation, even when heartbeats surround the commit", async () => {
+    const base = Math.floor(Date.parse("2026-06-05T00:00:00Z") / 1000);
+    // A dense session that the single endpoint WOULD correlate to ~1800s.
+    await seedHeartbeats(
+      user.userId,
+      Array.from({ length: 16 }, (_, i) => ({ time: base + i * 120 })),
+    );
+
+    const res = await postBulk(PROJECT, [{ hash: "nocorr", author_date: rfc(base + 1800) }], user.apiKey);
+    expect(res.status).toBe(201);
+    const { data } = (await res.json()) as { data: CommitShape[] };
+    expect(data[0]).not.toHaveProperty("total_seconds"); // bulk never derives
+    expect(data[0].human_readable_total).toBe("0 secs");
+
+    const single = await call(`${COMMITS}/nocorr`, { headers: bearer(user.apiKey) });
+    expect((await single.json() as { data: CommitShape }).data).not.toHaveProperty("total_seconds");
+  });
+
+  it("is idempotent on (user, project, hash) across separate batches", async () => {
+    await postBulk(PROJECT, [{ hash: "reb", message: "v1", total_seconds: 100 }], user.apiKey);
+    const second = await postBulk(PROJECT, [{ hash: "reb", message: "v2", total_seconds: 200 }], user.apiKey);
+    expect(second.status).toBe(201);
+
+    expect(await countCommits(user.userId, "reb")).toBe(1);
+    const single = await call(`${COMMITS}/reb`, { headers: bearer(user.apiKey) });
+    const { data } = (await single.json()) as { data: CommitShape };
+    expect(data.message).toBe("v2");
+    expect(data.total_seconds).toBe(200);
+  });
+
+  it("an in-batch duplicate applies last-wins in DB but returns one entry per input in order", async () => {
+    const res = await postBulk(
+      PROJECT,
+      [
+        { hash: "dup", message: "earlier", total_seconds: 100 },
+        { hash: "dup", message: "later", total_seconds: 900 },
+      ],
+      user.apiKey,
+    );
+    expect(res.status).toBe(201);
+    const { data } = (await res.json()) as { data: CommitShape[] };
+    // N inputs → N response entries in request order: the first is the inserted
+    // snapshot, the second is the last-wins overwrite.
+    expect(data).toHaveLength(2);
+    expect(data[0].message).toBe("earlier");
+    expect(data[0].total_seconds).toBe(100);
+    expect(data[1].message).toBe("later");
+    expect(data[1].total_seconds).toBe(900);
+
+    // Only one row persists, holding the last-wins values.
+    expect(await countCommits(user.userId, "dup")).toBe(1);
+    const single = await call(`${COMMITS}/dup`, { headers: bearer(user.apiKey) });
+    const persisted = ((await single.json()) as { data: CommitShape }).data;
+    expect(persisted.message).toBe("later");
+    expect(persisted.total_seconds).toBe(900);
+  });
+
+  it("stores project from the path, ignoring any project in the body", async () => {
+    const res = await postBulk(PROJECT, [{ hash: "bp1", project: "other" }], user.apiKey);
+    expect(res.status).toBe(201);
+    expect((await call(`${COMMITS}/bp1`, { headers: bearer(user.apiKey) })).status).toBe(200);
+    expect(
+      (await call("/api/v1/users/current/projects/other/commits/bp1", { headers: bearer(user.apiKey) })).status,
+    ).toBe(404);
+  });
+
+  it("isolates bulk-ingested commits per user", async () => {
+    await postBulk(PROJECT, [{ hash: "mineb", total_seconds: 100 }], user.apiKey);
+    const bob = await seedUser({ username: "bobbulk", email: "bobbulk@example.test" });
+    const bobList = await call(COMMITS, { headers: bearer(bob.apiKey) });
+    expect(((await bobList.json()) as { data: CommitShape[] }).data).toEqual([]);
+    await env.KV.delete(`apikey:${bob.apiKeyHash}`);
+  });
+
+  it("401s before validation when unauthenticated (nothing written)", async () => {
+    // Body would fail validation too; auth must short-circuit first.
+    const res = await postBulk(PROJECT, [{ message: "no hash" }]);
+    expect(res.status).toBe(401);
+  });
+
+  it("does not touch the summaries or user_projects aggregates", async () => {
+    await postBulk(
+      PROJECT,
+      [
+        { hash: "agg1", total_seconds: 100 },
+        { hash: "agg2", total_seconds: 200 },
+      ],
+      user.apiKey,
+    );
+
+    const summaries = await env.DB.prepare("SELECT COUNT(*) AS n FROM summaries WHERE user_id = ?")
+      .bind(user.userId)
+      .first<{ n: number }>();
+    expect(summaries?.n).toBe(0);
+    const projects = await env.DB.prepare("SELECT COUNT(*) AS n FROM user_projects WHERE user_id = ?")
+      .bind(user.userId)
+      .first<{ n: number }>();
+    expect(projects?.n).toBe(0);
   });
 });

@@ -3,7 +3,7 @@
  * validator (specs/135-commits-ingestion/). No D1, no I/O.
  */
 import { describe, expect, it } from "vitest";
-import { validateCommitInput } from "../../src/utils/commit-input";
+import { validateCommitInput, validateCommitInputBatch } from "../../src/utils/commit-input";
 
 function ok(body: unknown) {
   const r = validateCommitInput(body);
@@ -74,5 +74,58 @@ describe("validateCommitInput", () => {
     expect(validateCommitInput(null).ok).toBe(false);
     expect(validateCommitInput([{ hash: "h" }]).ok).toBe(false);
     expect(validateCommitInput("hash=h").ok).toBe(false);
+  });
+});
+
+describe("validateCommitInputBatch (bulk array guards, #147)", () => {
+  it("rejects a non-array body", () => {
+    for (const body of [null, {}, { hash: "h" }, "hash=h", 5]) {
+      const r = validateCommitInputBatch(body, 100);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toBe("Request body must be an array");
+    }
+  });
+
+  it("rejects a batch over the cap while accepting exactly the cap", () => {
+    const at = Array.from({ length: 100 }, (_, i) => ({ hash: `h${i}` }));
+    const over = Array.from({ length: 101 }, (_, i) => ({ hash: `h${i}` }));
+
+    const atCap = validateCommitInputBatch(at, 100);
+    expect(atCap.ok).toBe(true);
+    if (atCap.ok) expect(atCap.value).toHaveLength(100);
+
+    const overCap = validateCommitInputBatch(over, 100);
+    expect(overCap.ok).toBe(false);
+    if (!overCap.ok) expect(overCap.error).toBe("Maximum 100 commits per request");
+  });
+
+  it("reports the index of the first invalid element and stops there", () => {
+    const r = validateCommitInputBatch([{ hash: "ok" }, { message: "no hash" }, { hash: "" }], 100);
+    expect(r.ok).toBe(false);
+    // The second element (index 1) is the first failure; its message is prefixed.
+    if (!r.ok) expect(r.error).toBe("item 1: hash is required and must be a non-empty string");
+  });
+
+  it("accepts an empty array and yields no values (no statements to run)", () => {
+    const r = validateCommitInputBatch([], 100);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toEqual([]);
+  });
+
+  it("passes a valid batch through in request order, normalising each element", () => {
+    const r = validateCommitInputBatch(
+      [
+        { hash: "a", total_seconds: 60 },
+        { hash: "b", author_date: "2026-06-05T01:00:00Z" },
+        { hash: "c" },
+      ],
+      100,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.map((v) => v.hash)).toEqual(["a", "b", "c"]);
+    expect(r.value[0].total_seconds).toBe(60);
+    expect(r.value[1].author_date).toBe("2026-06-05 01:00:00");
+    expect(r.value[2].total_seconds).toBeNull();
   });
 });
