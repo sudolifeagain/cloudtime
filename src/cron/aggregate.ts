@@ -1,4 +1,5 @@
 import { getDateForTimestamp, getHourForTimestamp } from "../utils/time-format";
+import { sessionGapSeconds } from "../utils/session-gap";
 
 export type HeartbeatForAggregation = {
   user_id: string;
@@ -269,12 +270,13 @@ export function computeDurations(
     for (let i = 1; i < userHeartbeats.length; i++) {
       const prev = userHeartbeats[i - 1];
       const curr = userHeartbeats[i];
-      const gap = curr.time - prev.time;
 
       // Only generate durations for heartbeats after the caller's cursor.
       if (!shouldProcessHeartbeat(curr)) continue;
 
-      if (gap > timeout || gap <= 0) continue;
+      // Shared per-pair idle/timeout rule (spec 145 FR-005); 0 == does not count.
+      const gap = sessionGapSeconds(prev.time, curr.time, timeout);
+      if (gap === 0) continue;
 
       // Attribute the interval [prev.time, curr.time) to prev's context
       // Use empty string sentinel for NULL dimensions
