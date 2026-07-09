@@ -56,7 +56,7 @@ Heartbeats at `t, t+60, t+120` then a 30-minute idle gap, then `t+1920, t+1980` 
 ```
 POST .../projects/cloudtime/commits  { "hash": "G", "author_date": "<t+1980>" }
 ```
-Expect the 30-minute idle gap to contribute 0; `total_seconds ≈ 120 + 60 = 180`s — the same total the daily `summaries` would count for that interval.
+Expect the 30-minute idle gap to contribute 0; `total_seconds ≈ 120 + 60 = 180`s — the same active total the `summaries` gap rule yields for that interval (the idle gap contributes 0).
 
 ## F. Re-post re-derives as heartbeats arrive late
 
@@ -76,3 +76,12 @@ Expect `total_seconds: 0` stored (an explicit `0` is honored as supplied; correl
 ## H. Bounded / best-effort
 
 A window wider than 24h is floored to `author_date − 24h`; a session denser than 5000 heartbeats reads at most 5000 rows (lower-bound estimate). Neither triggers a full scan.
+
+## I. Interleaved other-project heartbeats are attributed by project
+
+Timeout 15 min. Send heartbeats: `cloudtime@t`, `other-proj@t+120`, `cloudtime@t+240`. Commit `cloudtime` at `author_date = t+240`, no `total_seconds`:
+
+```
+POST .../projects/cloudtime/commits  { "hash": "M", "author_date": "<t+240>" }
+```
+Expect `total_seconds ≈ 120`s: correlation gaps the full in-window user stream and credits each gap to its earlier heartbeat's project — the `t → t+120` gap (earlier beat `cloudtime`) counts for this commit; the `t+120 → t+240` gap (earlier beat `other-proj`) is credited to `other-proj`, not absorbed into `cloudtime`. This is exactly how `summaries` splits the two projects (the derivation is **not** a same-project pre-filter, which would have wrongly counted the full `240`s).

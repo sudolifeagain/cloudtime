@@ -5,7 +5,7 @@
 
 ## Summary
 
-When `POST /users/current/projects/{project}/commits` omits `total_seconds`, derive the commit's coding time at ingest time by correlating the user's heartbeats for that project inside a bounded, previous-commit-partitioned window, summing gaps with the same session-timeout rule as the daily `summaries`. A client-supplied `total_seconds` always wins and skips correlation. No response/request shape change — the `Commit`/`CommitInput` fields are unchanged; only description prose is corrected (the `createProjectCommit` line that currently says the server does not correlate heartbeats).
+When `POST /users/current/projects/{project}/commits` omits `total_seconds`, derive the commit's coding time at ingest time by correlating the user's heartbeats inside a bounded, previous-commit-partitioned window: gap the unfiltered in-window user stream, attribute each interval to its earlier heartbeat's project exactly as `computeDurations` attributes `summaries` time, and sum only the commit's-project intervals with the same session-timeout rule as the daily `summaries`. A client-supplied `total_seconds` always wins and skips correlation. No response/request shape change — the `Commit`/`CommitInput` fields are unchanged; only description prose is corrected (the `createProjectCommit` line that currently says the server does not correlate heartbeats).
 
 **PR1 (this PR)**: SpecKit artifacts + OpenAPI **description-only** edits (`createProjectCommit` prose, `CommitInput.total_seconds` + `Commit.total_seconds` descriptions) + regenerated types (JSDoc-only diff). **No route/business logic, no schema change.**
 
@@ -66,7 +66,7 @@ tests/aggregation/commit-correlation.test.ts     # NEW: pure helper unit tests
 tests/integration/commits.test.ts                # EXTEND: correlation scenarios
 ```
 
-**Structure Decision**: Keep the handler thin. Only when `total_seconds` is omitted: read the user's `timeout`, resolve the previous-commit lower bound and the capped window (epoch bounds via SQLite `strftime('%s', …)`), read the window's heartbeat `time`s (`ORDER BY time ASC LIMIT 5000`), sum consecutive gaps with the shared `sessionGapSeconds(prev, curr, timeout)` primitive (also called by `computeDurations`), round, and store the result only if `> 0` (else null). The client-value path is unchanged (single upsert). No aggregate writes; `project` from the path; auth via the existing `authMiddleware`.
+**Structure Decision**: Keep the handler thin. Only when `total_seconds` is omitted: read the user's `timeout`, resolve the previous-commit lower bound and the capped window (epoch bounds via SQLite `strftime('%s', …)`), read the window's heartbeat `time`+`project`s (`ORDER BY time ASC LIMIT 5000`, **not** project-filtered), sum consecutive gaps whose earlier heartbeat's `project` is the commit's project with the shared `sessionGapSeconds(prev, curr, timeout)` primitive (also called by `computeDurations`, whose `prev.project` attribution this replicates), round, and store the result only if `> 0` (else null). The client-value path is unchanged (single upsert). No aggregate writes; `project` from the path; auth via the existing `authMiddleware`.
 
 ## Phases
 
@@ -75,7 +75,7 @@ tests/integration/commits.test.ts                # EXTEND: correlation scenarios
 
 ## Risks & Mitigations
 
-- **Derived time diverges from `summaries`** → share the exact per-pair gap/timeout primitive between `computeDurations` and correlation (research D-4); a test asserts a commit's derived seconds equal the `summaries` total for the same project/interval.
+- **Derived time uses a different rule/attribution than `summaries`** → share the exact per-pair gap/timeout primitive between `computeDurations` and correlation **and** replicate its `prev.project` attribution (gap the unfiltered in-window stream, credit each interval to its earlier heartbeat's project) (research D-4); a test uses a multi-project fixture and asserts each in-window interval is attributed to the same project `computeDurations` would credit and that idle gaps > timeout contribute 0 — not that the derived figure equals a stored daily bucket (the window is previous-commit-partitioned and rounded once, unlike day-bucketed `summaries`).
 - **Double-counting across consecutive commits** → previous-commit lower bound partitions the timeline (FR-008); a test posts two commits in one session and asserts non-overlapping, summing times.
 - **CPU budget / unbounded scan** → 24h window cap + `LIMIT 5000` + existing `idx_heartbeats_user_time`; correlation only runs on the omitted path (research D-6).
 - **Timezone/epoch parsing of `author_date`** → convert the stored UTC datetime text to epoch via SQLite `strftime('%s', …)` rather than JS `Date.parse` on the space-separated format (research D-6).
