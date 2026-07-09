@@ -20,6 +20,7 @@ import dataDumps from "./routes/data-dumps";
 import machines from "./routes/machines";
 import userAgents from "./routes/user-agents";
 import { cardsPublic, cardsSettings } from "./routes/cards";
+import ai from "./routes/ai";
 import { aggregateHeartbeats } from "./cron/aggregate";
 import { backfillHourlySummaries } from "./cron/hourly-backfill";
 import { parseRetentionDays, purgeOldHeartbeats } from "./cron/purge";
@@ -192,6 +193,9 @@ app.route("/api/v1/users/current", userAgents);
 
 // Embed settings routes (mounted at /users/current, sub-app defines /embed_settings, spec 160)
 app.route("/api/v1/users/current", cardsSettings);
+
+// AI model price + usage routes (mounted at /users/current, sub-app defines /ai/*, Issue #200)
+app.route("/api/v1/users/current", ai);
 
 // Cron trigger handler for periodic aggregation + session cleanup
 export default {

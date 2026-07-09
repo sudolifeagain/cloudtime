@@ -30,9 +30,9 @@
 
 ### User Story 3 - Owner-managed pricing table (P2, precedes cost in US2)
 
-- [ ] T106 [US3] Implement `GET`/`POST /users/current/ai/prices` and `GET`/`PATCH`/`DELETE /users/current/ai/prices/{price_id}` in `src/routes/ai.ts`.
-- [ ] T107 [US3] Enforce required fields, rate/value bounds (token `<=1e9`, rate `<=1e6`), `currency` `^[A-Z]{3}$`, `http(s)` `source_url`, immutable `provider`/`model`/`effective_from`, no overlapping enabled windows per default class, default-row protection, and cross-user `404`.
-- [ ] T108 [US3] Unit tests for price selection by provider/model/effective date, owner-over-default precedence (FR-021), missing-price behavior, and user-specific overrides in `tests/aggregation/ai-pricing.test.ts`.
+- [x] T106 [US3] Implement `GET`/`POST /users/current/ai/prices` and `GET`/`PATCH`/`DELETE /users/current/ai/prices/{price_id}` in `src/routes/ai.ts`.
+- [x] T107 [US3] Enforce required fields, rate/value bounds (token `<=1e9`, rate `<=1e6`), `currency` `^[A-Z]{3}$`, `http(s)` `source_url`, immutable `provider`/`model`/`effective_from`, no overlapping enabled windows per default class, default-row protection, and cross-user `404`.
+- [x] T108 [US3] Unit tests for price selection by provider/model/effective date, owner-over-default precedence (FR-021), missing-price behavior, and user-specific overrides in `tests/aggregation/ai-pricing.test.ts`.
 
 ### User Story 2 - Owner-only usage & cost summary (P1)
 
