@@ -27,6 +27,7 @@ import {
   LoginView,
   type AiCodingOverview,
   type AiProjectSummary,
+  type AiUsageSummary,
   type CategorySummary,
   type DailySummary,
   type DashboardData,
@@ -36,6 +37,27 @@ import {
 } from "../ui/dashboard";
 import { SettingsView, timezoneOptions } from "../ui/settings";
 import { ApiKeyConfirmView } from "../ui/api-key";
+import {
+  AiPricingEditView,
+  AiPricingNotFoundView,
+  AiPricingView,
+  type PricingFlash,
+} from "../ui/ai-pricing";
+import { RATE_FIELDS, rowToAiModelPrice, validateCreatePrice, validateUpdatePrice } from "../utils/ai/pricing";
+import {
+  applyPriceUpdate,
+  deletePrice,
+  fetchPriceRow,
+  insertPrice,
+  listEnabledPrices,
+  listPrices,
+} from "../utils/ai/price-store";
+import {
+  AI_DAILY_USAGE_SELECT_COLUMNS,
+  buildUsageSummary,
+  resolveUsageRange,
+  type AiDailyUsageRow,
+} from "../utils/ai/usage";
 
 type WebEnv = {
   Bindings: Env;
@@ -171,6 +193,89 @@ web.post("/app/logout", async (c) => {
   return c.redirect("/app", 303);
 });
 
+// --- AI model pricing (owner dashboard controls, Issue #200 / T114) ---
+// Session-cookie authenticated (owner-only, single-user); the same effective-
+// dated price rows the API-key `/api/v1/.../ai/prices` endpoints manage, via the
+// shared `price-store` service so both surfaces enforce identical invariants.
+
+web.get("/app/ai/prices", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+  const username = await loadUsername(c.env.DB, session.userId);
+  if (username === null) return c.redirect("/app", 303);
+
+  const rows = await listPrices(c.env.DB, session.userId, { includeDisabled: true });
+  return renderPricingList(c, username, rows.map(rowToAiModelPrice), pricingFlash(c));
+});
+
+web.post("/app/ai/prices", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+
+  const form = await c.req.formData();
+  const parsed = validateCreatePrice(parseCreatePriceForm(form));
+  if (!parsed.ok) return redirectPricing(c, { error: parsed.error });
+
+  const result = await insertPrice(c.env.DB, session.userId, parsed.value);
+  if (!result.ok) return redirectPricing(c, { error: result.error });
+  return redirectPricing(c, { ok: "created" });
+});
+
+web.get("/app/ai/prices/:id/edit", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+  const username = await loadUsername(c.env.DB, session.userId);
+  if (username === null) return c.redirect("/app", 303);
+
+  const row = await fetchPriceRow(c.env.DB, session.userId, c.req.param("id"));
+  // Default rows are not owner-editable (mirrors the API PATCH 404); unknown or
+  // cross-user ids are already excluded by the user_id-scoped fetch.
+  if (!row || row.is_default === 1) return renderPricingNotFound(c, username);
+  return renderPricingEdit(c, username, rowToAiModelPrice(row), pricingFlash(c));
+});
+
+web.post("/app/ai/prices/:id", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+  const priceId = c.req.param("id");
+
+  const row = await fetchPriceRow(c.env.DB, session.userId, priceId);
+  if (!row || row.is_default === 1) return redirectPricing(c, { error: "Price not found" });
+
+  const form = await c.req.formData();
+  const parsed = validateUpdatePrice(parseUpdatePriceForm(form));
+  if (!parsed.ok) return redirectEdit(c, priceId, parsed.error);
+
+  const result = await applyPriceUpdate(c.env.DB, session.userId, row, parsed.value);
+  if (!result.ok) return redirectEdit(c, priceId, result.error);
+  return redirectPricing(c, { ok: "updated" });
+});
+
+web.post("/app/ai/prices/:id/toggle", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+  const priceId = c.req.param("id");
+
+  const row = await fetchPriceRow(c.env.DB, session.userId, priceId);
+  if (!row || row.is_default === 1) return redirectPricing(c, { error: "Price not found" });
+
+  const nextEnabled = row.is_enabled !== 1;
+  const parsed = validateUpdatePrice({ is_enabled: nextEnabled });
+  if (!parsed.ok) return redirectPricing(c, { error: parsed.error });
+
+  const result = await applyPriceUpdate(c.env.DB, session.userId, row, parsed.value);
+  if (!result.ok) return redirectPricing(c, { error: result.error });
+  return redirectPricing(c, { ok: nextEnabled ? "enabled" : "disabled" });
+});
+
+web.post("/app/ai/prices/:id/delete", async (c) => {
+  const session = await readSession(c);
+  if (!session) return c.redirect("/app", 303);
+
+  const deleted = await deletePrice(c.env.DB, session.userId, c.req.param("id"));
+  return redirectPricing(c, deleted ? { ok: "deleted" } : { error: "Price not found" });
+});
+
 async function readSession(c: Context<WebEnv>): Promise<AppSession | null> {
   const token = getSessionTokenFromCookie(c, c.env);
   if (!token) return null;
@@ -299,7 +404,7 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
     scalarNumber(c.env.DB, "SELECT COALESCE(SUM(total_seconds), 0) AS value FROM summaries WHERE user_id = ? AND date >= ?", [userId, last30Start]),
     scalarNumber(c.env.DB, "SELECT COALESCE(SUM(total_seconds), 0) AS value FROM summaries WHERE user_id = ?", [userId]),
     scalarNumber(c.env.DB, "SELECT COUNT(*) AS value FROM heartbeats WHERE user_id = ?", [userId]),
-    loadAiCodingOverview(c.env.DB, userId),
+    loadAiCodingOverview(c.env.DB, userId, timezone),
     scalarNumber(
       c.env.DB,
       "SELECT COUNT(*) AS value FROM sessions WHERE user_id = ? AND expires_at > datetime('now') AND last_active_at >= datetime('now', '-1 day')",
@@ -347,9 +452,13 @@ async function loadDashboardData(c: Context<WebEnv>, userId: string): Promise<Da
   };
 }
 
-async function loadAiCodingOverview(db: D1Database, userId: string): Promise<AiCodingOverview> {
+async function loadAiCodingOverview(
+  db: D1Database,
+  userId: string,
+  timezone: string,
+): Promise<AiCodingOverview> {
   const since = Math.floor(Date.now() / 1000) - 30 * 86400;
-  const [summary, projects, recentHeartbeats] = await Promise.all([
+  const [summary, projects, recentHeartbeats, usage] = await Promise.all([
     db.prepare(
       `SELECT COUNT(*) AS total_heartbeats, MAX(time) AS last_heartbeat_at
        FROM heartbeats
@@ -359,6 +468,7 @@ async function loadAiCodingOverview(db: D1Database, userId: string): Promise<AiC
       .first<{ total_heartbeats: number; last_heartbeat_at: number | null }>(),
     loadAiProjectSummaries(db, userId, since),
     loadRecentAiHeartbeats(db, userId),
+    loadAiUsageSummary(db, userId, timezone),
   ]);
 
   return {
@@ -366,7 +476,45 @@ async function loadAiCodingOverview(db: D1Database, userId: string): Promise<AiC
     lastHeartbeatAt: summary?.last_heartbeat_at ?? null,
     projects,
     recentHeartbeats,
+    usage,
   };
+}
+
+/**
+ * Build the dashboard's AI token/cost summary from the cron-maintained
+ * `ai_daily_usage` rollup (aggregate-then-price), never raw heartbeats — the same
+ * builder the `/ai/usage` API uses. The default trailing window ends on the
+ * owner's local "today"; the owner's profile timezone is both the request tz and
+ * the fixed aggregation tz the rollup days were materialized in.
+ */
+async function loadAiUsageSummary(
+  db: D1Database,
+  userId: string,
+  timezone: string,
+): Promise<AiUsageSummary> {
+  const range = resolveUsageRange(undefined, undefined, undefined, timezone);
+  // The all-default range never errors; guard only to satisfy the type.
+  const { start, end } = range.ok ? range : { start: "", end: "" };
+
+  const [usageRows, prices] = await Promise.all([
+    db
+      .prepare(
+        `SELECT ${AI_DAILY_USAGE_SELECT_COLUMNS} FROM ai_daily_usage
+         WHERE user_id = ? AND day >= ? AND day <= ?`,
+      )
+      .bind(userId, start, end)
+      .all<AiDailyUsageRow>(),
+    listEnabledPrices(db, userId),
+  ]);
+
+  return buildUsageSummary({
+    start,
+    end,
+    timezone,
+    aggregationTz: timezone,
+    rows: usageRows.results,
+    prices,
+  });
 }
 
 async function loadAiProjectSummaries(
@@ -545,6 +693,140 @@ async function loadRecentHeartbeats(
     machine: row.machine,
     isWrite: row.is_write === 1,
   }));
+}
+
+type AiModelPrice = ReturnType<typeof rowToAiModelPrice>;
+
+function renderPricingList(
+  c: Context<WebEnv>,
+  username: string,
+  prices: AiModelPrice[],
+  flash: PricingFlash,
+) {
+  return c.html(
+    <AppLayout title="AI Pricing" username={username} activePath="dashboard">
+      <AiPricingView username={username} prices={prices} flash={flash} />
+    </AppLayout>,
+    200,
+    noStoreHeaders(),
+  );
+}
+
+function renderPricingEdit(
+  c: Context<WebEnv>,
+  username: string,
+  price: AiModelPrice,
+  flash: PricingFlash,
+) {
+  return c.html(
+    <AppLayout title="Edit price" username={username} activePath="dashboard">
+      <AiPricingEditView username={username} price={price} flash={flash} />
+    </AppLayout>,
+    200,
+    noStoreHeaders(),
+  );
+}
+
+function renderPricingNotFound(c: Context<WebEnv>, username: string) {
+  return c.html(
+    <AppLayout title="AI Pricing" username={username} activePath="dashboard">
+      <AiPricingNotFoundView username={username} />
+    </AppLayout>,
+    404,
+    noStoreHeaders(),
+  );
+}
+
+/** Read the post-redirect flash from `?ok=`/`?error=` query params. */
+function pricingFlash(c: Context<WebEnv>): PricingFlash {
+  const error = c.req.query("error");
+  if (error) return { tone: "error", message: error };
+  const ok = c.req.query("ok");
+  const messages: Record<string, string> = {
+    created: "Price added.",
+    updated: "Price updated.",
+    deleted: "Price deleted.",
+    enabled: "Price enabled.",
+    disabled: "Price disabled.",
+  };
+  if (ok && messages[ok]) return { tone: "success", message: messages[ok] };
+  return undefined;
+}
+
+function redirectPricing(c: Context<WebEnv>, flash: { ok?: string; error?: string }) {
+  const params = new URLSearchParams();
+  if (flash.error) params.set("error", flash.error);
+  else if (flash.ok) params.set("ok", flash.ok);
+  const query = params.toString();
+  return c.redirect(`/app/ai/prices${query ? `?${query}` : ""}`, 303);
+}
+
+function redirectEdit(c: Context<WebEnv>, priceId: string, error: string) {
+  const params = new URLSearchParams({ error });
+  return c.redirect(`/app/ai/prices/${encodeURIComponent(priceId)}/edit?${params.toString()}`, 303);
+}
+
+function formString(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const trimmed = v.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+/** A `<input type="date">` value (`YYYY-MM-DD`) becomes an RFC 3339 UTC instant. */
+function dateToRfc3339(v: unknown): string | undefined {
+  const s = formString(v);
+  if (s === undefined) return undefined;
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00Z` : s;
+}
+
+/** Build a create-price body from the add form for {@link validateCreatePrice}. */
+function parseCreatePriceForm(form: FormData): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    provider: formString(form.get("provider")),
+    model: formString(form.get("model")),
+    effective_from: dateToRfc3339(form.get("effective_from")),
+    is_enabled: form.get("is_enabled") === "on",
+  };
+  const currency = formString(form.get("currency"));
+  if (currency !== undefined) body.currency = currency.toUpperCase();
+  const to = dateToRfc3339(form.get("effective_to"));
+  if (to !== undefined) body.effective_to = to;
+  const source = formString(form.get("source_url"));
+  if (source !== undefined) body.source_url = source;
+  for (const key of RATE_FIELDS) {
+    const raw = formString(form.get(key));
+    if (raw !== undefined) body[key] = Number(raw);
+  }
+  return body;
+}
+
+/**
+ * Build a patch body from the edit form for {@link validateUpdatePrice}. Currency,
+ * `effective_to`, `source_url`, and `is_enabled` are managed on every save (a
+ * blank date/URL clears to open-ended/null). Rates are only sent when non-empty,
+ * so clearing a rate leaves it unchanged — the update schema has no null rate, so
+ * removing a rate means delete + recreate.
+ */
+function parseUpdatePriceForm(form: FormData): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    currency: (formString(form.get("currency")) ?? "").toUpperCase(),
+    effective_to: dateToRfc3339(form.get("effective_to")) ?? null,
+    source_url: formString(form.get("source_url")) ?? null,
+    is_enabled: form.get("is_enabled") === "on",
+  };
+  for (const key of RATE_FIELDS) {
+    const raw = formString(form.get(key));
+    if (raw !== undefined) body[key] = Number(raw);
+  }
+  return body;
+}
+
+async function loadUsername(db: D1Database, userId: string): Promise<string | null> {
+  const row = await db
+    .prepare("SELECT username FROM users WHERE id = ?")
+    .bind(userId)
+    .first<{ username: string }>();
+  return row?.username ?? null;
 }
 
 function noStoreHeaders(): Record<string, string> {

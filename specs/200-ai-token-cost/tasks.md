@@ -44,6 +44,6 @@
 
 ### Dashboard & Docs
 
-- [ ] T114 Update the dashboard AI coding panel to token/cost-aware summaries and add price view/add/edit/disable/date-bound controls (render `source_url` as an `http(s)`-only link).
-- [ ] T115 Add `docs/ai-usage.md` describing compatible-client AI ingestion and the estimate (not-a-bill) disclaimer, following `docs/implementation-boundaries.md`.
-- [ ] T116 Run `npm run typecheck && npm test`.
+- [x] T114 Update the dashboard AI coding panel to token/cost-aware summaries and add price view/add/edit/disable/date-bound controls (render `source_url` as an `http(s)`-only link).
+- [x] T115 Add `docs/ai-usage.md` describing compatible-client AI ingestion and the estimate (not-a-bill) disclaimer, following `docs/implementation-boundaries.md`.
+- [x] T116 Run `npm run typecheck && npm test`.

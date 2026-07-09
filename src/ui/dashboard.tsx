@@ -1,6 +1,10 @@
 import { DataTable, EmptyState, MetricCard, Notice, Panel, ProgressRow } from "./components";
 import { RankedBarChart, VerticalBarChart, type ChartDatum } from "./charts";
 import type { EmbedSettings } from "../utils/embed-settings";
+import type { components } from "../types/generated";
+
+export type AiUsageSummary = components["schemas"]["AIUsageSummary"];
+export type AiTokenTotals = components["schemas"]["AITokenTotals"];
 
 export type ProviderLink = {
   provider: string;
@@ -47,6 +51,8 @@ export type AiCodingOverview = {
   lastHeartbeatAt: number | null;
   projects: AiProjectSummary[];
   recentHeartbeats: RecentHeartbeat[];
+  /** Token/cost summary from the `ai_daily_usage` rollup over the trailing window. */
+  usage: AiUsageSummary;
 };
 
 export type DashboardData = {
@@ -262,45 +268,55 @@ export function DashboardView({
         </Panel>
       </div>
 
-      <Panel title="AI coding activity">
-        <div class="grid gap-6 xl:grid-cols-[minmax(240px,0.75fr)_minmax(0,1.25fr)]">
-          <div class="space-y-5">
-            <dl class="grid gap-3 text-sm">
-              <InfoRow label="Stored heartbeats" value={formatHeartbeatCount(data.aiCoding.totalHeartbeats)} />
-              <InfoRow
-                label="Last seen"
-                value={
-                  data.aiCoding.lastHeartbeatAt
-                    ? formatDateTime(data.aiCoding.lastHeartbeatAt, data.user.timezone)
-                    : "Never"
-                }
+      <Panel
+        title="AI coding activity"
+        action={
+          <a class="btn btn-outline btn-sm" href="/app/ai/prices">
+            Manage AI pricing
+          </a>
+        }
+      >
+        <div class="space-y-6">
+          <AiUsageSummarySection usage={data.aiCoding.usage} />
+          <div class="grid gap-6 xl:grid-cols-[minmax(240px,0.75fr)_minmax(0,1.25fr)]">
+            <div class="space-y-5">
+              <dl class="grid gap-3 text-sm">
+                <InfoRow label="Stored heartbeats" value={formatHeartbeatCount(data.aiCoding.totalHeartbeats)} />
+                <InfoRow
+                  label="Last seen"
+                  value={
+                    data.aiCoding.lastHeartbeatAt
+                      ? formatDateTime(data.aiCoding.lastHeartbeatAt, data.user.timezone)
+                      : "Never"
+                  }
+                />
+              </dl>
+              <RankedBarChart
+                data={aiProjectChartData}
+                empty="No AI coding project activity in the last 30 days."
               />
-            </dl>
-            <RankedBarChart
-              data={aiProjectChartData}
-              empty="No AI coding project activity in the last 30 days."
+            </div>
+            <DataTable
+              headers={["Time", "Entity", "Project", "Language", "Client"]}
+              empty="No AI coding heartbeats received yet."
+              rows={data.aiCoding.recentHeartbeats.map((heartbeat) => [
+                formatDateTime(heartbeat.time, data.user.timezone),
+                <div class="min-w-56">
+                  <div class="truncate font-medium">{heartbeat.entity}</div>
+                  <div class="text-xs text-base-content/50">
+                    {heartbeat.type}
+                    {heartbeat.isWrite ? " / write" : ""}
+                  </div>
+                </div>,
+                heartbeat.project ?? "Unknown",
+                heartbeat.language ?? "Unknown",
+                <div>
+                  <div>{heartbeat.editor ?? "Unknown"}</div>
+                  <div class="text-xs text-base-content/50">{heartbeat.machine ?? "No machine"}</div>
+                </div>,
+              ])}
             />
           </div>
-          <DataTable
-            headers={["Time", "Entity", "Project", "Language", "Client"]}
-            empty="No AI coding heartbeats received yet."
-            rows={data.aiCoding.recentHeartbeats.map((heartbeat) => [
-              formatDateTime(heartbeat.time, data.user.timezone),
-              <div class="min-w-56">
-                <div class="truncate font-medium">{heartbeat.entity}</div>
-                <div class="text-xs text-base-content/50">
-                  {heartbeat.type}
-                  {heartbeat.isWrite ? " / write" : ""}
-                </div>
-              </div>,
-              heartbeat.project ?? "Unknown",
-              heartbeat.language ?? "Unknown",
-              <div>
-                <div>{heartbeat.editor ?? "Unknown"}</div>
-                <div class="text-xs text-base-content/50">{heartbeat.machine ?? "No machine"}</div>
-              </div>,
-            ])}
-          />
         </div>
       </Panel>
 
@@ -348,6 +364,167 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     <div class="flex items-center justify-between gap-4 border-b border-base-200 pb-2 last:border-b-0 last:pb-0">
       <dt class="text-base-content/60">{label}</dt>
       <dd class="min-w-0 truncate font-medium">{value}</dd>
+    </div>
+  );
+}
+
+type TokenClassKey =
+  | "input_tokens"
+  | "cached_input_tokens"
+  | "output_tokens"
+  | "reasoning_output_tokens"
+  | "cache_write_tokens"
+  | "cache_read_tokens";
+
+const TOKEN_CLASS_LABELS: Array<[TokenClassKey, string]> = [
+  ["input_tokens", "Input"],
+  ["cached_input_tokens", "Cached input"],
+  ["output_tokens", "Output"],
+  ["reasoning_output_tokens", "Reasoning"],
+  ["cache_write_tokens", "Cache write"],
+  ["cache_read_tokens", "Cache read"],
+];
+
+function sumTokenClasses(t: AiTokenTotals): number {
+  return (
+    t.input_tokens +
+    t.cached_input_tokens +
+    t.output_tokens +
+    t.reasoning_output_tokens +
+    t.cache_write_tokens +
+    t.cache_read_tokens
+  );
+}
+
+function formatTokens(count: number): string {
+  return count.toLocaleString();
+}
+
+/**
+ * Render an estimated cost as `CODE 1,234.5678`. The summary currency is an
+ * arbitrary `^[A-Z]{3}$` owner-typed code (not always a real ISO 4217 code), so
+ * a numeric formatter is used rather than `Intl` currency style, which throws on
+ * unknown codes. `null` means the usage could not be priced (never a silent 0).
+ */
+function formatCost(value: number | null, currency: string): string {
+  if (value === null) return "—";
+  return `${currency} ${value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  })}`;
+}
+
+function UsageTile({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div class="rounded-lg border border-base-200 bg-base-200/40 p-3">
+      <div class="text-xs text-base-content/60">{label}</div>
+      <div class="mt-1 break-words text-lg font-semibold text-base-content">{value}</div>
+      <div class="mt-1 text-xs text-base-content/50">{detail}</div>
+    </div>
+  );
+}
+
+function AiUsageSummarySection({ usage }: { usage: AiUsageSummary }) {
+  const totals = usage.totals;
+  const totalTokens = sumTokenClasses(totals);
+  const hasUsage = totals.heartbeat_count > 0 || totalTokens > 0;
+
+  const dailyChartData: ChartDatum[] = usage.daily.map((day) => {
+    const dayTokens = sumTokenClasses(day);
+    return { label: day.date.slice(5), value: dayTokens, text: formatTokens(dayTokens) };
+  });
+
+  return (
+    <div class="space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="text-sm font-semibold">Token usage &amp; estimated cost</h3>
+        <span class="text-xs text-base-content/50">
+          {usage.start} to {usage.end} / {usage.timezone}
+        </span>
+      </div>
+
+      {!hasUsage ? (
+        <EmptyState>
+          No aggregated AI token usage in this window yet. Token totals appear once the hourly
+          aggregation runs over ai coding heartbeats that report token counts.
+        </EmptyState>
+      ) : (
+        <>
+          <div class="grid gap-3 sm:grid-cols-3">
+            <UsageTile
+              label="Estimated cost"
+              value={formatCost(totals.estimated_cost, usage.currency)}
+              detail="API-equivalent estimate, not a bill"
+            />
+            <UsageTile
+              label="Priced heartbeats"
+              value={formatHeartbeatCount(totals.heartbeat_count)}
+              detail={`${formatTokens(totalTokens)} tokens`}
+            />
+            <UsageTile
+              label="Avg prompt length"
+              value={totals.prompt_length_avg === null ? "—" : Math.round(totals.prompt_length_avg).toLocaleString()}
+              detail="Characters per reporting heartbeat"
+            />
+          </div>
+
+          {totals.estimated_cost === null ? (
+            <Notice tone="info">
+              No enabled price row matches this usage, so the estimated cost is unavailable. Add a
+              price under Manage AI pricing to see an estimate.
+            </Notice>
+          ) : null}
+          {totals.estimated_cost !== null && totals.missing_price_count > 0 ? (
+            <Notice tone="warning">
+              {formatHeartbeatCount(totals.missing_price_count)} could not be priced in {usage.currency} and
+              are excluded from the estimate.
+            </Notice>
+          ) : null}
+          {usage.mixed_currency ? (
+            <Notice tone="warning">
+              Some priced usage is in a different currency and is excluded from the {usage.currency} total.
+            </Notice>
+          ) : null}
+
+          <div class="grid gap-6 lg:grid-cols-2">
+            <div class="space-y-3">
+              <h4 class="text-xs font-semibold uppercase tracking-normal text-base-content/50">Token classes</h4>
+              <dl class="grid gap-2 text-sm">
+                {TOKEN_CLASS_LABELS.map(([key, label]) => (
+                  <InfoRow label={label} value={formatTokens(totals[key])} />
+                ))}
+              </dl>
+            </div>
+            <div class="space-y-3">
+              <h4 class="text-xs font-semibold uppercase tracking-normal text-base-content/50">Daily tokens</h4>
+              <VerticalBarChart
+                id="ai-token-trend-chart"
+                title="Daily AI tokens"
+                description="Total AI tokens aggregated per day in the selected window."
+                data={dailyChartData}
+                empty="No daily AI token usage yet."
+              />
+            </div>
+          </div>
+
+          {usage.by_model.length > 0 ? (
+            <div class="space-y-3">
+              <h4 class="text-xs font-semibold uppercase tracking-normal text-base-content/50">By model</h4>
+              <DataTable
+                headers={["Provider", "Model", "Heartbeats", "Tokens", "Est. cost"]}
+                empty="No model breakdown yet."
+                rows={usage.by_model.slice(0, 8).map((m) => [
+                  m.provider,
+                  m.model,
+                  formatHeartbeatCount(m.heartbeat_count),
+                  formatTokens(sumTokenClasses(m)),
+                  formatCost(m.estimated_cost, usage.currency),
+                ])}
+              />
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
