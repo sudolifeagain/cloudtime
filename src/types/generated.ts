@@ -1232,10 +1232,15 @@ export interface paths {
          *     - If neither is supplied, a trailing `days` window ending on "today" is
          *       used (`days` defaults to 30).
          *
-         *     "Today" and all day bucketing use the resolved `timezone` (the owner's
-         *     profile timezone by default). The request returns 400 when `start > end`,
-         *     when the resolved span exceeds 366 days, or when `timezone` is not a valid
-         *     IANA name.
+         *     The resolved `timezone` (the owner's profile timezone by default) is used to
+         *     resolve "today" for the trailing `days` window and to interpret `start`/`end`
+         *     as local calendar days for range selection and labeling. It does not
+         *     re-bucket historical days: each day is materialized once at aggregation time
+         *     in a fixed aggregation timezone (the owner's profile timezone), so a
+         *     `timezone` differing from the profile timezone shifts only the range
+         *     endpoints, not the internal day boundaries. The request returns 400 when
+         *     `start > end`, when the resolved span exceeds 366 days, or when `timezone` is
+         *     not a valid IANA name.
          *
          *     Cost is an estimate of API-equivalent spend, not the owner's actual
          *     subscription bill. Buckets that reference token facts with no matching
@@ -2249,8 +2254,11 @@ export interface components {
          *     A *contributing heartbeat* is one with `category: "ai coding"` that carries at
          *     least one priced token field (`ai_input_tokens`, `ai_output_tokens`,
          *     `ai_cached_input_tokens`, `ai_reasoning_output_tokens`, `ai_cache_write_tokens`,
-         *     or `ai_cache_read_tokens`). Heartbeats that carry only `ai_prompt_length` and
-         *     no priced token field do not contribute and are excluded from every field here.
+         *     or `ai_cache_read_tokens`). "Carries" is decided by presence, not value: a
+         *     field present with value `0` still counts, so a heartbeat sending
+         *     `ai_input_tokens: 0` contributes, while a heartbeat that omits every priced
+         *     token field does not. Heartbeats that carry only `ai_prompt_length` and no
+         *     priced token field do not contribute and are excluded from every field here.
          *
          *     `estimated_cost` is an API-equivalent estimate computed from stored token
          *     counts and the effective owner pricing rows for each heartbeat's timestamp. It
@@ -2273,7 +2281,7 @@ export interface components {
              * @description Mean reported prompt length across heartbeats that carried
              *     `ai_prompt_length`, or null when none did.
              */
-            prompt_length_avg?: number | null;
+            prompt_length_avg: number | null;
             /**
              * @description Number of contributing heartbeats in the bucket (`ai coding` heartbeats
              *     that carry at least one priced token field). Heartbeats with only
@@ -2317,7 +2325,9 @@ export interface components {
              */
             end: string;
             /**
-             * @description IANA timezone used to bucket heartbeats into local days.
+             * @description IANA timezone used to resolve the range's local calendar days and "today".
+             *     Historical day boundaries are fixed at aggregation time in the owner's
+             *     profile timezone and are not re-bucketed per request.
              * @example Asia/Tokyo
              */
             timezone: string;
@@ -4492,8 +4502,11 @@ export interface operations {
                  */
                 days?: number;
                 /**
-                 * @description IANA timezone used to bucket heartbeats into local days. Defaults to the
-                 *     authenticated user's profile timezone when omitted.
+                 * @description IANA timezone used to resolve "today" and to interpret `start`/`end` as
+                 *     local calendar days for range selection and labeling. Defaults to the
+                 *     authenticated user's profile timezone when omitted. Historical day
+                 *     boundaries are fixed at aggregation time in the owner's profile timezone
+                 *     and are not re-bucketed per request.
                  */
                 timezone?: string;
                 /** @description Restrict the summary to a single project. */
