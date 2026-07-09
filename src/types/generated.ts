@@ -2269,9 +2269,11 @@ export interface components {
          *     `[effective_from, effective_to)` window contains the bucket day's start-of-day
          *     instant in the fixed aggregation timezone, not each individual heartbeat's
          *     timestamp. It is NOT the owner's actual subscription bill. When no enabled
-         *     price row in the summary `currency` matches a contributing heartbeat, that
-         *     heartbeat is counted in `missing_price_count` and excluded from the cost sum.
-         *     When no contributing heartbeat matches an enabled price row in the summary
+         *     price row in the summary `currency` *fully prices* a contributing heartbeat's
+         *     bucket — no row matched, the matched row is a different currency, or it leaves
+         *     a token class the bucket actually used unpriced (a null rate) — that heartbeat
+         *     is counted in `missing_price_count` and excluded from the cost sum. When no
+         *     contributing heartbeat falls in a fully-priced bucket in the summary
          *     `currency`, `estimated_cost` is `null` (never a silent zero).
          */
         AITokenTotals: {
@@ -2296,18 +2298,23 @@ export interface components {
             heartbeat_count: number;
             /**
              * @description API-equivalent estimated cost in the summary `currency`, or null when no
-             *     contributing heartbeat matched an enabled price row in that currency.
-             *     Contributions priced only in a different currency are never summed in;
-             *     they are excluded and counted in `missing_price_count`.
+             *     contributing heartbeat fell in a bucket fully priced by an enabled price
+             *     row in that currency. Only buckets whose matched row covers every token
+             *     class the bucket used contribute; contributions priced in a different
+             *     currency, or in buckets the matched row leaves partly unpriced, are never
+             *     summed in — they are excluded and counted in `missing_price_count`.
              */
             estimated_cost: number | null;
             /**
-             * @description Number of contributing heartbeats that have no enabled price row matching
-             *     their `(provider, model)` in the summary `currency` at the bucket day's
-             *     start-of-day instant in the fixed aggregation timezone (the same
-             *     aggregate-then-price resolution used for `estimated_cost`) — either
-             *     because no price row matched at all, or the matched row's currency differs
-             *     from the summary `currency` (so its cost cannot be summed in).
+             * @description Number of contributing heartbeats in buckets that could not be fully
+             *     priced in the summary `currency` at the bucket day's start-of-day instant
+             *     in the fixed aggregation timezone (the same aggregate-then-price resolution
+             *     used for `estimated_cost`) — because no enabled price row matched their
+             *     `(provider, model)`, the matched row's currency differs from the summary
+             *     `currency` (so its cost cannot be summed in), or the matched row leaves a
+             *     token class the bucket actually used unpriced (a null rate). Such a bucket
+             *     contributes nothing to `estimated_cost`, so a used-but-unpriced class is
+             *     never silently valued at zero.
              */
             missing_price_count: number;
         };
