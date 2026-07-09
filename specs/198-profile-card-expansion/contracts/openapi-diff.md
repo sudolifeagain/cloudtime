@@ -43,6 +43,20 @@ Changes:
 The existing `heatmap`, `summary`, `languages`, and `streak` card types remain
 unchanged.
 
+## Clarified Descriptions (goal_progress inverse goals)
+
+Both public image paths clarify how `goal_progress` renders inverse (cap) goals,
+matching the shipped behavior (FR-018):
+
+- `GET /users/{username}/badges/{badge_type}.svg` — the `goal_id` parameter
+  description states that inverse (cap) goals are rendered as a share of the cap
+  ("% of cap"), never as achievement, with identical goal selection.
+- `GET /users/{username}/cards/{card_type}.svg` — the `metrics` parameter
+  description states the same for the `goal_progress` profile section.
+
+These are description-only clarifications; no request/response shapes,
+parameters, enums, or status codes change.
+
 ## Generated Types
 
 After `npm run generate`, TypeScript clients receive:
@@ -50,3 +64,5 @@ After `npm run generate`, TypeScript clients receive:
 - new `getEmbeddableBadge` operation types
 - updated `getEmbeddableCard` `card_type` enum including `profile`
 - typed `metrics` and `layout` query fields for profile cards
+- refreshed JSDoc on the badge `goal_id` and card `metrics` parameters
+  describing inverse (cap) goal rendering (no type-shape change)
