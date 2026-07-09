@@ -12,13 +12,16 @@ description: |
   token field does not. Heartbeats that carry only `ai_prompt_length` and no
   priced token field do not contribute and are excluded from every field here.
 
-  `estimated_cost` is an API-equivalent estimate computed from stored token
-  counts and the effective owner pricing rows for each heartbeat's timestamp. It
-  is NOT the owner's actual subscription bill. When no enabled price row in the
-  summary `currency` matches a contributing heartbeat, that heartbeat is counted
-  in `missing_price_count` and excluded from the cost sum. When no contributing
-  heartbeat matches an enabled price row in the summary `currency`,
-  `estimated_cost` is `null` (never a silent zero).
+  `estimated_cost` is an API-equivalent estimate computed from the rollup's
+  aggregated token counts and the effective owner pricing row resolved once per
+  daily bucket (aggregate-then-price) — the row whose
+  `[effective_from, effective_to)` window contains the bucket day's start-of-day
+  instant in the fixed aggregation timezone, not each individual heartbeat's
+  timestamp. It is NOT the owner's actual subscription bill. When no enabled
+  price row in the summary `currency` matches a contributing heartbeat, that
+  heartbeat is counted in `missing_price_count` and excluded from the cost sum.
+  When no contributing heartbeat matches an enabled price row in the summary
+  `currency`, `estimated_cost` is `null` (never a silent zero).
 required:
   - input_tokens
   - output_tokens
@@ -53,7 +56,7 @@ properties:
   prompt_length_total:
     type: integer
     minimum: 0
-    description: Sum of reported `ai_prompt_length` for the bucket.
+    description: Sum of reported `ai_prompt_length` across the bucket's contributing heartbeats.
   prompt_length_avg:
     oneOf:
       - type: number
@@ -61,8 +64,8 @@ properties:
         minimum: 0
       - type: 'null'
     description: |
-      Mean reported prompt length across heartbeats that carried
-      `ai_prompt_length`, or null when none did.
+      Mean reported prompt length across the bucket's contributing heartbeats
+      that carried `ai_prompt_length`, or null when none did.
   heartbeat_count:
     type: integer
     minimum: 0
@@ -86,6 +89,8 @@ properties:
     minimum: 0
     description: |
       Number of contributing heartbeats that have no enabled price row matching
-      their `(provider, model)` and timestamp in the summary `currency` — either
+      their `(provider, model)` in the summary `currency` at the bucket day's
+      start-of-day instant in the fixed aggregation timezone (the same
+      aggregate-then-price resolution used for `estimated_cost`) — either
       because no price row matched at all, or the matched row's currency differs
       from the summary `currency` (so its cost cannot be summed in).

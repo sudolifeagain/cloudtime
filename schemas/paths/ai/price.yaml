@@ -39,12 +39,15 @@ patch:
     body change; omitted fields are left untouched. Returns the updated row in
     the `AIModelPrice` shape.
 
-    `provider`, `model`, and `effective_from` are immutable — sending any
-    returns 400. An empty body, an `effective_to` not strictly after
+    The existence and ownership check runs first: unknown ids, CloudTime-shipped
+    default rows (`is_default=true`), and rows owned by a different user return
+    404 before any body validation, so a 400 is never used to confirm that an id
+    the caller cannot edit exists (FR-015). Once the row is confirmed
+    owner-editable, `provider`, `model`, and `effective_from` are immutable —
+    sending any returns 400; an empty body, an `effective_to` not strictly after
     `effective_from`, a negative rate, or an invalid currency also return 400.
-    CloudTime-shipped default rows (`is_default=true`) and rows owned by a
-    different user return 404; the owner supersedes a default by creating an
-    owner row or toggling `is_enabled`.
+    The owner supersedes a default by creating an owner row or toggling
+    `is_enabled`.
   parameters:
     - name: price_id
       in: path

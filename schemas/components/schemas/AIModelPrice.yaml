@@ -6,9 +6,11 @@ description: |
   discounted/subscription-equivalent assumptions.
 
   Rows are effective-dated rather than mutated in place so historical cost
-  estimates stay reproducible: cost for a heartbeat is computed from the row
-  whose `[effective_from, effective_to)` window contains the heartbeat's
-  timestamp. Rates are expressed per 1,000,000 tokens in `currency`.
+  estimates stay reproducible: cost is resolved once per daily rollup bucket
+  (aggregate-then-price) from the row whose `[effective_from, effective_to)`
+  window contains the bucket day's start-of-day instant in the fixed aggregation
+  timezone, not each individual heartbeat's timestamp. Rates are expressed per
+  1,000,000 tokens in `currency`.
 
   Estimated cost derived from these rows is an API-equivalent estimate, NOT the
   owner's actual subscription bill.

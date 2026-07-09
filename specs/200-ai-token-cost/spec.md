@@ -64,7 +64,8 @@ each with token totals and an `estimated_cost` that is `null` (with
    and `estimated_cost` is `null` with a non-zero `missing_price_count`.
 2. Given stored AI heartbeats and matching enabled pricing rows, when the owner
    requests the summary, then `estimated_cost` is a positive estimate derived
-   from stored tokens and the effective price for each heartbeat's timestamp.
+   from the rollup's aggregated tokens and the effective price resolved once per
+   daily bucket (aggregate-then-price).
 3. Given a requested range wider than 366 days, when the summary is requested,
    then the response is `400`.
 4. Given no authenticated owner, when `GET /users/current/ai/usage` is requested,
@@ -133,10 +134,16 @@ different-user/unknown id returns `404`.
   re-bucket already-aggregated days. A `timezone` differing from the aggregation
   timezone therefore shifts only the range endpoints, not the internal day
   boundaries. The endpoint MUST return `400` when `start > end`, when the resolved
-  span exceeds 366 days, or when `timezone` is not a valid IANA name.
+  span exceeds 366 days — the span is an inclusive day count, so `start == end`
+  is a one-day span and a 366-day inclusive window is the maximum, matching
+  `days`'s `maximum: 366` — or when `timezone` is not a valid IANA name.
 - **FR-009**: `estimated_cost` MUST be an API-equivalent estimate derived from
-  stored token counts and the effective enabled price row for each heartbeat's
-  timestamp; it MUST NOT be presented as an actual subscription bill.
+  the rollup's aggregated token counts and the effective enabled price row
+  resolved once per rollup bucket at day granularity (aggregate-then-price per
+  FR-025) — the row whose `[effective_from, effective_to)` window contains the
+  bucket day's start-of-day instant in the fixed aggregation timezone, not each
+  heartbeat's individual timestamp; it MUST NOT be presented as an actual
+  subscription bill.
 - **FR-010**: When no enabled price row in the summary `currency` matches a
   contributing heartbeat, that heartbeat MUST count toward `missing_price_count`
   and be excluded from the cost sum; `estimated_cost` MUST be `null` (never a
@@ -174,9 +181,11 @@ different-user/unknown id returns `404`.
 - **FR-020**: PR1 MUST include only SpecKit artifacts, OpenAPI changes, and
   regenerated OpenAPI types. It MUST NOT include route handlers, migrations,
   `schema.sql` changes, dashboard code, or docs behavior changes.
-- **FR-021**: When more than one enabled price row matches a heartbeat's
-  `(provider, model)` and timestamp (e.g. an owner row and a still-enabled
-  default row), price selection MUST be deterministic: prefer the owner row
+- **FR-021**: When more than one enabled price row matches a rollup bucket's
+  `(provider, model)` at its resolution instant — the bucket day's start-of-day
+  in the fixed aggregation timezone (FR-025) — (e.g. an owner row and a
+  still-enabled default row), price selection MUST be deterministic: prefer the
+  owner row
   (`is_default=false`) over the default row, then the row with the latest
   `effective_from`. PR2 MUST additionally forbid two enabled rows of the same
   default class from having overlapping effective windows for one
