@@ -46,7 +46,7 @@ Documented decisions that shape the contract. Each records the choice, the alter
 
 ## D-5: Idempotency within a batch — apply in order, last-wins
 
-**Decision**: If a single batch lists the same `(project, hash)` twice, the upserts apply in array order inside the one `db.batch()` transaction; the last occurrence's values persist. The endpoint does not reject or specially de-duplicate in-batch duplicates. Clients are advised to de-duplicate.
+**Decision**: If a single batch lists the same `(project, hash)` twice, the upserts apply in array order inside the one `db.batch()` transaction; the last occurrence's values persist. The **response** mirrors input cardinality — one `Commit` entry per input element in request order (the earlier occurrence carrying its pre-overwrite `RETURNING` snapshot, the later the last-wins values), matching `external_durations.bulk`'s map-every-result shape — while a follow-up read returns the single persisted (last-wins) row. The endpoint does not reject or specially de-duplicate in-batch duplicates. Clients are advised to de-duplicate.
 
 **Why**: The upsert is idempotent on `(user_id, project, hash)`; two occurrences in one batch behave exactly like re-posting — the second `ON CONFLICT DO UPDATE` sees the first's row and updates it (last-wins persisted). This is identical to `external_durations.bulk`'s behavior on `(user_id, external_id)`, so bulk commit ingestion needs no special case. Rejecting in-batch duplicates would add a scan and a new 400 path for a caller error that idempotency already makes harmless.
 

@@ -59,8 +59,8 @@ As a hook/webhook author whose delivery may retry or whose push ranges overlap, 
 **Acceptance Scenarios**:
 
 1. **Given** a commit already stored for `(user, project, hash)`, **When** a later batch re-sends that `hash`, **Then** no duplicate row is created (dedup on `(user_id, project, hash)`), and its mutable fields reflect the latest values.
-2. **Given** a single batch that lists the same `(project, hash)` twice, **When** posted, **Then** the upserts apply in array order and the last occurrence's values persist (consistent with re-posting); clients are advised to de-duplicate.
-3. **Given** any batch, **Then** the response status is `201` (the upsert is an accepted write, mirroring the single-commit and external-durations convention).
+2. **Given** a single batch that lists the same `(project, hash)` twice, **When** posted, **Then** the upserts apply in array order and the last occurrence's values persist (consistent with re-posting); the response mirrors input cardinality — N inputs yield N `Commit` entries in request order, the earlier occurrence carrying its pre-overwrite snapshot and the later the last-wins values — while a follow-up read returns the single last-wins row. Clients are advised to de-duplicate.
+3. **Given** any accepted upsert batch (one that passed validation, so not the `400` cases in FR-002/FR-003), **Then** the response status is `201` (the upsert is an accepted write, mirroring the single-commit and external-durations convention).
 
 ### Edge Cases
 
@@ -79,7 +79,7 @@ As a hook/webhook author whose delivery may retry or whose push ranges overlap, 
 - **FR-003**: The batch MUST be capped at 100 elements per request; a larger array MUST return `400` and write nothing. A body that is not a JSON array MUST return `400`. An empty array MUST return `201` with `{ data: [] }` and write nothing.
 - **FR-004**: Each validated element MUST be upserted idempotently on `(user_id, project, hash)` in a **single** `db.batch()` (one D1 round-trip) — re-sending a `hash` updates the existing row's mutable fields (`message`, `author_*`, `committer_*`, `total_seconds`, `ref`, `url`) in place rather than inserting a duplicate.
 - **FR-005**: `total_seconds` per element MUST be client-supplied and stored verbatim (including an explicit `0`); when omitted it MUST be stored absent. Bulk ingestion MUST NOT correlate heartbeats to derive `total_seconds` (contrast the single endpoint, #145).
-- **FR-006**: On success the system MUST return `201` with `{ data: Commit[] }` in request order, each element in the same `Commit` shape the read and single-create endpoints return.
+- **FR-006**: On success the system MUST return `201` with `{ data: Commit[] }` in request order, each element in the same `Commit` shape the read and single-create endpoints return. The response MUST preserve input cardinality even when the batch repeats a `(project, hash)`: N inputs yield N `Commit` entries (the earlier duplicate carrying its pre-overwrite snapshot, the later the last-wins values), while only the single last-wins row persists.
 - **FR-007**: The endpoint MUST require authentication (Bearer API key); an unauthenticated request returns `401`, checked before the body is read or validated.
 - **FR-008**: The stored `project` MUST come from the path and apply to every element; any `project` inside an element MUST be ignored.
 - **FR-009**: Ingested commits MUST be immediately retrievable via the existing read endpoints (list + single), honoring their ordering and `author`/`branch` filters.

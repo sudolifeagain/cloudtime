@@ -5,8 +5,9 @@
 - `schemas/paths/commits/commits-bulk.yaml` (**new** path item with `post`)
 - `schemas/openapi.yaml` (register `/users/current/projects/{project}/commits.bulk`)
 - `schemas/components/schemas/CommitInput.yaml` (**description-only** reword of `total_seconds`)
+- `schemas/components/schemas/Commit.yaml` (**description-only** reword of `total_seconds`)
 
-This PR1 change is **additive** plus one description-only edit: a new `post` operation on a new path, reusing the existing `CommitInput` request schema and `Commit` response schema. `npm run generate` adds `operations["createProjectCommitsBulk"]` and the new path member; the `CommitInput` reword changes only a JSDoc description. No existing operation, member, type, format, `required`, or status changes.
+This PR1 change is **additive** plus two description-only edits: a new `post` operation on a new path, reusing the existing `CommitInput` request schema and `Commit` response schema, and endpoint-neutral rewords of `total_seconds` on **both** (so neither claims the server always derives an omitted value — bulk does not). `npm run generate` adds `operations["createProjectCommitsBulk"]` and the new path member; the `CommitInput` / `Commit` rewords change only JSDoc descriptions. No existing operation, member, type, format, `required`, or status changes.
 
 ## 1. New path item `commits-bulk.yaml` — add the `post` operation
 
@@ -88,11 +89,27 @@ Under `# --- commits ---`, add the `.bulk` path next to the existing two (mirror
 
 No `type`/`format`/`minimum`/`required` change — description text only.
 
+## 4. `Commit.total_seconds` — endpoint-neutral description (description-only)
+
+`Commit` is the response item schema of both the single-create and the bulk `201`
+(`commits-bulk.yaml`), so its `total_seconds` description must not claim the server
+always derives an omitted value — a bulk-ingested commit's `total_seconds` is never
+derived (FR-005).
+
+**Before**:
+> Coding time in seconds for the commit. Either client-supplied at ingest or server-derived from surrounding heartbeats when the client omitted it. Absent when no time was supplied and none could be derived.
+
+**After**:
+> Coding time in seconds for the commit. Either client-supplied at ingest or, for the single `POST .../commits` endpoint only, server-derived from surrounding heartbeats when the client omitted it; bulk ingestion (`commits.bulk`) never derives it. Absent when no time was supplied and none could be derived.
+
+No `type`/`format`/`required` change — description text only.
+
 ## Generated types impact
 
 - `src/types/generated.ts`:
   - new `paths["/users/current/projects/{project}/commits.bulk"]` with `post: operations["createProjectCommitsBulk"]`;
   - new `operations["createProjectCommitsBulk"]` — `project` path param, an `application/json` array-of-`CommitInput` request body, and the `201 { data: Commit[] }` / `400` / `401` responses;
-  - the `CommitInput.total_seconds` JSDoc comment updated to the endpoint-neutral wording (no member/type change).
+  - the `CommitInput.total_seconds` JSDoc comment updated to the endpoint-neutral wording (no member/type change);
+  - the `Commit.total_seconds` JSDoc comment updated to the endpoint-neutral wording (no member/type change).
 - No existing operation or schema member changes otherwise.
 - Verified by `npm run generate` + reviewing the `git diff` of `src/types/generated.ts` (additive operation/path + the one JSDoc reword only).

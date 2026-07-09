@@ -99,7 +99,7 @@ RETURNING <SELECT_COLUMNS>
 
 **No correlation query.** Unlike the single endpoint, the bulk handler issues no previous-commit / window-bounds read and no heartbeat scan (FR-005, FR-011); an omitted `total_seconds` is bound as `null`.
 
-**In-batch duplicate `(project, hash)`** (research D-5): statements run in array order within the one transaction, so a second occurrence's `ON CONFLICT DO UPDATE` sees the first and updates it — last-wins persisted, exactly like re-posting.
+**In-batch duplicate `(project, hash)`** (research D-5): statements run in array order within the one transaction, so a second occurrence's `ON CONFLICT DO UPDATE` sees the first and updates it — last-wins persisted, exactly like re-posting. The response preserves input cardinality: the `batchResults.map(...)` above yields one `Commit` per input element in request order (the earlier occurrence's `RETURNING` is its pre-overwrite snapshot, the later's is last-wins), while only the single last-wins row persists — a follow-up read returns exactly one row for that `(project, hash)`.
 
 ## Read path (unchanged, #107)
 
