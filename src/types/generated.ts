@@ -1222,10 +1222,20 @@ export interface paths {
          *     provider, and model. Each bucket carries token totals and an API-equivalent
          *     `estimated_cost` computed from the owner's effective pricing table.
          *
-         *     The range is bounded to protect the request-time CPU budget. Provide either
-         *     `start`+`end` or a single `days` window; the resolved span MUST NOT exceed
-         *     366 days, otherwise the request returns 400. Days are bucketed in the
-         *     resolved `timezone` (the owner's profile timezone by default).
+         *     The range is bounded to protect the request-time CPU budget. Range
+         *     resolution is deterministic:
+         *
+         *     - If both `start` and `end` are supplied, the explicit inclusive range
+         *       `[start, end]` is used and `days` is ignored.
+         *     - If exactly one of `start`/`end` is supplied, the request returns 400
+         *       (they must be given together).
+         *     - If neither is supplied, a trailing `days` window ending on "today" is
+         *       used (`days` defaults to 30).
+         *
+         *     "Today" and all day bucketing use the resolved `timezone` (the owner's
+         *     profile timezone by default). The request returns 400 when `start > end`,
+         *     when the resolved span exceeds 366 days, or when `timezone` is not a valid
+         *     IANA name.
          *
          *     Cost is an estimate of API-equivalent spend, not the owner's actual
          *     subscription bill. Buckets that reference token facts with no matching
@@ -1259,6 +1269,9 @@ export interface paths {
          *     Optional `provider` and `model` filters narrow the list. `active_on`
          *     returns only rows whose `[effective_from, effective_to)` window contains the
          *     given instant. Disabled rows are excluded unless `include_disabled=true`.
+         *
+         *     A malformed `active_on` (not RFC 3339 date-time) or a non-boolean
+         *     `include_disabled` returns 400.
          */
         get: operations["getAiPrices"];
         put?: never;
@@ -1704,9 +1717,17 @@ export interface components {
              *     billing source.
              */
             ai_subscription_plan?: string;
-            /** @description Prompt length in characters or tokens as reported by the client. */
+            /**
+             * @description Prompt length as reported by the client. The unit (characters vs tokens)
+             *     is client-defined and not normalized across clients, so it is aggregated
+             *     and displayed for trend context only and is never used to compute
+             *     `estimated_cost`. Bounded to reject garbage values.
+             */
             ai_prompt_length?: number;
-            /** @description Input (prompt) tokens billed for this AI interaction. */
+            /**
+             * @description Input (prompt) tokens billed for this AI interaction. Bounded to keep cost
+             *     accumulation within safe numeric range and reject garbage values.
+             */
             ai_input_tokens?: number;
             /** @description Output (completion) tokens billed for this AI interaction. */
             ai_output_tokens?: number;
@@ -2225,13 +2246,19 @@ export interface components {
          * @description Aggregated AI token facts and derived estimated cost for one grouping bucket
          *     (a day, project, agent, provider, or model).
          *
+         *     A *contributing heartbeat* is one with `category: "ai coding"` that carries at
+         *     least one priced token field (`ai_input_tokens`, `ai_output_tokens`,
+         *     `ai_cached_input_tokens`, `ai_reasoning_output_tokens`, `ai_cache_write_tokens`,
+         *     or `ai_cache_read_tokens`). Heartbeats that carry only `ai_prompt_length` and
+         *     no priced token field do not contribute and are excluded from every field here.
+         *
          *     `estimated_cost` is an API-equivalent estimate computed from stored token
          *     counts and the effective owner pricing rows for each heartbeat's timestamp. It
-         *     is NOT the owner's actual subscription bill. When no enabled price row matches
-         *     a contributing heartbeat, that heartbeat's tokens are counted in
-         *     `missing_price_count` and excluded from the cost sum. When every contributing
-         *     heartbeat lacks a matching price, `estimated_cost` is `null` (never a silent
-         *     zero).
+         *     is NOT the owner's actual subscription bill. When no enabled price row in the
+         *     summary `currency` matches a contributing heartbeat, that heartbeat is counted
+         *     in `missing_price_count` and excluded from the cost sum. When no contributing
+         *     heartbeat matches an enabled price row in the summary `currency`,
+         *     `estimated_cost` is `null` (never a silent zero).
          */
         AITokenTotals: {
             input_tokens: number;
@@ -2247,16 +2274,24 @@ export interface components {
              *     `ai_prompt_length`, or null when none did.
              */
             prompt_length_avg?: number | null;
-            /** @description Number of AI-category heartbeats contributing to the bucket. */
+            /**
+             * @description Number of contributing heartbeats in the bucket (`ai coding` heartbeats
+             *     that carry at least one priced token field). Heartbeats with only
+             *     `ai_prompt_length` are not counted.
+             */
             heartbeat_count: number;
             /**
              * @description API-equivalent estimated cost in the summary `currency`, or null when no
-             *     contributing heartbeat matched an enabled price row.
+             *     contributing heartbeat matched an enabled price row in that currency.
+             *     Contributions priced only in a different currency are never summed in;
+             *     they are excluded and counted in `missing_price_count`.
              */
             estimated_cost: number | null;
             /**
-             * @description Number of contributing heartbeats with priced token fields but no matching
-             *     enabled price row for their timestamp.
+             * @description Number of contributing heartbeats that have no enabled price row matching
+             *     their `(provider, model)` and timestamp in the summary `currency` — either
+             *     because no price row matched at all, or the matched row's currency differs
+             *     from the summary `currency` (so its cost cannot be summed in).
              */
             missing_price_count: number;
         };
@@ -2287,16 +2322,21 @@ export interface components {
              */
             timezone: string;
             /**
-             * @description ISO 4217 currency all `estimated_cost` values are expressed in. Derived
-             *     from the owner's pricing rows; mixed-currency price rows are reported via
-             *     `mixed_currency`.
+             * @description Single upper-case ISO 4217 currency that every `estimated_cost` in this
+             *     summary is expressed in. Chosen deterministically: the currency of the
+             *     enabled price rows that matched the most contributing heartbeats in the
+             *     range, ties broken by the lexicographically smallest code. When no
+             *     contributing heartbeat matched any price row, this defaults to `USD` and
+             *     all `estimated_cost` values are `null`.
              * @example USD
              */
             currency: string;
             /**
-             * @description True when matched price rows used more than one currency, in which case
-             *     `estimated_cost` values may combine currencies and should be treated as
-             *     indicative only.
+             * @description True when at least one contributing heartbeat matched an enabled price row
+             *     whose currency differs from the summary `currency`. Costs are never summed
+             *     across currencies: such contributions are excluded from every
+             *     `estimated_cost` and counted in `missing_price_count`, so a true value
+             *     warns that some priced usage is not reflected in the cost totals.
              */
             mixed_currency?: boolean;
             totals: components["schemas"]["AITokenTotals"];
@@ -2312,9 +2352,9 @@ export interface components {
             } & components["schemas"]["AITokenTotals"])[];
             /**
              * @description Token totals and estimated cost grouped by AI agent/tool. The agent is
-             *     taken from an explicit client field when present, otherwise derived
-             *     best-effort from stored user-agent metadata; unresolved rows use
-             *     `unknown`.
+             *     derived best-effort from stored user-agent metadata (the editor/plugin
+             *     identifier already captured on each heartbeat); heartbeats whose agent
+             *     cannot be resolved are grouped under `unknown`.
              */
             by_agent: ({
                 agent: string;
@@ -2350,7 +2390,8 @@ export interface components {
             /** @description Model identifier, e.g. `gpt-4o` or `claude-opus-4`. */
             model: string;
             /**
-             * @description ISO 4217 currency code for all rate fields. Defaults to `USD`.
+             * @description Upper-case ISO 4217 currency code for all rate fields. Defaults to `USD`.
+             *     Case-sensitive: lower-case or non-alphabetic codes are rejected with 400.
              * @example USD
              */
             currency: string;
@@ -2394,7 +2435,11 @@ export interface components {
              *     price is open-ended (currently effective).
              */
             effective_to?: string | null;
-            /** @description Provenance URL documenting where the rate came from, or null. */
+            /**
+             * @description Provenance URL documenting where the rate came from, or null. Restricted
+             *     to `http`/`https` so it is safe to render as a link in the owner UI
+             *     (rejects `javascript:`/`data:` and other schemes with 400).
+             */
             source_url?: string | null;
             /**
              * @description True for CloudTime-shipped starter rows. Default rows can be disabled or
@@ -2424,7 +2469,10 @@ export interface components {
         AIModelPriceInput: {
             provider: string;
             model: string;
-            /** @description ISO 4217 currency code. Defaults to `USD` when omitted. */
+            /**
+             * @description Upper-case ISO 4217 currency code. Defaults to `USD` when omitted;
+             *     lower-case or non-alphabetic codes are rejected with 400.
+             */
             currency?: string;
             /** Format: double */
             input_cost_per_mtok?: number;
@@ -2441,6 +2489,7 @@ export interface components {
             /** Format: date-time */
             effective_from: string;
             effective_to?: string | null;
+            /** @description Provenance URL; must be `http`/`https` (rejects other schemes). */
             source_url?: string | null;
             /** @description Defaults to `true` when omitted. */
             is_enabled?: boolean;
@@ -2459,6 +2508,7 @@ export interface components {
          *     row's `effective_from`, otherwise 400.
          */
         AIModelPriceUpdate: {
+            /** @description Upper-case ISO 4217 currency code; other forms are rejected with 400. */
             currency?: string;
             /** Format: double */
             input_cost_per_mtok?: number;
@@ -2473,6 +2523,7 @@ export interface components {
             /** Format: double */
             cache_read_cost_per_mtok?: number;
             effective_to?: string | null;
+            /** @description Provenance URL; must be `http`/`https` (rejects other schemes). */
             source_url?: string | null;
             is_enabled?: boolean;
         };
@@ -4496,6 +4547,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
