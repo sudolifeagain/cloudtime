@@ -10,6 +10,8 @@ Manual verification scenarios (run against a worker). These map directly to the 
 
 Heartbeats are sent to the existing ingestion endpoint (`POST /api/v1/users/current/heartbeats[.bulk]`) with `project: "cloudtime"` and epoch-seconds `time`s. Assume the user's session `timeout` is 15 minutes.
 
+The attribution window is **inclusive of the commit instant** (`author_date`): a heartbeat at exactly `author_date` is the window's last beat, so the coding interval ending at the commit counts. Several scenarios below place the terminal heartbeat at `author_date` and rely on it.
+
 ## A. Derive coding time for a hook-only commit
 
 Send heartbeats for `project=cloudtime` at, e.g., `t, t+120, t+240, … t+1800` (2-minute cadence, all gaps ≤ timeout), ending at `T = t+1800`.

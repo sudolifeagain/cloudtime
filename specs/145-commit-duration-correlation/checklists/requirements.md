@@ -9,7 +9,7 @@ Quality gate for the spec before implementation. Each item is verifiable against
 - [x] Every functional requirement (FR-001…FR-011) maps to at least one acceptance scenario or success criterion.
 - [x] Where correlation runs is fixed and justified (ingest-time, synchronous; cron/backfill and async queue rejected) — research D-1.
 - [x] Precedence fixed: a client-supplied `total_seconds` (incl. explicit `0`) wins and skips correlation; an omitted re-post re-derives — FR-002/FR-009, research D-2.
-- [x] Attribution window fixed: `[max(previous_commit, upper − 24h), upper)` with `upper = author_date | ingest-time` — FR-003, research D-3.
+- [x] Attribution window fixed: `[max(previous_commit, upper − 24h), upper]` (upper-inclusive) with `upper = author_date | ingest-time` — FR-003, research D-3.
 - [x] Session-boundary rule fixed: sum gaps `0 < gap <= timeout` (same per-pair rule as `summaries`, via a shared primitive) attributed by `prev.project` (same attribution as `computeDurations`) — FR-005, research D-4.
 - [x] Scope fixed: project applied at attribution time (credit gaps by `prev.project`, no project pre-filter of the read), not branch/`ref` — FR-004, research D-5.
 - [x] Boundedness fixed: 24h window cap + `LIMIT 5000` + existing index; no full scan — FR-007, research D-6.

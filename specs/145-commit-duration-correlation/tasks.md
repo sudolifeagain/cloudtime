@@ -10,7 +10,7 @@
 - [x] **T-002**: Author `plan.md` (Constitution Check; ingest-time correlation; description-only PR1; shared gap primitive in PR2).
 - [x] **T-003**: Author `research.md` (D-1 ingest-time, D-2 precedence/re-derive, D-3 window, D-4 shared gap rule, D-5 project-only scope, D-6 bounded queries/constants, D-7 description-only contract).
 - [x] **T-004**: Author `data-model.md` (no PR1 schema change; correlation algorithm; shared `sessionGapSeconds`; changed row-mapping cell; optional commits index).
-- [x] **T-005**: Author `quickstart.md` (scenarios A–H).
+- [x] **T-005**: Author `quickstart.md` (scenarios A–I).
 - [x] **T-006**: Author `contracts/openapi-diff.md` (description-only edits; JSDoc-only regen).
 - [x] **T-007**: Author `checklists/requirements.md`.
 - [x] **T-008**: Reword `schemas/paths/commits/commits.yaml` `createProjectCommit` description — correlation fills an omitted `total_seconds` (remove the "server does not correlate heartbeats" clause).

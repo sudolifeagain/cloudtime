@@ -79,10 +79,11 @@ post:
     `hash` is required and must be non-empty. `total_seconds` is the optional
     coding time for the commit; when present it must be a number >= 0 and is
     stored verbatim. When it is omitted, the server derives the commit's coding
-    time by correlating the user's heartbeats for this project in a bounded
-    window ending at `author_date` (falling back to the ingest time) and bounded
-    below by the previous commit, using the same session-timeout rule as the
-    daily summaries; if no heartbeats fall in the window the value stays absent.
+    time from the user's heartbeats in a bounded window ending at `author_date`
+    (falling back to the ingest time) and bounded below by the previous commit,
+    counting only the coding time attributed to this project and excluding idle
+    gaps beyond the session timeout (the same rule the daily summaries use); if
+    no heartbeats contribute the value stays absent.
     `author_date` and `committer_date`, when present, must be valid date-times.
     `ref` is the branch (the read endpoints filter `branch` against it).
     Validation failures return 400.

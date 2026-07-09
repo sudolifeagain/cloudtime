@@ -21,7 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_heartbeats_user_time ON heartbeats(user_id, time)
 CREATE INDEX IF NOT EXISTS idx_heartbeats_user_project ON heartbeats(user_id, project);
 ```
 
-`idx_heartbeats_user_time` serves the window range `WHERE user_id = ? AND time >= ? AND time < ?`. The read is **not** filtered by `project`: it fetches the full in-window user stream and reads the `project` column so each gap can be attributed to its earlier heartbeat's project (mirroring `computeDurations`, which gaps the unfiltered per-user stream and credits `[prev, curr)` to `prev.project`). No new heartbeat index is required (research D-6).
+`idx_heartbeats_user_time` serves the window range `WHERE user_id = ? AND time >= ? AND time <= ?` (upper bound inclusive, see the algorithm below). The read is **not** filtered by `project`: it fetches the full in-window user stream and reads the `project` column so each gap can be attributed to its earlier heartbeat's project (mirroring `computeDurations`, which gaps the unfiltered per-user stream and credits `[prev, curr)` to `prev.project`). No new heartbeat index is required (research D-6).
 
 ### Read: `commits` (existing) — previous-commit bound
 
@@ -63,11 +63,18 @@ Consts:  MAX_CORRELATION_WINDOW = 86400   # 24h, seconds
 4. timeoutSec = (SELECT timeout FROM users WHERE id = ?) * 60   # minutes -> seconds
 
 5. rows = SELECT time, project FROM heartbeats
-          WHERE user_id = ? AND time >= lowerEpoch AND time < upperEpoch
+          WHERE user_id = ? AND time >= lowerEpoch AND time <= upperEpoch
           ORDER BY time ASC
           LIMIT CORRELATION_HEARTBEAT_LIMIT
-   # NOT filtered by project: the full in-window user stream, so gaps are
-   # attributed exactly as computeDurations attributes summaries time.
+   # Upper bound is INCLUSIVE (<=): a heartbeat at exactly author_date is the
+   # window's last beat, so the coding interval ending at the commit moment
+   # is counted (parity with computeDurations, which counts the interval
+   # ending at each heartbeat). NOT filtered by project: the full in-window
+   # user stream, so gaps are attributed exactly as computeDurations
+   # attributes summaries time.
+   # ORDER BY time ASC + LIMIT keeps the EARLIEST rows if the cap is hit,
+   # dropping the beats nearest author_date (the most recent pre-commit
+   # coding) — best-effort; PR2 may read DESC then reverse to prefer them.
 
 6. derived = 0
    for i in 1..rows.length-1:
@@ -77,6 +84,8 @@ Consts:  MAX_CORRELATION_WINDOW = 86400   # 24h, seconds
 
 7. total_seconds = derived > 0 ? derived : null
 ```
+
+The upper bound is **inclusive** (`time <= upperEpoch`, step 5) so the coding interval ending at the commit moment is counted. This does **not** double-count consecutive commits: a commit's `author_date` becomes the next commit's inclusive **lower** bound (`lowerEpoch = prevEpoch`, step 3), so a heartbeat exactly on that shared boundary is the earlier commit's *last* beat (the interval ending at it counts for the earlier commit) and the later commit's *first* beat (the interval starting at it counts for the later commit) — disjoint intervals, each counted once (FR-008). When no heartbeat sits exactly on a previous-commit boundary, the interval straddling it is credited to neither — an inherent, documented consequence of partitioning (the aggregation boundaries are not shared; see the divergence note below).
 
 `sessionGapSeconds(prev, curr, timeout)` is the shared primitive extracted from `computeDurations`:
 
