@@ -68,34 +68,47 @@ properties:
   ai_prompt_length:
     type: integer
     minimum: 0
-    description: Prompt length in characters or tokens as reported by the client.
+    maximum: 1000000000
+    description: |
+      Prompt length as reported by the client. The unit (characters vs tokens)
+      is client-defined and not normalized across clients, so it is aggregated
+      and displayed for trend context only and is never used to compute
+      `estimated_cost`. Bounded to reject garbage values.
   ai_input_tokens:
     type: integer
     minimum: 0
-    description: Input (prompt) tokens billed for this AI interaction.
+    maximum: 1000000000
+    description: |
+      Input (prompt) tokens billed for this AI interaction. Bounded to keep cost
+      accumulation within safe numeric range and reject garbage values.
   ai_output_tokens:
     type: integer
     minimum: 0
+    maximum: 1000000000
     description: Output (completion) tokens billed for this AI interaction.
   ai_cached_input_tokens:
     type: integer
     minimum: 0
+    maximum: 1000000000
     description: |
       Input tokens served from a provider prompt cache, priced separately from
       fresh input tokens by some providers.
   ai_reasoning_output_tokens:
     type: integer
     minimum: 0
+    maximum: 1000000000
     description: |
       Reasoning/thinking output tokens, priced separately from visible output
       tokens by some providers.
   ai_cache_write_tokens:
     type: integer
     minimum: 0
+    maximum: 1000000000
     description: Tokens written to a provider prompt cache (cache-creation class).
   ai_cache_read_tokens:
     type: integer
     minimum: 0
+    maximum: 1000000000
     description: Tokens read from a provider prompt cache (cache-hit class).
   ai_provider:
     type: string

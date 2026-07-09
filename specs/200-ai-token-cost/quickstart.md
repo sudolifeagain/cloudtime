@@ -85,5 +85,5 @@ Response includes `daily[]` token trends and `by_project` / `by_agent` /
 npm run lint:api
 npm run generate
 npm run typecheck
-npm test -- tests/integration/ai-heartbeats.test.ts tests/integration/ai-usage.test.ts tests/aggregation/ai-pricing.test.ts
+npm test -- tests/integration/ai-heartbeats.test.ts tests/integration/ai-usage.test.ts tests/aggregation/ai-pricing.test.ts tests/aggregation/ai-rollup.test.ts
 ```

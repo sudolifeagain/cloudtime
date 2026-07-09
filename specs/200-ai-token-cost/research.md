@@ -68,12 +68,17 @@ Rejected because it silently rewrites historical cost estimates.
 budget?
 
 **Answer**: Accept `start`+`end` or a trailing `days` window (default 30), cap
-the resolved span at 366 days, and return `400` beyond that. Bucketing uses the
-resolved `timezone` (owner profile timezone by default).
+the resolved span at 366 days, and return `400` beyond that. `start`+`end` takes
+precedence over `days`; supplying exactly one of them is `400`, as is `start >
+end` or an invalid `timezone`. Bucketing uses the resolved `timezone` (owner
+profile timezone by default).
 
-**Rationale**: A hard cap plus indexed `(user_id, category, time)` reads keeps
-the endpoint within budget without a cron pre-aggregate in the first cut; a cron
-aggregate can be added later if needed without changing the contract.
+**Rationale**: A hard cap bounds the calendar range, but the cap alone does not
+bound *row volume* or the effective-dated price join. To respect the binding
+Cloudflare "offload heavy work to Cron / incremental aggregation" constraint,
+`/ai/usage` reads a cron-maintained daily rollup (`ai_daily_usage`) rather than
+scanning raw heartbeats at request time — see Decision 11. The 366-day cap then
+bounds the number of *rollup* rows read.
 
 ## Decision 5 (Clarification): Missing-price behavior
 
@@ -115,11 +120,19 @@ scoping and `404`-on-cross-user match the goals precedent.
 
 **Question**: How are multiple currencies handled in one summary?
 
-**Answer**: Report a single `currency` for the summary and set `mixed_currency`
-true when matched rows disagree; do not silently sum across currencies.
+**Answer**: Report a single summary `currency`, chosen deterministically as the
+currency of the enabled price rows matching the most contributing heartbeats in
+the range (ties → lexicographically smallest ISO code; default `USD` when
+nothing matched). Never sum across currencies: contributions whose matched price
+row uses a different currency are excluded from `estimated_cost` and counted in
+`missing_price_count`, and `mixed_currency` is set true to warn that some priced
+usage is not reflected in the totals.
 
-**Rationale**: Cross-currency summation would be meaningless; a flag keeps the
-estimate honest.
+**Rationale**: Cross-currency summation would be meaningless. Excluding
+off-currency contributions (rather than combining them "indicatively") keeps
+every reported number honest and reproducible, and the flag plus
+`missing_price_count` make the exclusion visible. This closes the earlier schema
+wording that implied costs "may combine currencies."
 
 ## Decision 9: Owner-only, never public
 
@@ -137,10 +150,52 @@ types.
 **Rationale**: The project uses the two-PR SpecKit workflow; storage, ingestion,
 aggregation, and UI land in PR2 after the contract is agreed.
 
+## Decision 11: Cron daily rollup, aggregate-then-price
+
+**Decision**: `/ai/usage` reads a cron-maintained daily rollup table
+(`ai_daily_usage`) keyed by `(user_id, day, provider, model, agent, project)`;
+it does not scan raw `heartbeats` at request time. `provider`/`model`/`agent`
+are resolved at ingestion/aggregation and stored on the rollup; the effective
+price is resolved once per bucket (aggregate-then-price), not per heartbeat.
+
+**Rationale**: Every existing multi-day analytics endpoint (`summaries.ts`,
+`stats.ts`, `insights.ts`) reads cron rollups, and raw heartbeats are scanned
+only in the incremental cron (`cron/aggregate.ts`, `db.batch()`). A request-time
+scan with a per-row effective-dated price join over up to 366 days of raw rows
+would violate the ~10ms CPU budget and risk the D1 row-read budget. This is
+contract-neutral (no OpenAPI change) and binds PR2's storage/cron design.
+
+**Alternatives considered**: Request-time bounded indexed scan of raw
+heartbeats. Rejected: the calendar cap does not bound row volume, and the as-of
+price join is non-indexable.
+
+## Decision 12: Deterministic price precedence
+
+**Decision**: When more than one enabled price row matches a heartbeat's
+`(provider, model)` and timestamp — legitimately possible when an owner row and
+a still-enabled default row coexist — select **owner over default, then latest
+`effective_from`**. PR2 additionally forbids overlapping enabled windows within
+one default class per `(user_id, provider, model)`.
+
+**Rationale**: Effective-dating exists to make historical estimates
+reproducible; without a tie-break two matching rows make cost non-deterministic.
+Owner-over-default matches FR-014 ("owners supersede default rows").
+
+## Decision 13: Bounded token/rate values
+
+**Decision**: Cap AI token/length fields at 1e9 and per-1M-token rates at 1e6 in
+the schema (`400` on violation), and accumulate token sums as bounded integers
+with cost as a double.
+
+**Rationale**: `estimated_cost = Σ(token × rate)/1e6`; an unbounded garbage token
+count from a buggy client would corrupt every aggregate it touches. The caps are
+far above any real interaction/rate yet keep products within safe numeric range.
+
 ## Open Questions (for PR2)
 
 - Should PR2 ship a small set of versioned default price rows, or start empty and
   let owners populate the table? Either is contract-compatible; if shipped, rows
-  must carry `source_url`, `effective_from`, and `is_default=true`.
-- Should a cron pre-aggregate AI usage per day to further cut request-time cost,
-  or is the bounded indexed read sufficient at expected single-user volumes?
+  are seeded **per user** (Decision + FR-024) carrying `source_url`,
+  `effective_from`, and `is_default=true`.
+- Resolved: cron daily pre-aggregation is now **required** (Decision 11), not
+  optional, so PR2 does not ship a request-time raw scan.

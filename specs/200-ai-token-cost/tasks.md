@@ -19,8 +19,8 @@
 
 ### Foundational
 
-- [ ] T101 Add migration `migrations/0007_ai_telemetry_and_prices.sql`: AI telemetry columns on `heartbeats`, the `ai_model_prices` table, and indexes; mirror in `src/db/schema.sql`.
-- [ ] T102 Add `(user_id, category, time)` and pricing lookup indexes.
+- [ ] T101 Add migration `migrations/0007_ai_telemetry_and_prices.sql`: AI telemetry columns on `heartbeats`, the `ai_model_prices` table, and the `ai_daily_usage` rollup table; mirror in `src/db/schema.sql`.
+- [ ] T102 Add `(user_id, category, time)`, pricing lookup, and `ai_daily_usage(user_id, day)` indexes.
 
 ### User Story 1 - Ingest and return AI telemetry (P1)
 
@@ -31,18 +31,19 @@
 ### User Story 3 - Owner-managed pricing table (P2, precedes cost in US2)
 
 - [ ] T106 [US3] Implement `GET`/`POST /users/current/ai/prices` and `GET`/`PATCH`/`DELETE /users/current/ai/prices/{price_id}` in `src/routes/ai.ts`.
-- [ ] T107 [US3] Enforce required fields, rate validation, immutable `provider`/`model`/`effective_from`, default-row protection, and cross-user `404`.
-- [ ] T108 [US3] Unit tests for price selection by provider/model/effective date, missing-price behavior, and user-specific overrides in `tests/aggregation/ai-pricing.test.ts`.
+- [ ] T107 [US3] Enforce required fields, rate/value bounds (token `<=1e9`, rate `<=1e6`), `currency` `^[A-Z]{3}$`, `http(s)` `source_url`, immutable `provider`/`model`/`effective_from`, no overlapping enabled windows per default class, default-row protection, and cross-user `404`.
+- [ ] T108 [US3] Unit tests for price selection by provider/model/effective date, owner-over-default precedence (FR-021), missing-price behavior, and user-specific overrides in `tests/aggregation/ai-pricing.test.ts`.
 
 ### User Story 2 - Owner-only usage & cost summary (P1)
 
-- [ ] T109 [US2] Implement effective-price selection and cost calculation in `src/utils/ai/pricing.ts`.
-- [ ] T110 [US2] Implement bounded daily + dimensional aggregation builders in `src/utils/ai/usage.ts`.
-- [ ] T111 [US2] Implement `GET /users/current/ai/usage` with range bounding (<=366 days), timezone bucketing, and owner-only access; mount the `ai` router in `src/index.ts`.
-- [ ] T112 [US2] Integration tests for token trends, estimated cost with/without prices (`null` + `missing_price_count`), range bounding `400`, and owner-only `401` in `tests/integration/ai-usage.test.ts`.
+- [ ] T109 [US2] Extend `src/cron/aggregate.ts` to incrementally build the `ai_daily_usage` rollup: resolve `provider`/`model`/`agent`, sum token classes per `(day, provider, model, agent, project)` via `db.batch()`, watermark-driven.
+- [ ] T110 [US2] Implement effective-price selection (owner-over-default precedence) and aggregate-then-price cost calculation in `src/utils/ai/pricing.ts`.
+- [ ] T111 [US2] Implement rollup-based daily + dimensional aggregation builders, single-currency selection, and cross-currency exclusion in `src/utils/ai/usage.ts`.
+- [ ] T112 [US2] Implement `GET /users/current/ai/usage` reading the `ai_daily_usage` rollup with deterministic range resolution (start+end vs days, `start>end`/one-sided/`>366d`/bad-timezone `400`), timezone bucketing, and owner-only access; mount the `ai` router in `src/index.ts`.
+- [ ] T113 [US2] Integration tests for token trends, estimated cost with/without prices (`null` + `missing_price_count`), single-currency selection + `mixed_currency` exclusion, range resolution `400`s, and owner-only `401` in `tests/integration/ai-usage.test.ts`; rollup aggregation tests in `tests/aggregation/ai-rollup.test.ts`.
 
 ### Dashboard & Docs
 
-- [ ] T113 Update the dashboard AI coding panel to token/cost-aware summaries and add price view/add/edit/disable/date-bound controls.
-- [ ] T114 Add `docs/ai-usage.md` describing compatible-client AI ingestion and the estimate (not-a-bill) disclaimer, following `docs/implementation-boundaries.md`.
-- [ ] T115 Run `npm run typecheck && npm test`.
+- [ ] T114 Update the dashboard AI coding panel to token/cost-aware summaries and add price view/add/edit/disable/date-bound controls (render `source_url` as an `http(s)`-only link).
+- [ ] T115 Add `docs/ai-usage.md` describing compatible-client AI ingestion and the estimate (not-a-bill) disclaimer, following `docs/implementation-boundaries.md`.
+- [ ] T116 Run `npm run typecheck && npm test`.

@@ -35,39 +35,46 @@ properties:
     description: Model identifier, e.g. `gpt-4o` or `claude-opus-4`.
   currency:
     type: string
-    minLength: 3
-    maxLength: 3
-    description: ISO 4217 currency code for all rate fields. Defaults to `USD`.
+    pattern: '^[A-Z]{3}$'
+    description: |
+      Upper-case ISO 4217 currency code for all rate fields. Defaults to `USD`.
+      Case-sensitive: lower-case or non-alphabetic codes are rejected with 400.
     example: USD
   input_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
     description: Cost per 1,000,000 fresh input tokens.
   cached_input_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
     description: Cost per 1,000,000 cached input tokens.
   output_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
     description: Cost per 1,000,000 output tokens.
   reasoning_output_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
     description: Cost per 1,000,000 reasoning output tokens.
   cache_write_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
     description: Cost per 1,000,000 cache-write tokens.
   cache_read_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
     description: Cost per 1,000,000 cache-read tokens.
   effective_from:
     type: string
@@ -84,9 +91,14 @@ properties:
   source_url:
     oneOf:
       - type: string
+        format: uri
         maxLength: 2048
+        pattern: '^https?://'
       - type: 'null'
-    description: Provenance URL documenting where the rate came from, or null.
+    description: |
+      Provenance URL documenting where the rate came from, or null. Restricted
+      to `http`/`https` so it is safe to render as a link in the owner UI
+      (rejects `javascript:`/`data:` and other schemes with 400).
   is_default:
     type: boolean
     description: |

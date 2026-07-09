@@ -9,10 +9,20 @@ get:
     provider, and model. Each bucket carries token totals and an API-equivalent
     `estimated_cost` computed from the owner's effective pricing table.
 
-    The range is bounded to protect the request-time CPU budget. Provide either
-    `start`+`end` or a single `days` window; the resolved span MUST NOT exceed
-    366 days, otherwise the request returns 400. Days are bucketed in the
-    resolved `timezone` (the owner's profile timezone by default).
+    The range is bounded to protect the request-time CPU budget. Range
+    resolution is deterministic:
+
+    - If both `start` and `end` are supplied, the explicit inclusive range
+      `[start, end]` is used and `days` is ignored.
+    - If exactly one of `start`/`end` is supplied, the request returns 400
+      (they must be given together).
+    - If neither is supplied, a trailing `days` window ending on "today" is
+      used (`days` defaults to 30).
+
+    "Today" and all day bucketing use the resolved `timezone` (the owner's
+    profile timezone by default). The request returns 400 when `start > end`,
+    when the resolved span exceeds 366 days, or when `timezone` is not a valid
+    IANA name.
 
     Cost is an estimate of API-equivalent spend, not the owner's actual
     subscription bill. Buckets that reference token facts with no matching

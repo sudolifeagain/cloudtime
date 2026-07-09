@@ -3,13 +3,19 @@ description: |
   Aggregated AI token facts and derived estimated cost for one grouping bucket
   (a day, project, agent, provider, or model).
 
+  A *contributing heartbeat* is one with `category: "ai coding"` that carries at
+  least one priced token field (`ai_input_tokens`, `ai_output_tokens`,
+  `ai_cached_input_tokens`, `ai_reasoning_output_tokens`, `ai_cache_write_tokens`,
+  or `ai_cache_read_tokens`). Heartbeats that carry only `ai_prompt_length` and
+  no priced token field do not contribute and are excluded from every field here.
+
   `estimated_cost` is an API-equivalent estimate computed from stored token
   counts and the effective owner pricing rows for each heartbeat's timestamp. It
-  is NOT the owner's actual subscription bill. When no enabled price row matches
-  a contributing heartbeat, that heartbeat's tokens are counted in
-  `missing_price_count` and excluded from the cost sum. When every contributing
-  heartbeat lacks a matching price, `estimated_cost` is `null` (never a silent
-  zero).
+  is NOT the owner's actual subscription bill. When no enabled price row in the
+  summary `currency` matches a contributing heartbeat, that heartbeat is counted
+  in `missing_price_count` and excluded from the cost sum. When no contributing
+  heartbeat matches an enabled price row in the summary `currency`,
+  `estimated_cost` is `null` (never a silent zero).
 required:
   - input_tokens
   - output_tokens
@@ -56,7 +62,10 @@ properties:
   heartbeat_count:
     type: integer
     minimum: 0
-    description: Number of AI-category heartbeats contributing to the bucket.
+    description: |
+      Number of contributing heartbeats in the bucket (`ai coding` heartbeats
+      that carry at least one priced token field). Heartbeats with only
+      `ai_prompt_length` are not counted.
   estimated_cost:
     oneOf:
       - type: number
@@ -65,10 +74,14 @@ properties:
       - type: 'null'
     description: |
       API-equivalent estimated cost in the summary `currency`, or null when no
-      contributing heartbeat matched an enabled price row.
+      contributing heartbeat matched an enabled price row in that currency.
+      Contributions priced only in a different currency are never summed in;
+      they are excluded and counted in `missing_price_count`.
   missing_price_count:
     type: integer
     minimum: 0
     description: |
-      Number of contributing heartbeats with priced token fields but no matching
-      enabled price row for their timestamp.
+      Number of contributing heartbeats that have no enabled price row matching
+      their `(provider, model)` and timestamp in the summary `currency` — either
+      because no price row matched at all, or the matched row's currency differs
+      from the summary `currency` (so its cost cannot be summed in).

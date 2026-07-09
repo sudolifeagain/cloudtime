@@ -11,6 +11,9 @@ get:
     Optional `provider` and `model` filters narrow the list. `active_on`
     returns only rows whose `[effective_from, effective_to)` window contains the
     given instant. Disabled rows are excluded unless `include_disabled=true`.
+
+    A malformed `active_on` (not RFC 3339 date-time) or a non-boolean
+    `include_disabled` returns 400.
   parameters:
     - name: provider
       in: query
@@ -50,6 +53,8 @@ get:
                 type: array
                 items:
                   $ref: ../../components/schemas/AIModelPrice.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
     '401':
       $ref: ../../components/responses/Unauthorized.yaml
 post:

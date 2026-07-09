@@ -23,33 +23,40 @@ properties:
     maxLength: 255
   currency:
     type: string
-    minLength: 3
-    maxLength: 3
-    description: ISO 4217 currency code. Defaults to `USD` when omitted.
+    pattern: '^[A-Z]{3}$'
+    description: |
+      Upper-case ISO 4217 currency code. Defaults to `USD` when omitted;
+      lower-case or non-alphabetic codes are rejected with 400.
   input_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
   cached_input_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
   output_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
   reasoning_output_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
   cache_write_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
   cache_read_cost_per_mtok:
     type: number
     format: double
     minimum: 0
+    maximum: 1000000
   effective_from:
     type: string
     format: date-time
@@ -61,8 +68,11 @@ properties:
   source_url:
     oneOf:
       - type: string
+        format: uri
         maxLength: 2048
+        pattern: '^https?://'
       - type: 'null'
+    description: Provenance URL; must be `http`/`https` (rejects other schemes).
   is_enabled:
     type: boolean
     description: Defaults to `true` when omitted.

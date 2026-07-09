@@ -25,14 +25,26 @@
       output, cache write, and cache read.
 - [x] Immutable `provider`/`model`/`effective_from`, default-row protection, and
       cross-user `404` are specified.
-- [x] Error behavior covers `400`, `401`, and `404`.
+- [x] Multi-matching price rows resolve deterministically (owner-over-default,
+      then latest `effective_from`; no overlapping enabled windows) — FR-021.
+- [x] Single summary `currency` selection is defined and costs are never summed
+      across currencies (off-currency → `missing_price_count`) — FR-022.
+- [x] `by_agent` is derived from user-agent only; no phantom wire field — FR-018.
+- [x] Token/rate values are bounded; malformed values return `400` — FR-023.
+- [x] `is_default` rows stay per-user coherent (seeded per user) — FR-024.
+- [x] Range input resolution and `400` conditions are enumerated — FR-008.
+- [x] Error behavior covers `400`, `401`, and `404` (incl. list `400`).
 - [x] Changes are additive; existing paths/schemas are unchanged.
 
 ## Cloudflare Constraints
 
 - [x] Usage range is bounded (<=366 days) for the request CPU budget.
-- [x] Bulk ingestion uses `db.batch()` (PR2).
-- [x] Indexed `(user_id, category, time)` and pricing lookup keys are planned.
+- [x] `/ai/usage` reads a cron-built `ai_daily_usage` rollup (aggregate-then-
+      price), never scanning raw heartbeats at request time — FR-025.
+- [x] Bulk ingestion and rollup writes use `db.batch()` (PR2).
+- [x] Cron AI aggregation is incremental (watermark-driven).
+- [x] Indexed `(user_id, category, time)`, pricing lookup, and
+      `ai_daily_usage(user_id, day)` keys are planned.
 - [x] No dynamic provider-price fetch at request time.
 
 ## Boundaries & Naming

@@ -119,16 +119,22 @@ different-user/unknown id returns `404`.
 - **FR-007**: The usage summary MUST return a daily token trend and breakdowns
   by project, AI agent/tool, provider, and model, each with token totals and an
   `estimated_cost`.
-- **FR-008**: The usage range MUST be bounded; a resolved span exceeding 366 days
-  MUST return `400`. The endpoint MUST accept `start`+`end` or a trailing `days`
-  window (default 30) and a `timezone` for local-day bucketing.
+- **FR-008**: The usage range MUST be bounded and resolved deterministically.
+  When both `start` and `end` are supplied the explicit inclusive range is used
+  and `days` is ignored; supplying exactly one of `start`/`end` MUST return
+  `400`; otherwise a trailing `days` window (default 30) ending on the current
+  local day is used. Day bucketing and "today" MUST use the resolved `timezone`
+  (owner profile timezone by default). The endpoint MUST return `400` when
+  `start > end`, when the resolved span exceeds 366 days, or when `timezone` is
+  not a valid IANA name.
 - **FR-009**: `estimated_cost` MUST be an API-equivalent estimate derived from
   stored token counts and the effective enabled price row for each heartbeat's
   timestamp; it MUST NOT be presented as an actual subscription bill.
-- **FR-010**: When no enabled price row matches a contributing heartbeat, that
-  heartbeat MUST count toward `missing_price_count` and be excluded from the cost
-  sum; `estimated_cost` MUST be `null` (never a silent zero) when no contributing
-  heartbeat matches.
+- **FR-010**: When no enabled price row in the summary `currency` matches a
+  contributing heartbeat, that heartbeat MUST count toward `missing_price_count`
+  and be excluded from the cost sum; `estimated_cost` MUST be `null` (never a
+  silent zero) when no contributing heartbeat matches an enabled price row in the
+  summary `currency`.
 - **FR-011**: The API MUST add owner-only pricing endpoints:
   `GET`/`POST /users/current/ai/prices` and
   `GET`/`PATCH`/`DELETE /users/current/ai/prices/{price_id}`.
@@ -149,15 +155,51 @@ different-user/unknown id returns `404`.
   cards, badges, or any unauthenticated endpoint.
 - **FR-017**: The feature MUST NOT store prompt or response content; only
   numeric token facts and short opaque identifiers are retained.
-- **FR-018**: AI agent/tool MUST be derived best-effort from an explicit client
-  field when present, otherwise from stored user-agent metadata, with unresolved
-  rows labeled `unknown`; raw user-agent rows MUST be preserved.
+- **FR-018**: AI agent/tool MUST be derived best-effort from stored user-agent
+  metadata (the editor/plugin identifier already captured on each heartbeat),
+  with unresolved rows labeled `unknown`; raw user-agent rows MUST be preserved.
+  (No dedicated `ai_agent` wire field is added; agent grouping is a read-side
+  derivation over existing user-agent data.)
 - **FR-019**: All feature naming (routes, schemas, identifiers, docs) MUST follow
   `docs/implementation-boundaries.md`; third-party names appear only as
   `WakaTime-compatible` wording in documentation.
 - **FR-020**: PR1 MUST include only SpecKit artifacts, OpenAPI changes, and
   regenerated OpenAPI types. It MUST NOT include route handlers, migrations,
   `schema.sql` changes, dashboard code, or docs behavior changes.
+- **FR-021**: When more than one enabled price row matches a heartbeat's
+  `(provider, model)` and timestamp (e.g. an owner row and a still-enabled
+  default row), price selection MUST be deterministic: prefer the owner row
+  (`is_default=false`) over the default row, then the row with the latest
+  `effective_from`. PR2 MUST additionally forbid two enabled rows of the same
+  default class from having overlapping effective windows for one
+  `(user_id, provider, model)`, so estimated cost is reproducible.
+- **FR-022**: The usage summary MUST report a single `currency`, chosen
+  deterministically as the currency of the enabled price rows matching the most
+  contributing heartbeats in the range (ties broken by the lexicographically
+  smallest ISO code; defaulting to `USD` when nothing matched). Costs MUST NOT be
+  summed across currencies: contributions whose matched price row uses a
+  different currency MUST be excluded from `estimated_cost` and counted in
+  `missing_price_count`, and `mixed_currency` MUST be set true.
+- **FR-023**: AI token/length fields and price rate fields MUST be bounded
+  (token/length ≤ 1e9, per-1M-token rates ≤ 1e6) so a malformed client cannot
+  overflow or corrupt cost aggregates; out-of-range values MUST return `400`.
+- **FR-024**: `is_default` price rows MUST remain coherent with the repo's
+  per-user (`user_id NOT NULL`) table convention. When PR2 ships default rows it
+  MUST seed them per user (one owner-scoped copy per user, `is_default=true`,
+  read-only via the owner endpoints) so the user-scoped price lookup stays a
+  simple `WHERE user_id = ?` with no global/nullable-owner special case.
+- **FR-025**: The usage summary MUST be served from an incremental,
+  cron-maintained daily AI usage rollup (consistent with the existing
+  summary/hourly rollup architecture), aggregating token classes per
+  `(day, provider, model, agent, project)` and resolving the effective price once
+  per bucket (aggregate-then-price). Provider/model/agent MUST be resolved at
+  ingestion/aggregation time and stored on the rollup, never parsed per-row at
+  read time. This requirement is contract-neutral (no OpenAPI change) and binds
+  PR2's storage/cron design only.
+- **FR-026**: A *contributing heartbeat* is defined as one with
+  `category: "ai coding"` carrying at least one priced token field; heartbeats
+  with only `ai_prompt_length` and no priced token field MUST NOT contribute to
+  any token total, `heartbeat_count`, or `missing_price_count`.
 
 ### Entities
 
@@ -191,8 +233,8 @@ different-user/unknown id returns `404`.
 - Token facts are sufficient for API-equivalent cost; provider account
   reconciliation and authoritative billing are out of scope.
 - Shipping versioned default price rows in PR2 is optional; when shipped they
-  carry `source_url`, `effective_from`, and `is_default=true` and remain
-  owner-overridable.
+  carry `source_url`, `effective_from`, and `is_default=true`, are seeded per
+  user (FR-024), and remain owner-overridable (disable or supersede).
 
 ## Out of Scope
 

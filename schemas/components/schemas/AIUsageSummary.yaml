@@ -34,19 +34,23 @@ properties:
     example: Asia/Tokyo
   currency:
     type: string
-    minLength: 3
-    maxLength: 3
+    pattern: '^[A-Z]{3}$'
     description: |
-      ISO 4217 currency all `estimated_cost` values are expressed in. Derived
-      from the owner's pricing rows; mixed-currency price rows are reported via
-      `mixed_currency`.
+      Single upper-case ISO 4217 currency that every `estimated_cost` in this
+      summary is expressed in. Chosen deterministically: the currency of the
+      enabled price rows that matched the most contributing heartbeats in the
+      range, ties broken by the lexicographically smallest code. When no
+      contributing heartbeat matched any price row, this defaults to `USD` and
+      all `estimated_cost` values are `null`.
     example: USD
   mixed_currency:
     type: boolean
     description: |
-      True when matched price rows used more than one currency, in which case
-      `estimated_cost` values may combine currencies and should be treated as
-      indicative only.
+      True when at least one contributing heartbeat matched an enabled price row
+      whose currency differs from the summary `currency`. Costs are never summed
+      across currencies: such contributions are excluded from every
+      `estimated_cost` and counted in `missing_price_count`, so a true value
+      warns that some priced usage is not reflected in the cost totals.
   totals:
     $ref: ./AITokenTotals.yaml
   daily:
@@ -81,9 +85,9 @@ properties:
     type: array
     description: |
       Token totals and estimated cost grouped by AI agent/tool. The agent is
-      taken from an explicit client field when present, otherwise derived
-      best-effort from stored user-agent metadata; unresolved rows use
-      `unknown`.
+      derived best-effort from stored user-agent metadata (the editor/plugin
+      identifier already captured on each heartbeat); heartbeats whose agent
+      cannot be resolved are grouped under `unknown`.
     items:
       allOf:
         - type: object
