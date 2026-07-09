@@ -1,0 +1,60 @@
+get:
+  operationId: listGitWebhooks
+  tags:
+    - git_webhooks
+  summary: List the authenticated owner's git webhook registrations
+  description: |
+    Returns the authenticated user's git webhook registrations (repository →
+    project mappings). The `secret` is write-only and is never included.
+  responses:
+    '200':
+      description: List of registrations
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: array
+                items:
+                  $ref: ../../components/schemas/WebhookEndpoint.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+post:
+  operationId: createGitWebhook
+  tags:
+    - git_webhooks
+  summary: Register a repository for git-host webhook ingestion
+  description: |
+    Creates a registration mapping a provider repository to a CloudTime
+    `project`, with the shared webhook secret used to verify deliveries. The
+    `secret` is write-only (stored encrypted at rest, never returned).
+    `(provider, repo)` is unique per user; a duplicate returns 409. Set the
+    identical `secret` in the git host's webhook configuration, pointing it at
+    `POST /webhooks/git/{provider}`.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../../components/schemas/WebhookEndpointInput.yaml
+  responses:
+    '201':
+      description: Registration created
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/WebhookEndpoint.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '409':
+      $ref: ../../components/responses/Conflict.yaml

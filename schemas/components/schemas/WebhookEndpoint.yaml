@@ -1,0 +1,37 @@
+type: object
+required:
+  - id
+  - provider
+  - repo
+  - project
+  - is_enabled
+  - created_at
+  - modified_at
+properties:
+  id:
+    type: string
+    format: uuid
+  provider:
+    type: string
+    enum:
+      - github
+      - gitlab
+    description: Git host this registration receives deliveries from.
+  repo:
+    type: string
+    description: >-
+      Provider repository identity matched against the delivery payload —
+      GitHub `full_name` (owner/repo) or GitLab `path_with_namespace`
+      (group/project).
+  project:
+    type: string
+    description: CloudTime project the repository's commits are ingested under.
+  is_enabled:
+    type: boolean
+    description: When false the registration is treated as unregistered — deliveries for its repo return 404.
+  created_at:
+    type: string
+    format: date-time
+  modified_at:
+    type: string
+    format: date-time

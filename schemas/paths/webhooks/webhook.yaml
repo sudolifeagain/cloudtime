@@ -1,0 +1,95 @@
+parameters:
+  - name: webhook_id
+    in: path
+    required: true
+    description: Registration id.
+    schema:
+      type: string
+      format: uuid
+get:
+  operationId: getGitWebhook
+  tags:
+    - git_webhooks
+  summary: Get a git webhook registration
+  description: |
+    Returns one registration owned by the authenticated user. An unknown id or
+    another user's registration returns 404. The `secret` is never included.
+  responses:
+    '200':
+      description: Registration
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/WebhookEndpoint.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
+patch:
+  operationId: updateGitWebhook
+  tags:
+    - git_webhooks
+  summary: Update a git webhook registration
+  description: |
+    Updates the mutable fields of a registration — `project`, `secret`, and
+    `is_enabled`. `provider` and `repo` are immutable; a request that tries to
+    change them returns 400. The `secret` is write-only (stored encrypted, never
+    returned). An unknown or cross-user id returns 404.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            project:
+              type: string
+              minLength: 1
+              maxLength: 255
+            secret:
+              type: string
+              minLength: 1
+              maxLength: 255
+              writeOnly: true
+              description: Replacement shared secret (write-only; stored encrypted, never returned).
+            is_enabled:
+              type: boolean
+  responses:
+    '200':
+      description: Registration updated
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                $ref: ../../components/schemas/WebhookEndpoint.yaml
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
+delete:
+  operationId: deleteGitWebhook
+  tags:
+    - git_webhooks
+  summary: Delete a git webhook registration
+  description: |
+    Removes a registration owned by the authenticated user. Subsequent
+    deliveries for its repository return 404. An unknown or cross-user id
+    returns 404.
+  responses:
+    '204':
+      description: Registration deleted
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
