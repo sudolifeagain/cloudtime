@@ -1388,6 +1388,117 @@ export interface paths {
         patch: operations["updateAiPrice"];
         trace?: never;
     };
+    "/webhooks/git/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive a git-host push webhook and ingest its commits
+         * @description Public webhook receiver for git-host push events. This operation is
+         *     intentionally public (`security: []`) and is authenticated by a
+         *     per-repository signature, not an API key: for `github`, an
+         *     `X-Hub-Signature-256` HMAC-SHA256 of the raw body keyed by the registration
+         *     secret; for `gitlab`, the `X-Gitlab-Token` header compared to the secret. It
+         *     MUST NOT require or accept an API key.
+         *
+         *     The repository is read from the payload (`repository.full_name` for GitHub,
+         *     `project.path_with_namespace` for GitLab) and matched to a registration
+         *     created via `POST /users/current/webhooks`; that registration supplies the
+         *     target user and the CloudTime `project`. On a verified `push`, each commit is
+         *     mapped to the commit-ingestion shape and upserted idempotently on
+         *     `(user_id, project, hash)` in a single batch — the multi-commit,
+         *     provider-facing counterpart of `commits.bulk`. It does NOT correlate
+         *     heartbeats: git payloads carry no coding time, so `total_seconds` is stored
+         *     absent (`human_readable_total` then reads "0 secs"). Up to 100 commits are
+         *     ingested per delivery; a delivery carrying more ingests the first 100 and
+         *     reports the rest in `skipped`.
+         *
+         *     A `ping` or a recognized non-`push` event (any present, non-empty provider
+         *     event header other than the push event) is acknowledged with `202` and zero
+         *     counts. Verification failure returns `401`; an unregistered or disabled
+         *     repository, or an unsupported `{provider}`, returns `404`; a body that is
+         *     unparseable, names no event, or (for a `push`) identifies no repository
+         *     returns `400`. Nothing is written unless the signature verifies.
+         */
+        post: operations["receiveGitWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/current/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the authenticated owner's git webhook registrations
+         * @description Returns the authenticated user's git webhook registrations (repository →
+         *     project mappings). The `secret` is write-only and is never included.
+         */
+        get: operations["listGitWebhooks"];
+        put?: never;
+        /**
+         * Register a repository for git-host webhook ingestion
+         * @description Creates a registration mapping a provider repository to a CloudTime
+         *     `project`, with the shared webhook secret used to verify deliveries. The
+         *     `secret` is write-only (stored encrypted at rest, never returned).
+         *     `(provider, repo)` is unique per user; a duplicate returns 409. Set the
+         *     identical `secret` in the git host's webhook configuration, pointing it at
+         *     `POST /webhooks/git/{provider}`.
+         */
+        post: operations["createGitWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/current/webhooks/{webhook_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Registration id. */
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a git webhook registration
+         * @description Returns one registration owned by the authenticated user. An unknown id or
+         *     another user's registration returns 404. The `secret` is never included.
+         */
+        get: operations["getGitWebhook"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a git webhook registration
+         * @description Removes a registration owned by the authenticated user. Subsequent
+         *     deliveries for its repository return 404. An unknown or cross-user id
+         *     returns 404.
+         */
+        delete: operations["deleteGitWebhook"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a git webhook registration
+         * @description Updates the mutable fields of a registration — `project`, `secret`, and
+         *     `is_enabled`. `provider` and `repo` are immutable; a request that tries to
+         *     change them returns 400. The `secret` is write-only (stored encrypted, never
+         *     returned). An unknown or cross-user id returns 404.
+         */
+        patch: operations["updateGitWebhook"];
+        trace?: never;
+    };
     "/users/current/orgs": {
         parameters: {
             query?: never;
@@ -2601,6 +2712,43 @@ export interface components {
             /** @description Provenance URL; must be `http`/`https` (rejects other schemes). */
             source_url?: string | null;
             is_enabled?: boolean;
+        };
+        WebhookEndpoint: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Git host this registration receives deliveries from.
+             * @enum {string}
+             */
+            provider: "github" | "gitlab";
+            /** @description Provider repository identity matched against the delivery payload — GitHub `full_name` (owner/repo) or GitLab `path_with_namespace` (group/project). */
+            repo: string;
+            /** @description CloudTime project the repository's commits are ingested under. */
+            project: string;
+            /** @description When false the registration is treated as unregistered — deliveries for its repo return 404. */
+            is_enabled: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            modified_at: string;
+        };
+        WebhookEndpointInput: {
+            /**
+             * @description Git host. Immutable after create.
+             * @enum {string}
+             */
+            provider: "github" | "gitlab";
+            /** @description Provider repository identity — GitHub `full_name` (owner/repo) or GitLab `path_with_namespace` (group/project). Matched exactly against the delivery payload. Immutable after create. */
+            repo: string;
+            /** @description CloudTime project the repository's commits are ingested under. */
+            project: string;
+            /** @description Shared webhook secret. For `github` it is the HMAC-SHA256 key for the `X-Hub-Signature-256` signature; for `gitlab` it is compared to the `X-Gitlab-Token` header. Write-only: stored encrypted at rest and never returned by any read. Set the identical value in the git host's webhook configuration. */
+            secret: string;
+            /**
+             * @description When false the registration is treated as unregistered — deliveries for its repo return 404.
+             * @default true
+             */
+            is_enabled: boolean;
         };
         Organization: {
             id: string;
@@ -4763,6 +4911,198 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["AIModelPrice"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    receiveGitWebhook: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description GitHub event name (e.g. `push`, `ping`), sent by GitHub deliveries. */
+                "X-GitHub-Event"?: string;
+                /** @description GitHub HMAC-SHA256 signature of the raw body (`sha256=<hex>`), keyed by the registration secret. */
+                "X-Hub-Signature-256"?: string;
+                /** @description GitLab event name (e.g. `Push Hook`), sent by GitLab deliveries. */
+                "X-Gitlab-Event"?: string;
+                /** @description GitLab webhook token, compared constant-time to the registration secret. */
+                "X-Gitlab-Token"?: string;
+            };
+            path: {
+                /** @description Git host. Supported values are `github` and `gitlab`; any other value returns 404. */
+                provider: "github" | "gitlab";
+            };
+            cookie?: never;
+        };
+        /** @description Provider-specific push payload (GitHub `push` / GitLab `Push Hook`); only documented fields are read. */
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Delivery acknowledged — a push ingests commits; a ping or non-push event returns zero counts. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description Commit objects present in the payload. */
+                            received: number;
+                            /** @description Commits stored (upserted). */
+                            ingested: number;
+                            /** @description Commit objects skipped — no usable hash, or beyond the 100-per-delivery cap. */
+                            skipped: number;
+                            /** @description CloudTime project the commits were ingested under (from the registration). Absent for ping/non-push. */
+                            project?: string;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listGitWebhooks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List of registrations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebhookEndpoint"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createGitWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookEndpointInput"];
+            };
+        };
+        responses: {
+            /** @description Registration created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebhookEndpoint"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getGitWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Registration id. */
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebhookEndpoint"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteGitWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Registration id. */
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registration deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateGitWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Registration id. */
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    project?: string;
+                    /** @description Replacement shared secret (write-only; stored encrypted, never returned). */
+                    secret?: string;
+                    is_enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Registration updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["WebhookEndpoint"];
                     };
                 };
             };

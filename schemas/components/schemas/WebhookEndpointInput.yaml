@@ -1,0 +1,41 @@
+type: object
+required:
+  - provider
+  - repo
+  - project
+  - secret
+properties:
+  provider:
+    type: string
+    enum:
+      - github
+      - gitlab
+    description: Git host. Immutable after create.
+  repo:
+    type: string
+    minLength: 1
+    maxLength: 255
+    description: >-
+      Provider repository identity — GitHub `full_name` (owner/repo) or GitLab
+      `path_with_namespace` (group/project). Matched exactly against the delivery
+      payload. Immutable after create.
+  project:
+    type: string
+    minLength: 1
+    maxLength: 255
+    description: CloudTime project the repository's commits are ingested under.
+  secret:
+    type: string
+    minLength: 1
+    maxLength: 255
+    writeOnly: true
+    description: >-
+      Shared webhook secret. For `github` it is the HMAC-SHA256 key for the
+      `X-Hub-Signature-256` signature; for `gitlab` it is compared to the
+      `X-Gitlab-Token` header. Write-only: stored encrypted at rest and never
+      returned by any read. Set the identical value in the git host's webhook
+      configuration.
+  is_enabled:
+    type: boolean
+    default: true
+    description: When false the registration is treated as unregistered — deliveries for its repo return 404.

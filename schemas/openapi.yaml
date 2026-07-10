@@ -56,6 +56,8 @@ tags:
     description: Public SVG stat cards and authenticated embed configuration
   - name: ai
     description: Owner-only AI coding token usage, pricing, and estimated cost analytics
+  - name: git_webhooks
+    description: Git-host push webhook receiver and repository→project registrations
   - name: orgs
     description: Organization and team management
   - name: meta
@@ -176,6 +178,14 @@ paths:
     $ref: paths/ai/prices.yaml
   /users/current/ai/prices/{price_id}:
     $ref: paths/ai/price.yaml
+
+  # --- webhooks ---
+  /webhooks/git/{provider}:
+    $ref: paths/webhooks/git-provider.yaml
+  /users/current/webhooks:
+    $ref: paths/webhooks/webhooks.yaml
+  /users/current/webhooks/{webhook_id}:
+    $ref: paths/webhooks/webhook.yaml
 
   # --- orgs ---
   /users/current/orgs:

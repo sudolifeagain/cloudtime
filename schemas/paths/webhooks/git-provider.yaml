@@ -1,0 +1,116 @@
+post:
+  operationId: receiveGitWebhook
+  tags:
+    - git_webhooks
+  summary: Receive a git-host push webhook and ingest its commits
+  description: |
+    Public webhook receiver for git-host push events. This operation is
+    intentionally public (`security: []`) and is authenticated by a
+    per-repository signature, not an API key: for `github`, an
+    `X-Hub-Signature-256` HMAC-SHA256 of the raw body keyed by the registration
+    secret; for `gitlab`, the `X-Gitlab-Token` header compared to the secret. It
+    MUST NOT require or accept an API key.
+
+    The repository is read from the payload (`repository.full_name` for GitHub,
+    `project.path_with_namespace` for GitLab) and matched to a registration
+    created via `POST /users/current/webhooks`; that registration supplies the
+    target user and the CloudTime `project`. On a verified `push`, each commit is
+    mapped to the commit-ingestion shape and upserted idempotently on
+    `(user_id, project, hash)` in a single batch — the multi-commit,
+    provider-facing counterpart of `commits.bulk`. It does NOT correlate
+    heartbeats: git payloads carry no coding time, so `total_seconds` is stored
+    absent (`human_readable_total` then reads "0 secs"). Up to 100 commits are
+    ingested per delivery; a delivery carrying more ingests the first 100 and
+    reports the rest in `skipped`.
+
+    A `ping` or a recognized non-`push` event (any present, non-empty provider
+    event header other than the push event) is acknowledged with `202` and zero
+    counts. Verification failure returns `401`; an unregistered or disabled
+    repository, or an unsupported `{provider}`, returns `404`; a body that is
+    unparseable, names no event, or (for a `push`) identifies no repository
+    returns `400`. Nothing is written unless the signature verifies.
+  security: []
+  parameters:
+    - name: provider
+      in: path
+      required: true
+      description: Git host. Supported values are `github` and `gitlab`; any other value returns 404.
+      schema:
+        type: string
+        enum:
+          - github
+          - gitlab
+    - name: X-GitHub-Event
+      in: header
+      required: false
+      description: GitHub event name (e.g. `push`, `ping`), sent by GitHub deliveries.
+      schema:
+        type: string
+        maxLength: 64
+    - name: X-Hub-Signature-256
+      in: header
+      required: false
+      description: GitHub HMAC-SHA256 signature of the raw body (`sha256=<hex>`), keyed by the registration secret.
+      schema:
+        type: string
+        maxLength: 128
+    - name: X-Gitlab-Event
+      in: header
+      required: false
+      description: GitLab event name (e.g. `Push Hook`), sent by GitLab deliveries.
+      schema:
+        type: string
+        maxLength: 64
+    - name: X-Gitlab-Token
+      in: header
+      required: false
+      description: GitLab webhook token, compared constant-time to the registration secret.
+      schema:
+        type: string
+        maxLength: 255
+  requestBody:
+    required: true
+    description: Provider-specific push payload (GitHub `push` / GitLab `Push Hook`); only documented fields are read.
+    content:
+      application/json:
+        schema:
+          type: object
+          additionalProperties: true
+  responses:
+    '202':
+      description: Delivery acknowledged — a push ingests commits; a ping or non-push event returns zero counts.
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - data
+            properties:
+              data:
+                type: object
+                required:
+                  - received
+                  - ingested
+                  - skipped
+                properties:
+                  received:
+                    type: integer
+                    minimum: 0
+                    description: Commit objects present in the payload.
+                  ingested:
+                    type: integer
+                    minimum: 0
+                    description: Commits stored (upserted).
+                  skipped:
+                    type: integer
+                    minimum: 0
+                    description: Commit objects skipped — no usable hash, or beyond the 100-per-delivery cap.
+                  project:
+                    type: string
+                    description: CloudTime project the commits were ingested under (from the registration). Absent for ping/non-push.
+    '400':
+      $ref: ../../components/responses/BadRequest.yaml
+    '401':
+      $ref: ../../components/responses/Unauthorized.yaml
+    '404':
+      $ref: ../../components/responses/NotFound.yaml
