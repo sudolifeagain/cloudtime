@@ -513,3 +513,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_daily_usage_unique
   ON ai_daily_usage(user_id, day, provider, model, agent, project);
 CREATE INDEX IF NOT EXISTS idx_ai_daily_usage_user_day
   ON ai_daily_usage(user_id, day);
+
+-- ============================================================
+-- Git-host webhook endpoint registrations (Issue #146)
+-- One row per (provider, repo) registration: maps a git host repository to a
+-- CloudTime project and stores the shared webhook secret encrypted at rest
+-- (AES-256-GCM, ENCRYPTION_KEY, AAD 'webhook:<id>') — recoverable, not hashed,
+-- because GitHub HMAC verification must recompute the signature from the raw
+-- secret. The public receiver resolves the enabled registration by
+-- (provider, repo) read from the delivery payload; the owner CRUD manages rows.
+-- UNIQUE(user_id, provider, repo) allows two users to register the same public
+-- repo (multi-user-ready); in single-user mode a (provider, repo) lookup
+-- resolves to exactly one row. Mirrors migrations/0008_git_webhook_endpoints.sql.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  repo TEXT NOT NULL,
+  project TEXT NOT NULL,
+  secret_encrypted TEXT NOT NULL,
+  is_enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  modified_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE(user_id, provider, repo)
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_user ON webhook_endpoints(user_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_lookup ON webhook_endpoints(provider, repo);

@@ -39,7 +39,7 @@ type Commit = components["schemas"]["Commit"];
 const PAGE_SIZE = 100;
 const MAX_BULK = 100;
 
-interface CommitRow {
+export interface CommitRow {
   hash: string;
   message: string | null;
   author_name: string | null;
@@ -97,9 +97,11 @@ function rowToCommit(row: CommitRow): Commit {
  * Bind the idempotent commit upsert for one validated commit. Shared by the
  * single-commit `POST` (which passes the correlated or client-supplied
  * `totalSeconds`) and the bulk `POST` (which passes the supplied value
- * verbatim, no correlation). `project` comes from the path, not the body.
+ * verbatim, no correlation). `project` comes from the path, not the body. Also
+ * reused by the git-webhook receiver (Issue #146), which passes each mapped
+ * commit's `total_seconds` (always null — git payloads carry no coding time).
  */
-function commitUpsertStmt(
+export function commitUpsertStmt(
   db: D1Database,
   userId: string,
   project: string,

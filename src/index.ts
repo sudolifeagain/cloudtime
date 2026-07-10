@@ -21,6 +21,7 @@ import machines from "./routes/machines";
 import userAgents from "./routes/user-agents";
 import { cardsPublic, cardsSettings } from "./routes/cards";
 import ai from "./routes/ai";
+import { webhooksCrud, webhooksReceiver } from "./routes/webhooks";
 import { aggregateHeartbeats } from "./cron/aggregate";
 import { backfillHourlySummaries } from "./cron/hourly-backfill";
 import { parseRetentionDays, purgeOldHeartbeats } from "./cron/purge";
@@ -137,6 +138,14 @@ app.use("/*", async (c, next) => {
   if (c.req.path.startsWith("/api/v1/auth/link/verify/")) {
     return next();
   }
+  // The public git-webhook receiver (Issue #146) is CSRF-exempt: a git-host
+  // POST carries no Authorization header and no same-origin Origin, so CSRF
+  // would otherwise 403 it before the handler runs. Its authenticity is the
+  // per-repo signature (research D-3), which a CSRF attacker cannot forge — not
+  // an ambient session cookie. This is the first CSRF-exempt public write POST.
+  if (c.req.path.startsWith("/api/v1/webhooks/git/")) {
+    return next();
+  }
   return csrfMiddleware(c, next);
 });
 
@@ -151,6 +160,10 @@ app.route("/api/v1", meta);
 
 // Public embeddable card images (no auth — /users/:username/cards/:type.svg, spec 160)
 app.route("/api/v1", cardsPublic);
+
+// Public git-host webhook receiver (no auth; per-repo signature —
+// POST /webhooks/git/:provider, Issue #146)
+app.route("/api/v1", webhooksReceiver);
 
 // Auth routes (OAuth, sessions, providers — before other authenticated routes)
 app.route("/api/v1/auth", auth);
@@ -196,6 +209,10 @@ app.route("/api/v1/users/current", cardsSettings);
 
 // AI model price + usage routes (mounted at /users/current, sub-app defines /ai/*, Issue #200)
 app.route("/api/v1/users/current", ai);
+
+// Git-host webhook registration CRUD (mounted at /users/current, sub-app
+// defines /webhooks[/:webhook_id], Issue #146)
+app.route("/api/v1/users/current", webhooksCrud);
 
 // Cron trigger handler for periodic aggregation + session cleanup
 export default {
