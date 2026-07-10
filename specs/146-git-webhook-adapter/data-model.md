@@ -47,10 +47,10 @@ Body is a `WebhookEndpointInput`; `user_id` is the authenticated owner.
 | `provider` (required, enum `github`\|`gitlab`) | `provider` | immutable after create (FR-010) |
 | `repo` (required, non-empty, ≤255) | `repo` | provider repo identity; immutable after create |
 | `project` (required, non-empty, ≤255) | `project` | mutable |
-| `secret` (required, non-empty) | `secret_encrypted` | `encryptToken(secret, 'webhook:'+id)`; **write-only** — never returned (FR-009) |
+| `secret` (required, non-empty) | `secret_encrypted` | `encryptToken(secret, ENCRYPTION_KEY, 'webhook:'+id)`; **write-only** — never returned (FR-009) |
 | `is_enabled` (optional, default `true`) | `is_enabled` | mutable |
 
-`PATCH /users/current/webhooks/{webhook_id}` accepts `project`, `secret`, `is_enabled`; `provider`/`repo` in the body → `400` (immutable). Ownership + existence checked before body validation; unknown / cross-user id → `404` (never `403`, no id leak). `DELETE` → `204`.
+`PATCH /users/current/webhooks/{webhook_id}` accepts `project`, `secret`, `is_enabled`; `provider`/`repo` in the body → `400` (immutable). The PATCH body schema does not set `additionalProperties: false` (matching the `/ai/prices` precedent), so `provider`/`repo` in a body pass schema validation and the immutability `400` is enforced by the handler (FR-010), not by the schema. Ownership + existence checked before body validation; unknown / cross-user id → `404` (never `403`, no id leak). `DELETE` → `204`.
 
 ### Row → response (`WebhookEndpoint`, all reads)
 
@@ -70,10 +70,10 @@ Body is a `WebhookEndpointInput`; `user_id` is the authenticated owner.
 Public (`security: []`); no `c.get("userId")` — the target user comes from the registration. Ordered handling (FR-001..FR-007, FR-011):
 
 1. **Provider** from the path. Not `github`/`gitlab` → `404` (FR-001).
-2. **Raw body** read once via `c.req.arrayBuffer()` (bounded by the global 256 KB `bodyLimit`); `JSON.parse` that same buffer. Unparseable → `400` (FR-007). *(Never `c.req.json()` then re-read — the HMAC needs the raw bytes; research D-3/D-10.)*
-3. **Event** from the provider header (`X-GitHub-Event` / `X-Gitlab-Event`). `ping` or a recognized non-`push` event → `202` with zero counts (FR-007).
-4. **Repo** from the payload (`repository.full_name` / `project.path_with_namespace`). **Lookup** the enabled registration by `(provider, repo)` via `idx_webhook_endpoints_lookup`. None (or disabled) → `404` (FR-002).
-5. **Verify** against `decryptToken(secret_encrypted, 'webhook:'+id)`: GitHub `HMAC-SHA256(rawBody, secret)` vs `X-Hub-Signature-256` (constant-time); GitLab `X-Gitlab-Token` vs secret (constant-time). Mismatch → `401`, nothing written (FR-003).
+2. **Raw body** read once via `c.req.arrayBuffer()` (bounded by the global 256 KB `bodyLimit`, which itself returns `413` for an oversized delivery before this handler runs — platform-inherited, out of scope); `JSON.parse` that same buffer. Unparseable → `400` (FR-007). *(Never `c.req.json()` then re-read — the HMAC needs the raw bytes; research D-3/D-10.)*
+3. **Event** from the provider header (`X-GitHub-Event` / `X-Gitlab-Event`). A **missing or empty** header → `400` (the delivery names no event, FR-007). `ping` or any recognized non-`push` event (a present, non-empty header other than the push event — GitHub `push` / GitLab `Push Hook`) → `202` with zero counts (FR-007).
+4. **Repo** from the payload (`repository.full_name` / `project.path_with_namespace`). If that field is **absent or empty** (the body cannot identify a repository) → `400` (FR-007). Otherwise **lookup** the enabled registration by `(provider, repo)` via `idx_webhook_endpoints_lookup`. None (or disabled) → `404` (FR-002).
+5. **Verify** against `decryptToken(secret_encrypted, ENCRYPTION_KEY, 'webhook:'+id)`: GitHub `HMAC-SHA256(rawBody, secret)` vs `X-Hub-Signature-256` (constant-time); GitLab `X-Gitlab-Token` vs secret (constant-time). Mismatch → `401`, nothing written (FR-003).
 6. **Map** each `push` commit to a `CommitInput` (research D-5 table), clamp to caps, omit unnormalizable fields; drop objects with no usable `hash` (counted in `skipped`); cap at 100 (`skipped` += remainder) (FR-004, FR-006).
 7. **Write** the mapped commits under the registration's `user_id` + `project` in **one** `db.batch()` of the existing upsert — reusing the bulk write path, no correlation, `total_seconds` bound `null` when absent (FR-005, FR-011):
 

@@ -80,6 +80,8 @@ POST .../webhooks/git/github  (payload repo "acme/unknown", no registration) -> 
 POST .../webhooks/git/gitlab  (X-Gitlab-Token != secret)               -> 401
 POST .../webhooks/git/bitbucket  (unsupported provider)                -> 404
 POST .../webhooks/git/github  (body is not valid JSON)                 -> 400
+POST .../webhooks/git/github  (valid-JSON push, no repository.full_name) -> 400
+POST .../webhooks/git/github  (no X-GitHub-Event header)               -> 400
 ```
 Each writes nothing — a follow-up `GET .../projects/widgets/commits` is unchanged.
 

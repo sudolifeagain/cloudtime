@@ -23,10 +23,12 @@ post:
     ingested per delivery; a delivery carrying more ingests the first 100 and
     reports the rest in `skipped`.
 
-    A `ping` or a recognized non-`push` event is acknowledged with `202` and
-    zero counts. Verification failure returns `401`; an unregistered or disabled
-    repository, or an unsupported `{provider}`, returns `404`; an unparseable
-    body returns `400`. Nothing is written unless the signature verifies.
+    A `ping` or a recognized non-`push` event (any present, non-empty provider
+    event header other than the push event) is acknowledged with `202` and zero
+    counts. Verification failure returns `401`; an unregistered or disabled
+    repository, or an unsupported `{provider}`, returns `404`; a body that is
+    unparseable, names no event, or (for a `push`) identifies no repository
+    returns `400`. Nothing is written unless the signature verifies.
   security: []
   parameters:
     - name: provider

@@ -66,7 +66,7 @@ src/db/schema.sql                               # CHANGE: mirror the new table
 src/routes/webhooks.ts                          # NEW: owner CRUD (authed) + public receiver sub-app
 src/utils/webhooks/providers.ts                 # NEW: per-provider adapters (event detect, verify, payload → CommitInput[])
 src/utils/webhooks/store.ts                     # NEW: registration insert/update/delete/list/lookup + encrypt/decrypt secret
-src/routes/commits.ts                           # CHANGE (if needed): export commitUpsertStmt/rowToCommit for reuse
+src/routes/commits.ts                           # CHANGE: export commitUpsertStmt (+ the CommitRow type) for the receiver to reuse (rowToCommit/UPSERT_SQL not needed there — the ack is count-only)
 src/index.ts                                    # CHANGE: mount the receiver (public) + CRUD (authed); add the CSRF path exemption
 ```
 
@@ -81,7 +81,7 @@ src/index.ts                                    # CHANGE: mount the receiver (pu
 
 - **Secret leakage** → secret is write-only (never returned/logged) and AES-256-GCM encrypted at rest (FR-009, research D-4); no secret in the URL (research D-1). Tests assert no `secret` field in any response.
 - **Verifying a re-serialized body** → HMAC the RAW request bytes, parse that same buffer; never `c.req.json()` then re-serialize (research D-3, D-10). Unit test signs a fixed byte string and asserts a whitespace change fails.
-- **CSRF blocks the public POST** → add the receiver to the global CSRF exemption, like the email-verify POST (FR-014, research D-10). Integration test posts with no `Origin`/`Authorization` and expects the handler (not a 403).
+- **CSRF blocks the public POST** → add the receiver to the global CSRF exemption, joining the public email-verification route's exemption (that route is a GET; the receiver is the first CSRF-exempt public *write* POST — safe because auth is the per-repo signature, not an ambient cookie) (FR-014, research D-10). Integration test posts with no `Origin`/`Authorization` and expects the handler (not a 403).
 - **Per-commit correlation blowing the request budget** → reuse the bulk write path; no correlation (FR-005/FR-011, research D-6). Receiver does one `db.batch()`, no heartbeat scan.
 - **A host disabling the hook over one bad commit** → best-effort ingest + `skipped` count, always 2xx on a verified delivery (FR-006/FR-007, research D-7); not all-or-nothing.
 - **Timing oracle on secret/signature** → constant-time compare via `timingSafeEqual` (research D-3).
