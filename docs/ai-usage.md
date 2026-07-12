@@ -41,6 +41,43 @@ token field (any of the six token classes above). Presence, not value, decides
 this: a heartbeat with `ai_input_tokens: 0` contributes, while a heartbeat that
 carries only `ai_prompt_length` does not.
 
+### Deriving provider and model from the User-Agent
+
+`ai_provider` and `ai_model` are optional. When an `ai coding` heartbeat omits
+them, CloudTime fills them best-effort from the client User-Agent so per-provider
+and per-model breakdowns work without the client changing its request body. An
+explicit `ai_provider`/`ai_model` in the body always wins and is never
+overwritten.
+
+A compatible AI CLI composes a User-Agent whose tail lists the emitting plugin
+and, where available, the active model, for example:
+
+```
+wakatime/<cli-ver> (<os>) <runtime> opus/4-8 claude-code/2.1.205 claude-code-wakatime/4.1.0
+wakatime/<cli-ver> (<os>) <runtime> gpt-5.5/xhigh codex-cli/2.2.0 codex-cli-wakatime/1.1.0
+```
+
+CloudTime reads two things from it:
+
+- **Provider** — from the `<tool>-wakatime` plugin token that identifies which
+  tool emitted the heartbeat: `claude-code-wakatime` → `anthropic`,
+  `codex-cli-wakatime` → `openai`.
+- **Model** — from a recognized model token: an Anthropic `family/version`
+  (`opus/4-8` → `claude-opus-4-8`) or an OpenAI model id
+  (`gpt-5.5/xhigh` → `gpt-5.5`; the effort/detail after the slash is dropped).
+
+The model is attributed **only for the resolved provider**, so a co-running
+tool's token is never cross-attributed. A Codex heartbeat's User-Agent can still
+carry Anthropic's `opus/4-8` because another assistant runs alongside; that token
+is ignored, and the codex heartbeat resolves to `openai` with an OpenAI model
+only if an OpenAI id such as `gpt-5.5/xhigh` is present.
+
+**If your client does not send the model**, `ai_model` stays `null` and that
+usage rolls up under an `unknown` model bucket (still attributed to the
+provider). To get per-model breakdowns and cost, either send `ai_model`
+explicitly in the heartbeat body, or have the client include the model as a
+`<model>/<detail>` token in its plugin User-Agent as shown above.
+
 ## Usage summary
 
 `GET /api/v1/users/current/ai/usage` returns an owner-only `AIUsageSummary` over
