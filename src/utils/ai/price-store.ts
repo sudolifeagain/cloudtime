@@ -16,6 +16,7 @@ import {
   type CreatePriceValue,
   type UpdatePriceValue,
 } from "./pricing";
+import { defaultPriceRows } from "./default-prices";
 
 /** Only the two window columns, read for the overlap invariant. */
 interface WindowRow {
@@ -74,7 +75,12 @@ export async function fetchPriceRow(
     .first<AiModelPriceRow>();
 }
 
-/** All enabled owner + default price rows for the user (used by cost estimation). */
+/**
+ * All enabled owner price rows for the user (used by cost estimation). Shipped
+ * defaults are NOT merged here: they are resolved per used (provider, model) at
+ * the call site (see `resolveDefaultPrice`) so family-based defaults cover any
+ * concrete version, which a fixed list cannot.
+ */
 export async function listEnabledPrices(
   db: D1Database,
   userId: string,
@@ -111,7 +117,15 @@ export async function listPrices(
 
   const { results } = await db.prepare(sql).bind(...binds).all<AiModelPriceRow>();
 
-  let rows = results;
+  // Merge the shipped default catalog (is_default = 1). Defaults are enabled and
+  // open-ended, so `include_disabled` never excludes them; apply the same
+  // provider/model filters, then the shared `active_on` filter and ordering below
+  // treat owner and default rows uniformly.
+  let defaults = defaultPriceRows(userId);
+  if (opts.provider !== undefined) defaults = defaults.filter((r) => r.provider === opts.provider);
+  if (opts.model !== undefined) defaults = defaults.filter((r) => r.model === opts.model);
+
+  let rows = [...results, ...defaults];
   if (opts.activeOnMs !== undefined) {
     const at = opts.activeOnMs;
     rows = rows.filter((r) => {
