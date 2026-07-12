@@ -230,3 +230,109 @@ describe("POST /heartbeats.bulk — AI telemetry", () => {
     expect(data).toHaveLength(2);
   });
 });
+
+describe("AI provider/model derived from the User-Agent (Issue #200)", () => {
+  // Real compatible AI-plugin User-Agents observed in production: the model
+  // lives in the UA (`opus/4-8`), not the heartbeat body.
+  const CLAUDE_UA =
+    "wakatime/v2.22.0 (windows-10.0.26200.8655-x86_64) go1.26.5 opus/4-8 claude-code/2.1.205 claude-code-wakatime/4.1.0";
+  const CODEX_UA =
+    "wakatime/v2.22.0 (windows-10.0.26200.8655-x86_64) go1.26.5 opus/4-8 claude-code/2.1.205 codex-cli/unknown codex-cli-wakatime/1.0.0";
+
+  async function firstStored(): Promise<Record<string, unknown>> {
+    const get = await callWorker("/api/v1/users/current/heartbeats?date=2026-03-14", {
+      headers: authHeader(user.apiKey),
+    });
+    return ((await get.json()) as { data: Record<string, unknown>[] }).data[0];
+  }
+
+  it("fills ai_provider/ai_model from a Claude Code UA when the client omits them", async () => {
+    const res = await callWorker("/api/v1/users/current/heartbeats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": CLAUDE_UA, ...authHeader(user.apiKey) },
+      body: JSON.stringify(aiHeartbeat({ ai_provider: undefined, ai_model: undefined })),
+    });
+    expect(res.status).toBe(201);
+
+    const hb = await firstStored();
+    expect(hb.ai_provider).toBe("anthropic");
+    expect(hb.ai_model).toBe("claude-opus-4-8");
+  });
+
+  it("attributes a codex heartbeat to openai without cross-attributing the claude model", async () => {
+    const res = await callWorker("/api/v1/users/current/heartbeats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": CODEX_UA, ...authHeader(user.apiKey) },
+      body: JSON.stringify(aiHeartbeat({ ai_provider: undefined, ai_model: undefined })),
+    });
+    expect(res.status).toBe(201);
+
+    const hb = await firstStored();
+    expect(hb.ai_provider).toBe("openai");
+    expect(hb.ai_model).toBeNull();
+  });
+
+  it("never overrides an explicit ai_provider/ai_model sent by the client", async () => {
+    const res = await callWorker("/api/v1/users/current/heartbeats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": CLAUDE_UA, ...authHeader(user.apiKey) },
+      body: JSON.stringify(aiHeartbeat({ ai_provider: "anthropic", ai_model: "claude-sonnet-5" })),
+    });
+    expect(res.status).toBe(201);
+
+    const hb = await firstStored();
+    expect(hb.ai_model).toBe("claude-sonnet-5");
+  });
+
+  it("does not cross-attribute a derived model when the client pins only the provider", async () => {
+    // Client sent an explicit provider but no model, alongside a Claude Code UA
+    // carrying `opus/4-8`. Deriving only the missing model would attach the
+    // co-running Claude model to the client's provider — derivation is
+    // all-or-nothing, so the explicit provider wins and the model stays null.
+    const res = await callWorker("/api/v1/users/current/heartbeats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": CLAUDE_UA, ...authHeader(user.apiKey) },
+      body: JSON.stringify(aiHeartbeat({ ai_provider: "openai", ai_model: undefined })),
+    });
+    expect(res.status).toBe(201);
+
+    const hb = await firstStored();
+    expect(hb.ai_provider).toBe("openai");
+    expect(hb.ai_model).toBeNull();
+  });
+
+  it("does not derive for a non-`ai coding` heartbeat", async () => {
+    const res = await callWorker("/api/v1/users/current/heartbeats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": CLAUDE_UA, ...authHeader(user.apiKey) },
+      body: JSON.stringify(aiHeartbeat({ category: "coding", ai_provider: undefined, ai_model: undefined })),
+    });
+    expect(res.status).toBe(201);
+
+    const hb = await firstStored();
+    expect(hb.ai_provider).toBeNull();
+    expect(hb.ai_model).toBeNull();
+  });
+
+  it("derives per item in a bulk batch from each item's own User-Agent", async () => {
+    const res = await callWorker("/api/v1/users/current/heartbeats.bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader(user.apiKey) },
+      body: JSON.stringify([
+        aiHeartbeat({ entity: "a.ts", user_agent: CLAUDE_UA, ai_provider: undefined, ai_model: undefined }),
+        aiHeartbeat({ entity: "b.ts", user_agent: CODEX_UA, ai_provider: undefined, ai_model: undefined }),
+      ]),
+    });
+    expect(res.status).toBe(202);
+
+    const get = await callWorker("/api/v1/users/current/heartbeats?date=2026-03-14", {
+      headers: authHeader(user.apiKey),
+    });
+    const data = ((await get.json()) as { data: Record<string, unknown>[] }).data;
+    const byEntity = Object.fromEntries(data.map((h) => [h.entity, h]));
+    expect(byEntity["a.ts"].ai_provider).toBe("anthropic");
+    expect(byEntity["a.ts"].ai_model).toBe("claude-opus-4-8");
+    expect(byEntity["b.ts"].ai_provider).toBe("openai");
+    expect(byEntity["b.ts"].ai_model).toBeNull();
+  });
+});
