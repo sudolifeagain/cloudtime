@@ -123,6 +123,29 @@ excluded from every `estimated_cost`, counted in `missing_price_count`, and the
 summary sets `mixed_currency: true` to warn that some priced usage is not
 reflected in the totals.
 
+## Shipped default prices
+
+So a fresh instance estimates cost before anyone configures anything, CloudTime
+ships a small **default price catalog** exposed as read-only `is_default` rows.
+Defaults resolve by the *shape* of a model id rather than pinning every release,
+so a steady stream of new models does not immediately go stale:
+
+- **Anthropic** rates are flat within a family generation, so a default resolves
+  from the family: `claude-opus-*` → $5/$25, `claude-sonnet-*` → $3/$15,
+  `claude-haiku-*` → $1/$5, `claude-fable-*` / `claude-mythos-*` → $10/$50. A
+  future `claude-opus-4-9` is priced with no code change; the price list shows
+  these as family entries (`claude-opus-*`).
+- **OpenAI** is priced per version, so its models are listed explicitly: `gpt-5`,
+  `gpt-5.3-codex`, `gpt-5.4`, `gpt-5.5`, and the three `gpt-5.6` tiers (Sol /
+  Terra / Luna). An OpenAI model not in the list is left unpriced.
+
+An owner price row always outranks the shipped default for the same
+`(provider, model)`. A model no default covers stays unpriced and surfaces in
+`missing_price_count` — never a silent zero — so you can add a row for it. The
+catalog is code-maintained (no per-instance seeding or migration); its synthetic
+`default:<provider>:<model>` ids are not individually addressable, so the
+single-row price endpoints `404` on them.
+
 ## Owner-managed pricing table
 
 Estimated cost is only as good as the prices you configure. Price rows are

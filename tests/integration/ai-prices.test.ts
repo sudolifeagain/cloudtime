@@ -176,13 +176,14 @@ describe("GET /ai/prices", () => {
       body: JSON.stringify(validPrice({ model: "gpt-4o-mini", is_enabled: false })),
     });
 
+    // Owner rows only (shipped is_default rows are always present alongside them).
     const enabled = await callWorker(PRICES, { headers: authHeader(user.apiKey) });
-    const enabledBody = (await enabled.json()) as { data: unknown[] };
-    expect(enabledBody.data).toHaveLength(1);
+    const enabledBody = (await enabled.json()) as { data: { is_default: boolean }[] };
+    expect(enabledBody.data.filter((r) => !r.is_default)).toHaveLength(1);
 
     const all = await callWorker(`${PRICES}?include_disabled=true`, { headers: authHeader(user.apiKey) });
-    const allBody = (await all.json()) as { data: unknown[] };
-    expect(allBody.data).toHaveLength(2);
+    const allBody = (await all.json()) as { data: { is_default: boolean }[] };
+    expect(allBody.data.filter((r) => !r.is_default)).toHaveLength(2);
   });
 
   it("filters by active_on window and by provider", async () => {
@@ -198,14 +199,42 @@ describe("GET /ai/prices", () => {
     });
 
     const active = await callWorker(`${PRICES}?active_on=2026-01-15T00:00:00Z`, { headers: authHeader(user.apiKey) });
-    const activeBody = (await active.json()) as { data: { provider: string }[] };
-    expect(activeBody.data).toHaveLength(1);
-    expect(activeBody.data[0].provider).toBe("openai");
+    const activeBody = (await active.json()) as { data: { provider: string; is_default: boolean }[] };
+    const activeOwner = activeBody.data.filter((r) => !r.is_default);
+    expect(activeOwner).toHaveLength(1);
+    expect(activeOwner[0].provider).toBe("openai");
 
     const byProvider = await callWorker(`${PRICES}?provider=anthropic`, { headers: authHeader(user.apiKey) });
-    const byProviderBody = (await byProvider.json()) as { data: { provider: string }[] };
-    expect(byProviderBody.data).toHaveLength(1);
-    expect(byProviderBody.data[0].provider).toBe("anthropic");
+    const byProviderBody = (await byProvider.json()) as { data: { provider: string; is_default: boolean }[] };
+    const byProviderOwner = byProviderBody.data.filter((r) => !r.is_default);
+    expect(byProviderOwner).toHaveLength(1);
+    expect(byProviderOwner[0].provider).toBe("anthropic");
+  });
+
+  it("lists shipped default prices (is_default) even with no owner rows configured", async () => {
+    const res = await callWorker(`${PRICES}?provider=openai`, { headers: authHeader(user.apiKey) });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { model: string; is_default: boolean; input_cost_per_mtok?: number; output_cost_per_mtok?: number }[];
+    };
+    const defaults = body.data.filter((r) => r.is_default);
+    expect(defaults.length).toBeGreaterThan(0);
+    // gpt-5.6 tiers (codex 5.6) ship out of the box.
+    expect(defaults.find((r) => r.model === "gpt-5.6-luna")).toMatchObject({
+      is_default: true,
+      input_cost_per_mtok: 1,
+      output_cost_per_mtok: 6,
+    });
+  });
+
+  it("does not expose a shipped default as an addressable row (single-row endpoints 404)", async () => {
+    // Synthetic default ids never exist in D1, so id existence is not leaked and
+    // defaults cannot be fetched, edited, or deleted individually.
+    const id = "default:openai:gpt-5.6";
+    const get = await callWorker(`${PRICES}/${id}`, { headers: authHeader(user.apiKey) });
+    expect(get.status).toBe(404);
+    const del = await callWorker(`${PRICES}/${id}`, { method: "DELETE", headers: authHeader(user.apiKey) });
+    expect(del.status).toBe(404);
   });
 
   it("rejects a malformed active_on with 400", async () => {

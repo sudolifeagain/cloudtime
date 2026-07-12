@@ -18,6 +18,7 @@ import {
   toMs,
   validateCreatePrice,
   validateUpdatePrice,
+  type AiModelPriceRow,
 } from "../utils/ai/pricing";
 import {
   applyPriceUpdate,
@@ -27,6 +28,7 @@ import {
   listEnabledPrices,
   listPrices,
 } from "../utils/ai/price-store";
+import { resolveDefaultPrice } from "../utils/ai/default-prices";
 import {
   AI_DAILY_USAGE_SELECT_COLUMNS,
   buildUsageSummary,
@@ -200,8 +202,20 @@ ai.get("/ai/usage", async (c) => {
       .bind(...binds)
       .all<AiDailyUsageRow>();
 
-    // Only enabled price rows participate in cost estimation.
+    // Only enabled owner price rows participate in cost estimation.
     const prices = await listEnabledPrices(c.env.DB, userId);
+    // Resolve a shipped default for each (provider, model) actually used, so cost
+    // estimation covers models the owner has not priced. Owner rows still win in
+    // selectEffectivePrice; an unresolved model stays unpriced (missing_price_count).
+    const resolved = new Set<string>();
+    const defaults: AiModelPriceRow[] = [];
+    for (const r of rows) {
+      const key = `${r.provider} ${r.model}`;
+      if (resolved.has(key)) continue;
+      resolved.add(key);
+      const d = resolveDefaultPrice(userId, r.provider, r.model);
+      if (d) defaults.push(d);
+    }
 
     const summary = buildUsageSummary({
       start: range.start,
@@ -209,7 +223,7 @@ ai.get("/ai/usage", async (c) => {
       timezone: requestTz,
       aggregationTz,
       rows,
-      prices,
+      prices: [...prices, ...defaults],
     });
 
     return c.json({ data: summary });

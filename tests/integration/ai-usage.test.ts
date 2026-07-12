@@ -167,6 +167,66 @@ describe("GET /ai/usage — token trends + cost", () => {
     expect(data.totals.missing_price_count).toBe(3);
   });
 
+  it("prices a NEW Anthropic version from its family default, with no owner row", async () => {
+    // A claude-opus version that did not exist when the code shipped still
+    // resolves via the opus family, so defaults do not go stale on point releases.
+    await insertUsage(user.userId, {
+      provider: "anthropic",
+      model: "claude-opus-4-9",
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+    });
+
+    const { data } = await getUsage(RANGE);
+    expect(data.currency).toBe("USD");
+    expect(data.totals.estimated_cost).toBeCloseTo(30, 6); // $5/M in + $25/M out
+    expect(data.totals.missing_price_count).toBe(0);
+    expect(data.by_model.find((m) => m.model === "claude-opus-4-9")?.estimated_cost).toBeCloseTo(30, 6);
+  });
+
+  it("prices a codex gpt-5.6 tier from the shipped default, with no owner row", async () => {
+    await insertUsage(user.userId, {
+      provider: "openai",
+      model: "gpt-5.6-luna",
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+    });
+
+    const { data } = await getUsage(RANGE);
+    expect(data.totals.estimated_cost).toBeCloseTo(7, 6); // $1/M in + $6/M out
+  });
+
+  it("keeps an unknown model unpriced even with defaults shipped (missing_price_count)", async () => {
+    await insertUsage(user.userId, {
+      provider: "openai",
+      model: "gpt-5.7",
+      input_tokens: 1_000_000,
+      heartbeat_count: 4,
+    });
+
+    const { data } = await getUsage(RANGE);
+    expect(data.totals.estimated_cost).toBeNull();
+    expect(data.totals.missing_price_count).toBe(4);
+  });
+
+  it("lets an owner price override the shipped family default", async () => {
+    await insertUsage(user.userId, {
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+      input_tokens: 1_000_000,
+      output_tokens: 0,
+    });
+    await insertPrice(user.userId, {
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+      input_cost_per_mtok: 1,
+      output_cost_per_mtok: 1,
+    });
+
+    const { data } = await getUsage(RANGE);
+    expect(data.totals.estimated_cost).toBeCloseTo(1, 6); // owner $1/M, not the $5/M opus default
+  });
+
   it("selects one currency and flags mixed_currency, excluding off-currency cost", async () => {
     await insertUsage(user.userId, { provider: "openai", model: "gpt-4o", input_tokens: 1_000_000, heartbeat_count: 3 });
     await insertUsage(user.userId, { provider: "anthropic", model: "claude", input_tokens: 1_000_000, heartbeat_count: 1 });
