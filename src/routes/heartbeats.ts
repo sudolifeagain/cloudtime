@@ -3,7 +3,7 @@ import type { AuthEnv } from "../types";
 import type { components } from "../types/generated";
 import { authMiddleware, getUserTimeout, getUserTimezone } from "../middleware/auth";
 import { getEpochBoundsForDate } from "../utils/time-format";
-import { resolveUserAgentId } from "../utils/user-agent";
+import { resolveUserAgentId, deriveAiIdentity, type AiIdentity } from "../utils/user-agent";
 import { applyRules, loadRules } from "../utils/custom-rules";
 import { INPUT_LIMITS, tooLong, truncateTo } from "../utils/input-limits";
 import { machineUpsertStmt } from "../utils/machine";
@@ -70,7 +70,8 @@ function bindHeartbeatParams(
   input: HeartbeatInput,
   machine: string | undefined,
   userAgentId: string | null,
-  now: string
+  now: string,
+  derivedAi?: AiIdentity,
 ): D1PreparedStatement {
   return stmt.bind(
     id, userId, input.entity, input.type, input.time,
@@ -81,13 +82,33 @@ function bindHeartbeatParams(
     input.ai_prompt_length ?? null, input.ai_input_tokens ?? null,
     input.ai_output_tokens ?? null, input.ai_cached_input_tokens ?? null,
     input.ai_reasoning_output_tokens ?? null, input.ai_cache_write_tokens ?? null,
-    input.ai_cache_read_tokens ?? null, input.ai_provider ?? null, input.ai_model ?? null,
+    input.ai_cache_read_tokens ?? null,
+    input.ai_provider ?? derivedAi?.provider ?? null,
+    input.ai_model ?? derivedAi?.model ?? null,
     input.lineno ?? null, input.cursorpos ?? null, input.is_write ? 1 : 0,
     input.editor ?? null, input.operating_system ?? null,
     machine ?? null,
     userAgentId,
     now
   );
+}
+
+/**
+ * For an `ai coding` heartbeat whose client did not populate `ai_provider` /
+ * `ai_model`, derive them from the User-Agent (Issue #200). Compatible AI
+ * plugins carry the model/provider in the User-Agent rather than the heartbeat
+ * body, which would otherwise leave the usage rollup bucketed as `unknown`.
+ * Returns undefined when nothing needs deriving so the existing bind path is
+ * untouched.
+ */
+function deriveAiForHeartbeat(
+  input: HeartbeatInput,
+  userAgent: string | undefined,
+): AiIdentity | undefined {
+  if (input.category !== "ai coding") return undefined;
+  if (input.ai_provider != null && input.ai_model != null) return undefined;
+  if (!userAgent) return undefined;
+  return deriveAiIdentity(userAgent);
 }
 
 const heartbeats = new Hono<AuthEnv>();
@@ -248,8 +269,9 @@ heartbeats.post("/heartbeats.bulk", async (c) => {
     if (validationErrors[i] || hidden[i]) continue;
     const input = inputs[i];
     const machine = input.machine ?? headerMachine;
+    const derivedAi = deriveAiForHeartbeat(input, input.user_agent ?? headerUserAgent);
     stmts.push(
-      bindHeartbeatParams(c.env.DB.prepare(INSERT_HEARTBEAT_SQL), ids[i], userId, input, machine, userAgentIds[i], now)
+      bindHeartbeatParams(c.env.DB.prepare(INSERT_HEARTBEAT_SQL), ids[i], userId, input, machine, userAgentIds[i], now, derivedAi)
     );
     if (input.project) {
       const existing = projectTimes.get(input.project);
@@ -519,8 +541,9 @@ async function insertHeartbeat(
   // D1.batch() does not propagate RETURNING values across statements; we need
   // the id before binding the heartbeat insert.
   const userAgentId = await resolveUserAgentId(db, userId, userAgent ?? null);
+  const derivedAi = deriveAiForHeartbeat(input, userAgent);
 
-  const stmts = [bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, userAgentId, now)];
+  const stmts = [bindHeartbeatParams(db.prepare(INSERT_HEARTBEAT_SQL), id, userId, input, machine, userAgentId, now, derivedAi)];
   if (input.project) {
     stmts.push(db.prepare(UPSERT_PROJECT_SQL).bind(userId, input.project, input.time, input.time));
   }
