@@ -100,13 +100,22 @@ function bindHeartbeatParams(
  * body, which would otherwise leave the usage rollup bucketed as `unknown`.
  * Returns undefined when nothing needs deriving so the existing bind path is
  * untouched.
+ *
+ * Derivation is all-or-nothing: it runs only when the client supplied NEITHER
+ * field. The compatible plugins carry both provider and model in the
+ * User-Agent, so a partially-populated pair is the client's own explicit data.
+ * Filling only the missing half from the UA could cross-attribute a co-running
+ * tool's model to the client's provider (e.g. an explicit `openai` provider
+ * left without a model, alongside a co-running `opus/4-8` token) — the exact
+ * mis-attribution `deriveAiIdentity` is careful to avoid. Explicit client data
+ * therefore wins wholesale.
  */
 function deriveAiForHeartbeat(
   input: HeartbeatInput,
   userAgent: string | undefined,
 ): AiIdentity | undefined {
   if (input.category !== "ai coding") return undefined;
-  if (input.ai_provider != null && input.ai_model != null) return undefined;
+  if (input.ai_provider != null || input.ai_model != null) return undefined;
   if (!userAgent) return undefined;
   return deriveAiIdentity(userAgent);
 }

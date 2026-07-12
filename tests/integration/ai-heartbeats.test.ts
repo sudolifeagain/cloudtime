@@ -284,6 +284,23 @@ describe("AI provider/model derived from the User-Agent (Issue #200)", () => {
     expect(hb.ai_model).toBe("claude-sonnet-5");
   });
 
+  it("does not cross-attribute a derived model when the client pins only the provider", async () => {
+    // Client sent an explicit provider but no model, alongside a Claude Code UA
+    // carrying `opus/4-8`. Deriving only the missing model would attach the
+    // co-running Claude model to the client's provider — derivation is
+    // all-or-nothing, so the explicit provider wins and the model stays null.
+    const res = await callWorker("/api/v1/users/current/heartbeats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": CLAUDE_UA, ...authHeader(user.apiKey) },
+      body: JSON.stringify(aiHeartbeat({ ai_provider: "openai", ai_model: undefined })),
+    });
+    expect(res.status).toBe(201);
+
+    const hb = await firstStored();
+    expect(hb.ai_provider).toBe("openai");
+    expect(hb.ai_model).toBeNull();
+  });
+
   it("does not derive for a non-`ai coding` heartbeat", async () => {
     const res = await callWorker("/api/v1/users/current/heartbeats", {
       method: "POST",
