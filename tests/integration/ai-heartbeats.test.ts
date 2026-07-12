@@ -272,6 +272,23 @@ describe("AI provider/model derived from the User-Agent (Issue #200)", () => {
     expect(hb.ai_model).toBeNull();
   });
 
+  it("fills ai_model from a codex UA that forwards the model token (gpt-5.5)", async () => {
+    // A model-forwarding client appends `gpt-5.5/xhigh`; the co-running
+    // `opus/4-8` must not be mistaken for the codex heartbeat's model.
+    const codexWithModel =
+      "wakatime/v2.22.0 (windows-10.0.26200.8655-x86_64) go1.26.5 opus/4-8 claude-code/2.1.205 gpt-5.5/xhigh codex-cli/unknown codex-cli-wakatime/1.0.0";
+    const res = await callWorker("/api/v1/users/current/heartbeats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": codexWithModel, ...authHeader(user.apiKey) },
+      body: JSON.stringify(aiHeartbeat({ ai_provider: undefined, ai_model: undefined })),
+    });
+    expect(res.status).toBe(201);
+
+    const hb = await firstStored();
+    expect(hb.ai_provider).toBe("openai");
+    expect(hb.ai_model).toBe("gpt-5.5");
+  });
+
   it("never overrides an explicit ai_provider/ai_model sent by the client", async () => {
     const res = await callWorker("/api/v1/users/current/heartbeats", {
       method: "POST",

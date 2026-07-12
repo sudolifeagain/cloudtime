@@ -75,6 +75,32 @@ describe("deriveAiIdentity (AI provider/model from a compatible AI-tool UA)", ()
     expect(deriveAiIdentity(ua)).toEqual({ provider: "openai", model: null });
   });
 
+  it("derives openai + gpt-5.5 from a codex UA that carries the model token, ignoring co-running opus/4-8", () => {
+    // A client that forwards the active model appends `gpt-5.5/xhigh`; the
+    // `opus/4-8` is Claude bleed and must NOT be attributed to the codex heartbeat.
+    const ua =
+      "wakatime/v2.22.0 (windows-10.0.26200.8655-x86_64) go1.26.5 opus/4-8 claude-code/2.1.205 gpt-5.5/xhigh codex-cli/unknown codex-cli-wakatime/1.0.0";
+    expect(deriveAiIdentity(ua)).toEqual({ provider: "openai", model: "gpt-5.5" });
+  });
+
+  it("keeps a suffixed OpenAI model id (gpt-5.6-codex) and drops the effort detail", () => {
+    const ua =
+      "wakatime/v2.22.0 (windows-10-amd64) go1.26.5 gpt-5.6-codex/high codex-cli/2.2.0 codex-cli-wakatime/1.1.0";
+    expect(deriveAiIdentity(ua)).toEqual({ provider: "openai", model: "gpt-5.6-codex" });
+  });
+
+  it("matches an o-series OpenAI id with no version slot (o3)", () => {
+    const ua = "wakatime/v2.22.0 (linux-6.5.0-amd64) go1.26.5 o3/medium codex-cli/2.2.0 codex-cli-wakatime/1.1.0";
+    expect(deriveAiIdentity(ua)).toEqual({ provider: "openai", model: "o3" });
+  });
+
+  it("does not mistake the codex-cli tool token for an OpenAI model", () => {
+    // Regression: `codex-cli/<ver>` must never be read as the model; with no
+    // genuine model token the model stays null.
+    const ua = "wakatime/v2.22.0 (windows-10-amd64) go1.26.5 codex-cli/2.2.0 codex-cli-wakatime/1.1.0";
+    expect(deriveAiIdentity(ua)).toEqual({ provider: "openai", model: null });
+  });
+
   it("resolves a single tool from a bare token when no -wakatime plugin token is present", () => {
     const ua =
       "wakatime/v2.21.4 (windows-10.0.26200.8655-x86_64) go1.26.4 opus/4-8 claude-code/2.1.198";

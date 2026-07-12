@@ -90,6 +90,16 @@ const AI_TOOL_PROVIDER: Record<string, string> = {
   "codex-cli": "openai",
 };
 
+/**
+ * A UA token name that denotes a genuine OpenAI model id (e.g. `gpt-5.5`,
+ * `gpt-5.5-codex`, `o3`, `chatgpt-*`, `codex-mini-*`), used to attribute the
+ * model for `openai` heartbeats. Deliberately excludes the emitting-tool tokens
+ * (`codex-cli`, `codex-cli-wakatime`) and every Anthropic family (`opus`,
+ * `sonnet`, …) that can bleed into a co-running Codex UA, so a co-running
+ * model is never cross-attributed.
+ */
+const OPENAI_MODEL_NAME = /^(?:gpt[-.\d]|o[1-9](?:[-.\d]|$)|chatgpt|codex-mini)/;
+
 export interface AiIdentity {
   /** LLM provider (e.g. "anthropic", "openai"). Null when unrecognised. */
   provider: string | null;
@@ -143,8 +153,11 @@ export function deriveAiIdentity(value: string): AiIdentity {
   }
   const provider = tool ? (AI_TOOL_PROVIDER[tool] ?? null) : null;
 
-  // Model: the `<family>/<ver>` token, attributed only when the provider is
-  // Anthropic (never cross-attributed to a codex/other heartbeat).
+  // Model: attributed from a `<name>/<ver>` token, but only for the resolved
+  // provider so a co-running tool's model token is never cross-attributed
+  // (a Codex heartbeat's UA can still carry Anthropic's `opus/4-8`, and vice
+  // versa). Anthropic uses a known family whitelist; OpenAI matches a genuine
+  // model-id shape.
   let model: string | null = null;
   if (provider === "anthropic") {
     for (const t of tokens) {
@@ -153,6 +166,21 @@ export function deriveAiIdentity(value: string): AiIdentity {
       const family = t.slice(0, slash).toLowerCase();
       if (ANTHROPIC_MODEL_FAMILIES.has(family)) {
         model = `claude-${family}-${t.slice(slash + 1)}`;
+        break;
+      }
+    }
+  } else if (provider === "openai") {
+    // Compatible OpenAI tools (e.g. codex-cli) may carry the model as an
+    // `<model>/<effort>` token such as `gpt-5.5/xhigh`; keep the model id only
+    // (the effort/detail after the slash is dropped). The whole `<name>` before
+    // the slash is the canonical id — OpenAI ids are already full, unlike the
+    // Anthropic `family/ver` shape.
+    for (const t of tokens) {
+      const slash = t.indexOf("/");
+      if (slash <= 0) continue;
+      const name = t.slice(0, slash).toLowerCase();
+      if (OPENAI_MODEL_NAME.test(name)) {
+        model = name;
         break;
       }
     }
