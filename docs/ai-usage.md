@@ -131,13 +131,17 @@ Defaults resolve by the *shape* of a model id rather than pinning every release,
 so a steady stream of new models does not immediately go stale:
 
 - **Anthropic** rates are flat within a family generation, so a default resolves
-  from the family: `claude-opus-*` → $5/$25, `claude-sonnet-*` → $3/$15,
-  `claude-haiku-*` → $1/$5, `claude-fable-*` / `claude-mythos-*` → $10/$50. A
+  from the family: `claude-opus-*` → $5/$25, `claude-haiku-*` → $1/$5,
+  `claude-fable-*` / `claude-mythos-*` → $10/$50. `claude-sonnet-*` carries an
+  introductory $2/$10 through 2026-08-31, then its standard $3/$15 — shipped as
+  two time windows so each usage day prices from the rate then in effect. A
   future `claude-opus-4-9` is priced with no code change; the price list shows
   these as family entries (`claude-opus-*`).
 - **OpenAI** is priced per version, so its models are listed explicitly: `gpt-5`,
   `gpt-5.3-codex`, `gpt-5.4`, `gpt-5.5`, and the three `gpt-5.6` tiers (Sol /
-  Terra / Luna). An OpenAI model not in the list is left unpriced.
+  Terra / Luna). `gpt-5.6` and later bill cache writes at 1.25× input (earlier
+  versions do not); cache reads take the 90% cached-input discount for all. An
+  OpenAI model not in the list is left unpriced.
 
 An owner price row always outranks the shipped default for the same
 `(provider, model)`. A model no default covers stays unpriced and surfaces in

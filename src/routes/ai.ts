@@ -28,7 +28,7 @@ import {
   listEnabledPrices,
   listPrices,
 } from "../utils/ai/price-store";
-import { resolveDefaultPrice } from "../utils/ai/default-prices";
+import { resolveDefaultPrices } from "../utils/ai/default-prices";
 import {
   AI_DAILY_USAGE_SELECT_COLUMNS,
   buildUsageSummary,
@@ -213,8 +213,7 @@ ai.get("/ai/usage", async (c) => {
       const key = `${r.provider} ${r.model}`;
       if (resolved.has(key)) continue;
       resolved.add(key);
-      const d = resolveDefaultPrice(userId, r.provider, r.model);
-      if (d) defaults.push(d);
+      defaults.push(...resolveDefaultPrices(userId, r.provider, r.model));
     }
 
     const summary = buildUsageSummary({

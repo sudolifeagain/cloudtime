@@ -78,7 +78,7 @@ export async function fetchPriceRow(
 /**
  * All enabled owner price rows for the user (used by cost estimation). Shipped
  * defaults are NOT merged here: they are resolved per used (provider, model) at
- * the call site (see `resolveDefaultPrice`) so family-based defaults cover any
+ * the call site (see `resolveDefaultPrices`) so family-based defaults cover any
  * concrete version, which a fixed list cannot.
  */
 export async function listEnabledPrices(
