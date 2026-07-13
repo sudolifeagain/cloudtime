@@ -78,6 +78,11 @@ provider). To get per-model breakdowns and cost, either send `ai_model`
 explicitly in the heartbeat body, or have the client include the model as a
 `<model>/<detail>` token in its plugin User-Agent as shown above.
 
+> **Codex CLI:** the official `codex-cli-wakatime` plugin (through v1.0.0) does
+> not emit the model, so Codex usage lands under an `unknown` model until patched.
+> See [Codex model attribution](codex-model-attribution.md) for a reversible,
+> version-guarded stopgap patch (`scripts/patch-codex-wakatime.mjs`).
+
 ## Usage summary
 
 `GET /api/v1/users/current/ai/usage` returns an owner-only `AIUsageSummary` over
