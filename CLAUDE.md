@@ -61,5 +61,5 @@ Think in English, interact with the user in Japanese.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/198-profile-card-expansion/plan.md
+at specs/201-ai-attribution-onboarding/plan.md
 <!-- SPECKIT END -->
