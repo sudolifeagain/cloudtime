@@ -256,6 +256,40 @@ describe("dashboard AI token/cost summary", () => {
     expect(html).toContain("API-equivalent estimate, not a bill");
   });
 
+  it("prices from a shipped default when the owner has configured no prices", async () => {
+    // Reproduces the out-of-the-box dashboard: a rollup row for a model covered
+    // only by a shipped default (opus family, $5/Mtok input) and zero owner price
+    // rows. The dashboard must resolve the default and show a cost — not the
+    // "no enabled price row" notice. Regression: loadAiUsageSummary once merged
+    // owner rows only, so cost stayed unavailable until an owner priced manually.
+    const user = await seedUserWithSession({ username: "owner", timezone: "UTC" });
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    await env.DB.prepare(
+      `INSERT INTO ai_daily_usage
+         (user_id, day, provider, model, agent, project, input_tokens, heartbeat_count)
+       VALUES (?, ?, 'anthropic', 'claude-opus-4-8', 'claude-code', 'cloudtime', 1000000, 3)`,
+    )
+      .bind(user.userId, today)
+      .run();
+
+    expect(await priceCount(user.userId)).toBe(0);
+
+    const res = await call("/app", {
+      headers: { Cookie: `__Host-session=${user.sessionToken}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // opus default input rate is $5/Mtok → 1,000,000 input tokens = USD 5.00.
+    expect(html).toContain("USD 5.00");
+    expect(html).not.toContain("No enabled price row matches this usage");
+  });
+
   it("shows an empty state when there is no rollup usage", async () => {
     const user = await seedUserWithSession({ username: "owner", timezone: "UTC" });
     const res = await call("/app", {

@@ -58,6 +58,7 @@ import {
   resolveUsageRange,
   type AiDailyUsageRow,
 } from "../utils/ai/usage";
+import { resolveUsageDefaultPrices } from "../utils/ai/default-prices";
 
 type WebEnv = {
   Bindings: Env;
@@ -496,7 +497,7 @@ async function loadAiUsageSummary(
   // The all-default range never errors; guard only to satisfy the type.
   const { start, end } = range.ok ? range : { start: "", end: "" };
 
-  const [usageRows, prices] = await Promise.all([
+  const [usageRows, ownerPrices] = await Promise.all([
     db
       .prepare(
         `SELECT ${AI_DAILY_USAGE_SELECT_COLUMNS} FROM ai_daily_usage
@@ -506,6 +507,11 @@ async function loadAiUsageSummary(
       .all<AiDailyUsageRow>(),
     listEnabledPrices(db, userId),
   ]);
+
+  // Merge a shipped default for each (provider, model) the rollup used so the
+  // dashboard estimates cost out of the box, before the owner prices anything —
+  // the same resolution the `/ai/usage` API applies (one shared helper, no drift).
+  const prices = [...ownerPrices, ...resolveUsageDefaultPrices(userId, usageRows.results)];
 
   return buildUsageSummary({
     start,
