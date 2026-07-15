@@ -19,7 +19,10 @@ Think in English, interact with the user in Japanese.
 
 ## Git Branching
 - PRs always target `develop` (never `master`)
-- `master` is production — only updated via `develop` merge
+- Deploy flow differs by audience (see `docs/development-flow.md` → "Branching & PR Strategy"):
+  - **Maintainer, active development:** `develop` is both the integration branch and the deploy source. The canonical live instance is deployed directly from a `develop` checkout (`docs/deployment-guide.md`); there is no `develop`→`master` gate on this path. Rollback is by Worker version, not by git branch.
+  - **Self-hosters / general users:** `master` is the stable release line to self-host, advanced only by a deliberate `develop`→`master` merge (optionally tagged) when a release is cut — not the maintainer's deploy source.
+- `master` intentionally lags `develop` between releases; cutting a stable release is a maintainer decision (a `develop`→`master` merge/tag, currently a clean fast-forward)
 
 ## Code
 - Framework: Hono >= 4.9.7 on Cloudflare Workers (CVE-2025-58362, CVE-2025-59139)

@@ -25,6 +25,13 @@ cd cloudtime
 npm ci
 ```
 
+> **Maintainer vs. self-hoster.** The maintainer deploys the canonical
+> instance directly from `develop`. If you self-host your own instance,
+> `master` is the intended stable release line and `develop` carries the
+> latest unreleased changes — check out the ref that fits your needs. See
+> [`development-flow.md`](./development-flow.md) → "Branching & PR Strategy"
+> for the full model.
+
 Authenticate this workstation with Cloudflare:
 
 ```powershell

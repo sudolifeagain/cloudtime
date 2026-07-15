@@ -110,8 +110,13 @@ All work follows the SDD workflow defined in `docs/development-flow.md`:
 
 ### Git Branching
 
-- `master` is production. Only updated via `develop` merge.
 - `develop` is the integration branch. All PRs MUST target `develop`.
+- During active development, the canonical live instance is deployed directly
+  from a `develop` checkout; `develop` is the deploy source, with no
+  `develop`→`master` gate on that path.
+- `master` is the stable release line for self-hosters, advanced only by a
+  deliberate `develop`→`master` merge (optionally tagged) when a release is
+  cut. It lags `develop` by design and is not the maintainer's deploy source.
 - Feature branches: `feat/`, `fix/`, `refactor/`, `spec/`.
 - All code, comments, commit messages, docs, and PR descriptions MUST be in English.
 
@@ -137,4 +142,16 @@ All work follows the SDD workflow defined in `docs/development-flow.md`:
 - All PRs and reviews MUST verify compliance with these principles.
 - Complexity MUST be justified against Principle V (Simplicity First).
 
-**Version**: 1.0.0 | **Ratified**: 2026-03-11 | **Last Amended**: 2026-03-11
+**Version**: 1.1.0 | **Ratified**: 2026-03-11 | **Last Amended**: 2026-07-15
+
+<!--
+Amendment 1.1.0 (2026-07-15) — Git Branching clarified (MINOR: material expansion).
+Rationale: the documented "master is production, updated via develop merge" gate did not
+match practice. During active development the maintainer deploys the canonical live instance
+directly from `develop`; `master` had not been advanced in months. Reframed the model by
+audience: `develop` = integration branch + maintainer deploy source; `master` = stable
+release line for self-hosters, advanced by a deliberate release cut.
+Migration plan: docs-only. No code, CI, or deploy-process change. `master` is left untouched
+(strictly behind `develop`, a clean fast-forward if/when the maintainer chooses to cut a
+release). Aligned CLAUDE.md and docs/development-flow.md in the same change.
+-->
