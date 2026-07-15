@@ -20,7 +20,7 @@ Think in English, interact with the user in Japanese.
 ## Git Branching
 - PRs always target `develop` (never `master`)
 - Deploy flow differs by audience (see `docs/development-flow.md` → "Branching & PR Strategy"):
-  - **Maintainer, active development:** `develop` is both the integration branch and the deploy source. The canonical live instance is deployed directly from a `develop` checkout (`docs/deployment-guide.md`); there is no `develop`→`master` gate on this path. Rollback is by Worker version, not by git branch.
+  - **Maintainer, active development:** `develop` is both the integration branch and the deploy source. The canonical live instance is deployed directly from a `develop` checkout (`docs/deployment-guide.md`); there is no `develop`→`master` gate on this path. Roll back by Worker version, not by git branch. A Worker rollback does not revert D1, KV, or other resource changes, so deployments and migrations must remain rollback-compatible.
   - **Self-hosters / general users:** `master` is the stable release line to self-host, advanced only by a deliberate `develop`→`master` merge (optionally tagged) when a release is cut — not the maintainer's deploy source.
 - `master` intentionally lags `develop` between releases; cutting a stable release is a maintainer decision (a `develop`→`master` merge/tag, currently a clean fast-forward)
 

@@ -32,6 +32,11 @@ npm ci
 > [`development-flow.md`](./development-flow.md) → "Branching & PR Strategy"
 > for the full model.
 
+> **Rollback scope.** Roll back a deployed Worker by Worker version, not by
+> switching a Git branch. Cloudflare does not roll back D1, KV, or other resource
+> changes with the Worker version, so deploy backwards-compatible schema changes
+> and use your data-recovery plan when a rollback crosses a data change.
+
 Authenticate this workstation with Cloudflare:
 
 ```powershell
