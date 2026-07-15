@@ -8,17 +8,19 @@
 
 Surface a guided, self-resolving setup step in the owner dashboard when recent AI
 coding usage is attributed to a known provider but an **unknown model** (today:
-Codex → `openai`/unknown). The step explains the cause, gives the exact one-time
-client-side command the owner runs on their own machine, and links to the full
-instructions; it disappears on its own once recent usage is attributed again.
+Codex → `openai`/unknown). The Codex step explains the cause, gives the exact
+one-time client-side command the owner runs on their own machine, and links to the
+full instructions; unmapped providers receive generic troubleshooting without a
+command. The step disappears once no unknown usage remains in the cron-maintained
+trailing summary.
 
 Technical approach: **presentation-only** for the P1/P2 MVP. Detection is a pure,
 derived read over the AI usage summary the dashboard **already computes**
 (`buildUsageSummary` → `by_model`), so there is **no new query in the request
 path, no new stored data, and no API/OpenAPI change**. The guidance renders
-server-side in the existing AI panel. Persisted "dismiss forever" (FR-008 beyond
-auto-resolve) and the proactive first-run onboarding (P3) are isolated as optional
-follow-ups because they would introduce stored state / a new surface.
+server-side in the existing AI panel. Persisted "dismiss forever" and the proactive
+first-run onboarding (P3) are isolated as optional follow-ups because they would
+introduce stored state / a new surface.
 
 ## Technical Context
 
@@ -26,7 +28,7 @@ follow-ups because they would introduce stored state / a new surface.
 
 **Primary Dependencies**: Hono (server-rendered JSX dashboard). No new runtime dependency.
 
-**Storage**: Cloudflare D1 — **read-only reuse** of the `ai_daily_usage` rollup via the existing summary builder. **No new tables/columns for the MVP.** (A future persisted dismissal would add one small owner-scoped row — out of MVP scope.)
+**Storage**: Cloudflare D1 — **read-only reuse** of the hourly cron-maintained `ai_daily_usage` rollup via the existing summary builder. **No new tables/columns for the MVP.** (A future persisted dismissal would add one small owner-scoped row — out of MVP scope.)
 
 **Testing**: Vitest in the Workers pool (`@cloudflare/vitest-pool-workers`) — one unit test for the detection predicate, one integration test on the `/app` render (mirror `tests/integration/app-ai-pricing.test.ts`).
 
@@ -36,7 +38,7 @@ follow-ups because they would introduce stored state / a new surface.
 
 **Performance Goals**: Stay within the Workers free-tier ~10 ms CPU budget. The dashboard already loads the AI usage summary; detection is an O(number of `by_model` groups) scan over that in-memory result — **zero additional D1 round-trips**.
 
-**Constraints**: Presentation/onboarding only — MUST NOT change pricing, aggregation, or ingestion. No secrets or raw client config in the guidance. Owner-facing copy original and trademark-compliant ("WakaTime-compatible").
+**Constraints**: Presentation/onboarding only — MUST NOT change pricing, aggregation, or ingestion. No secrets or raw client config in the guidance. A provider-specific command/link is shown only for the provider it applies to; generic fallback guidance is read-only troubleshooting. Owner-facing copy original and trademark-compliant ("WakaTime-compatible").
 
 **Scale/Scope**: One owner; a handful of `by_model` groups per window. Trivial scale.
 
@@ -50,7 +52,7 @@ follow-ups because they would introduce stored state / a new surface.
 | **II. Cloudflare-Native** | No new D1 query in the request path (derives from the already-loaded summary); no KV writes; no cron change. Within CPU budget. | ✅ Pass |
 | **III. Type Safety & Codegen** | Uses existing generated `AIUsageSummary`/`AITokenTotals` types; no hand-written aliases; no generated-file edits. | ✅ Pass |
 | **IV. Legal & Trademark** | All new copy is original; user-facing wording uses "WakaTime-compatible"; links to our own `docs/codex-model-attribution.md`. No WakaTime assets/text/source. | ✅ Pass |
-| **V. Simplicity First** | No new abstraction, storage, endpoint, or flag for the MVP. Auto-resolution replaces stateful dismissal. Detection is a small pure predicate. | ✅ Pass |
+| **V. Simplicity First** | No new abstraction, storage, endpoint, or flag for the MVP. Auto-resolution replaces stateful dismissal. Detection is a small pure predicate, and generic guidance never needs a provider-specific command. | ✅ Pass |
 
 **Result**: All gates pass. No entries in Complexity Tracking.
 

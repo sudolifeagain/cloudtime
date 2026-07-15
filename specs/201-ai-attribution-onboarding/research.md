@@ -25,7 +25,8 @@ Phase 0 decisions. Each resolves a design choice left open by the spec, so no
 - **Rationale**: The panel's summary is already windowed; reusing it means the
   step reflects *recent, actionable* state and a fixed pile of old "unknown" rows
   (e.g. pre-setup heartbeats) stops nagging once they age out — satisfying FR-006/
-  FR-007/SC-006 with zero extra state.
+  FR-007/SC-006 with zero extra state. The summary is cron-maintained, so a new
+  heartbeat changes the step only after the next hourly aggregation.
 - **Alternatives considered**: all-time detection (rejected: nags forever on
   history); a separate shorter window (deferred: adds a knob for marginal
   responsiveness — revisit only if 30 days feels too slow).
@@ -38,8 +39,8 @@ Phase 0 decisions. Each resolves a design choice left open by the spec, so no
 - **Rationale**: Simplicity First — a derived, stateless view needs no storage,
   no endpoint, and no OpenAPI change, so PR2 stays presentation-only. It also
   can't get "stuck dismissed" while the problem is unfixed.
-- **Alternatives considered**: persisted "don't show again" (FR-008 strong form)
-  — **deferred as an optional follow-up**. It would add a small owner-scoped
+- **Alternatives considered**: persisted "don't show again" — **deferred as an
+  optional follow-up**. It would add a small owner-scoped
   preference (D1) and therefore an endpoint + generated-types change, which the
   SDD flow requires be its own spec-first PR. Not worth it unless an owner asks to
   suppress guidance while knowingly leaving usage unattributed.
@@ -58,14 +59,18 @@ Phase 0 decisions. Each resolves a design choice left open by the spec, so no
 
 ## D5. Guidance content and tool identification
 
-- **Decision**: Map the affected `provider` to a human tool + instructions:
-  `openai` → "Codex", pointing at `docs/codex-model-attribution.md` and the exact
-  command `node scripts/patch-codex-wakatime.mjs`. Unknown providers fall back to
-  generic wording + the same doc link (FR-009). The step states plainly that the
-  fix runs on the owner's machine and the server only instructs (FR-003), and it
-  shows **no** secrets or raw config (FR-004).
-- **Rationale**: The concrete, copy-pasteable command is the whole point; the
-  repo already ships the script + doc, so the guidance just surfaces them.
+- **Decision**: Map a known affected `provider` to a human tool + its own
+  instructions. `openai` → "Codex", with the exact command
+  `node scripts/patch-codex-wakatime.mjs` and the canonical public URL for
+  `docs/codex-model-attribution.md`. An unmapped provider gets generic wording
+  and the canonical public AI-usage troubleshooting URL; it gets no command and
+  no Codex-specific link. The step states plainly that the fix runs on the owner's
+  machine and the server only instructs (FR-003), and it shows **no** secrets or
+  raw config (FR-004).
+- **Rationale**: A copy-pasteable command is valuable only when it is known to
+  apply. Reusing the Codex patch for another tool could modify an unrelated local
+  plugin, so provider-specific commands are opt-in while the generic fallback is
+  read-only troubleshooting.
 - **Alternatives considered**: embedding the full steps inline only (rejected:
   duplicates the doc, drifts); auto-running anything (impossible — server can't
   touch the client, the core constraint).

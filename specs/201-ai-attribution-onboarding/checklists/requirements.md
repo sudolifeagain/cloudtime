@@ -34,7 +34,8 @@
 - Validated 2026-07-16. All items pass; no [NEEDS CLARIFICATION] markers.
 - Reasonable defaults documented in the spec's **Assumptions** section instead of raising clarifications:
   - Detection **recent window** reuses the existing AI-activity trailing window (~30 days); exact length is a design detail for `/speckit-plan`.
-  - **Dismissal persistence** is a refinement (FR-008); the primary hide mechanism is auto-resolution (FR-006).
+  - **Dismissal persistence** is an optional follow-up; the MVP's sole hide mechanism is auto-resolution (FR-006).
   - Scope split by priority: **P1** reactive detect-and-guide (MVP), **P2** verify/auto-resolve, **P3** proactive first-run onboarding (the fuller "wizard").
-- Deferred to planning (`/speckit-plan`): whether "attribution status" is a derived read over existing usage data vs. a small persisted signal, and whether dismissal needs any stored state. These are design decisions, not spec gaps.
+- The dashboard reads the hourly cron-maintained summary, so attribution state can change only after aggregation; this is explicit in the acceptance scenarios and validation plan.
+- Generic fallback guidance is deliberately command-free, so an unknown provider is never directed to modify the Codex plugin.
 - Constitution alignment: presentation/onboarding only — no change to pricing, aggregation, or ingestion (Principle V, Simplicity First); owner-facing copy stays original and trademark-compliant (Principle IV).

@@ -26,8 +26,9 @@ npm test                              # full suite (must stay green)
    `provider='openai'`, `model` **NULL**, `heartbeat_count > 0`.
 2. `GET /app` with the session cookie.
 3. **Expect**: the response HTML contains the guided attribution step — the cause,
-   the exact command `node scripts/patch-codex-wakatime.mjs`, and a link to
-   `docs/codex-model-attribution.md`. It contains **no** secret/config value.
+   the exact command `node scripts/patch-codex-wakatime.mjs`, and an absolute link to
+   `https://github.com/sudolifeagain/cloudtime/blob/develop/docs/codex-model-attribution.md`.
+   It contains **no** secret/config value.
 
 ## Scenario 2 — hidden when nothing to fix / only Claude Code (P1, FR-005)
 
@@ -43,7 +44,7 @@ npm test                              # full suite (must stay green)
 2. `GET /app`.
 3. **Expect**: the guided step is **absent** (only recent, actionable state drives
    it). Add an in-window `openai`/NULL row and reload → the step reappears; replace
-   it with an attributed row → it disappears again.
+   it with an attributed row before the summary is rendered → it disappears again.
 
 ## Scenario 4 — unit predicate
 
@@ -55,12 +56,15 @@ npm test                              # full suite (must stay green)
 - Summary with `{provider:'unknown', model:'unknown'}` (provider itself unknown) →
   **not** affected (we only guide when the provider/tool is identifiable).
 - Multiple `openai`/unknown groups fold to a single `affected` entry with summed count.
+- Summary with `{provider:'example-provider', model:'unknown'}` → one affected entry
+  with `hasTailoredGuidance:false`, no command, and the generic AI-usage troubleshooting link.
 
 ## Done / acceptance
 
 - Scenarios 1–4 pass; full suite green; `npm run typecheck` clean.
 - Manual (optional): on the live dashboard, an owner with recent Codex/unknown
-  usage sees the step; after running the command and a new heartbeat arrives, the
-  step clears on the next load.
+  usage sees the step; after running the command, a new attributed heartbeat, and
+  the next hourly aggregation, the step clears once no unknown usage remains in
+  the trailing window.
 - No change to estimated cost or token figures for the same underlying usage
   (SC-005) — the pricing tests remain unchanged and green.

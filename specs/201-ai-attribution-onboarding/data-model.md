@@ -28,7 +28,7 @@ Computed by the new pure helper `detectUnattributedTools(summary)`.
 | `provider` | string | `by_model[i].provider` | The known provider (e.g. `"openai"`). |
 | `tool` | string | mapped from `provider` | Human tool name for copy (e.g. `"Codex"`); generic fallback when unmapped. |
 | `heartbeatCount` | number | sum of matching `by_model[i].heartbeat_count` | How many recent heartbeats are unattributed (for the message). |
-| `hasTailoredGuidance` | boolean | mapped from `provider` | Whether tool-specific steps exist (else generic + doc link). |
+| `hasTailoredGuidance` | boolean | mapped from `provider` | Whether tool-specific steps exist (else generic troubleshooting only). |
 
 **Selection rule**: a `by_model` group is affected when
 `provider !== "unknown" && model === "unknown" && heartbeat_count > 0`.
@@ -37,9 +37,11 @@ Groups are folded by `provider` so the guidance shows one entry per tool.
 ### GuidanceContent (static, code-defined)
 
 A small code-side lookup keyed by `provider`, holding original, trademark-compliant
-copy: a one-line cause, the exact local command, and the link to
-`docs/codex-model-attribution.md`. Not data — lives in source (see plan.md
-`src/utils/ai/attribution.ts`). No secrets, no client config.
+copy. The `openai` entry contains the one-line cause, the exact local command, and
+the canonical public URL for `docs/codex-model-attribution.md`. An unmapped
+provider contains no command and instead uses the canonical public URL for generic
+AI-usage troubleshooting. The lookup is not data — it lives in source (see plan.md
+`src/utils/ai/attribution.ts`). No secrets or client configuration are included.
 
 ## Deferred entity (NOT in MVP — future spec-first PR)
 

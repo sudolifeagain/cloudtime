@@ -16,12 +16,18 @@ generated-types delta. This is intentional and allowed.
 The owner dashboard `GET /app` render MUST behave as:
 
 - **Shown** when the AI usage summary (recent window) has any `by_model` group with
-  `provider !== "unknown"` and `model === "unknown"` and `heartbeat_count > 0`:
-  a guided step with cause, the exact local command, and a link to
-  `docs/codex-model-attribution.md`.
+  `provider !== "unknown"` and `model === "unknown"` and `heartbeat_count > 0`.
+  For `provider === "openai"`, it includes the Codex cause, exact local command,
+  and canonical public URL
+  `https://github.com/sudolifeagain/cloudtime/blob/develop/docs/codex-model-attribution.md`.
+  For an unmapped provider, it includes generic attribution troubleshooting and
+  canonical public URL
+  `https://github.com/sudolifeagain/cloudtime/blob/develop/docs/ai-usage.md#deriving-provider-and-model-from-the-user-agent`, but no command.
 - **Hidden** when no such group exists in the window — including Claude-Code-only
   usage and cases where only out-of-window historical unknowns exist.
 - **Never** contains a secret, credential, or raw client configuration value.
+- **Never** presents the Codex command or Codex documentation link for an
+  unmapped provider.
 
 These behaviors are the acceptance surface and are exercised by the integration
 test described in `quickstart.md`.
