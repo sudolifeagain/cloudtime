@@ -25,6 +25,18 @@ cd cloudtime
 npm ci
 ```
 
+> **Maintainer vs. self-hoster.** The maintainer deploys the canonical
+> instance directly from `develop`. If you self-host your own instance,
+> `master` is the intended stable release line and `develop` carries the
+> latest unreleased changes — check out the ref that fits your needs. See
+> [`development-flow.md`](./development-flow.md) → "Branching & PR Strategy"
+> for the full model.
+
+> **Rollback scope.** Roll back a deployed Worker by Worker version, not by
+> switching a Git branch. Cloudflare does not roll back D1, KV, or other resource
+> changes with the Worker version, so deploy backwards-compatible schema changes
+> and use your data-recovery plan when a rollback crosses a data change.
+
 Authenticate this workstation with Cloudflare:
 
 ```powershell

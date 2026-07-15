@@ -94,19 +94,27 @@ This is the critical case. If a reviewer discovers that the spec itself is wrong
 
 ## Branching & PR Strategy
 
+The branch model serves two audiences, and the deploy flow differs between them.
+
 ```
-master (production — deploy target)
-  │
-  └── develop (integration — PR target)
-        │
-        ├── feat/heartbeat-ingestion
-        ├── feat/timezone-support
-        ├── refactor/extract-helper
-        └── ...
+master   ── stable release line (self-hosters): advanced only by a deliberate
+   ▲          develop→master merge (optionally tagged) when a release is cut
+   │
+   │  release cut (maintainer decision; infrequent during active development)
+   │
+develop  ── integration branch + maintainer deploy source: all PRs target it,
+   │          and the canonical live instance ships directly from a develop checkout
+   │
+   ├── feat/heartbeat-ingestion
+   ├── feat/timezone-support
+   ├── refactor/extract-helper
+   └── ...
 ```
 
-- **`master`** is production. Only updated via `develop` merge.
+- **Maintainer (active development).** `develop` is both the integration branch and the deploy source. The canonical live instance is deployed directly from a `develop` checkout (see [`deployment-guide.md`](./deployment-guide.md)); there is no `develop`→`master` gate on this path. Roll back by Worker version, not by git branch. A Worker rollback does not revert D1, KV, or other resource changes, so deployments and migrations must remain rollback-compatible.
+- **Self-hosters / general users.** `master` is the stable release line to self-host. It is advanced only by a deliberate `develop`→`master` merge (optionally tagged) when the maintainer cuts a release, so it lags `develop` by design between releases. It is **not** the maintainer's deploy source.
 - **`develop`** is the integration branch. All PRs target `develop`.
+- **`master`** is the stable release line (above). Cutting a release = an intentional `develop`→`master` merge/tag.
 - **Feature branches** are named by type: `feat/`, `fix/`, `refactor/`, `spec/`.
 - **Spec-only PRs** are allowed when a feature needs spec review before implementation.
 - **One feature per PR** keeps reviews focused and feedback actionable.
