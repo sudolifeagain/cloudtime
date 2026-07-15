@@ -201,6 +201,37 @@ export function resolveDefaultPrices(
 }
 
 /**
+ * Resolve the shipped default rows for every distinct (provider, model) that
+ * appears in `rows` (rollup buckets), deduplicated. Callers merge the result
+ * AFTER the owner's enabled rows — `[...ownerPrices, ...resolveUsageDefaultPrices(...)]`
+ * — so cost estimation covers models the owner has never priced while an owner
+ * row still outranks its default in `selectEffectivePrice`. A model with no
+ * shipped default contributes nothing and stays unpriced (`missing_price_count`),
+ * never a silent zero.
+ *
+ * Both cost surfaces price the same rollup rows, so this is their one shared
+ * default-resolution step: the `/ai/usage` API (`src/routes/ai.ts`) and the owner
+ * dashboard (`loadAiUsageSummary` in `src/routes/app.tsx`). It is a single helper
+ * on purpose — the dashboard once merged owner rows only and showed no estimated
+ * cost until an owner configured pricing, a drift a shared call site prevents.
+ */
+export function resolveUsageDefaultPrices(
+  userId: string,
+  rows: readonly { provider: string; model: string }[],
+): AiModelPriceRow[] {
+  const seen = new Set<string>();
+  const out: AiModelPriceRow[] = [];
+  for (const r of rows) {
+    // Collision-safe composite key: provider/model are unrestricted user text.
+    const key = JSON.stringify([r.provider, r.model]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(...resolveDefaultPrices(userId, r.provider, r.model));
+  }
+  return out;
+}
+
+/**
  * Representative default rows for the price-list UI (`GET /ai/prices`). Anthropic
  * entries are family-level (`claude-opus-*`), signalling they apply to every
  * version; OpenAI entries are the explicit per-version models. A family/model

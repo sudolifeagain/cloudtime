@@ -18,7 +18,6 @@ import {
   toMs,
   validateCreatePrice,
   validateUpdatePrice,
-  type AiModelPriceRow,
 } from "../utils/ai/pricing";
 import {
   applyPriceUpdate,
@@ -28,7 +27,7 @@ import {
   listEnabledPrices,
   listPrices,
 } from "../utils/ai/price-store";
-import { resolveDefaultPrices } from "../utils/ai/default-prices";
+import { resolveUsageDefaultPrices } from "../utils/ai/default-prices";
 import {
   AI_DAILY_USAGE_SELECT_COLUMNS,
   buildUsageSummary,
@@ -202,19 +201,13 @@ ai.get("/ai/usage", async (c) => {
       .bind(...binds)
       .all<AiDailyUsageRow>();
 
-    // Only enabled owner price rows participate in cost estimation.
+    // Enabled owner rows plus a shipped default for each (provider, model) the
+    // rollup actually used, so cost estimation covers models the owner has not
+    // priced. Owner rows still win in selectEffectivePrice; a model with no
+    // default stays unpriced (missing_price_count). The owner dashboard resolves
+    // defaults through the same helper (loadAiUsageSummary) — one path, no drift.
     const prices = await listEnabledPrices(c.env.DB, userId);
-    // Resolve a shipped default for each (provider, model) actually used, so cost
-    // estimation covers models the owner has not priced. Owner rows still win in
-    // selectEffectivePrice; an unresolved model stays unpriced (missing_price_count).
-    const resolved = new Set<string>();
-    const defaults: AiModelPriceRow[] = [];
-    for (const r of rows) {
-      const key = `${r.provider} ${r.model}`;
-      if (resolved.has(key)) continue;
-      resolved.add(key);
-      defaults.push(...resolveDefaultPrices(userId, r.provider, r.model));
-    }
+    const defaults = resolveUsageDefaultPrices(userId, rows);
 
     const summary = buildUsageSummary({
       start: range.start,

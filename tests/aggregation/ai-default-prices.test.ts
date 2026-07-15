@@ -5,7 +5,11 @@
  * owner rows via the same selectEffectivePrice the cost path uses.
  */
 import { describe, expect, it } from "vitest";
-import { defaultPriceRows, resolveDefaultPrices } from "../../src/utils/ai/default-prices";
+import {
+  defaultPriceRows,
+  resolveDefaultPrices,
+  resolveUsageDefaultPrices,
+} from "../../src/utils/ai/default-prices";
 import { selectEffectivePrice } from "../../src/utils/ai/pricing";
 
 describe("resolveDefaultPrices — Anthropic by family (new versions covered)", () => {
@@ -137,5 +141,45 @@ describe("defaultPriceRows — representative rows for the price list UI", () =>
       expect(r.is_enabled).toBe(1);
       expect(r.currency).toBe("USD");
     }
+  });
+});
+
+describe("resolveUsageDefaultPrices — shared default resolution for used rollup rows", () => {
+  it("resolves one default set per distinct (provider, model), deduplicated", () => {
+    // Duplicate anthropic pair + a two-window sonnet + a priced OpenAI model.
+    const usage = [
+      { provider: "anthropic", model: "claude-opus-4-8" },
+      { provider: "anthropic", model: "claude-opus-4-8" },
+      { provider: "anthropic", model: "claude-sonnet-5" },
+      { provider: "openai", model: "gpt-5.5" },
+    ];
+    const out = resolveUsageDefaultPrices("u", usage);
+    // opus (1 window, once despite the dup) + sonnet (2 windows) + gpt-5.5 (1) = 4.
+    expect(out).toHaveLength(4);
+    expect(out.filter((r) => r.model === "claude-opus-4-8")).toHaveLength(1);
+    expect(out.filter((r) => r.model === "claude-sonnet-5")).toHaveLength(2);
+    expect(out.filter((r) => r.model === "gpt-5.5")).toHaveLength(1);
+    for (const r of out) expect(r.user_id).toBe("u");
+  });
+
+  it("covers a claude version with no explicit list entry via its family", () => {
+    // A future opus version the catalog never enumerated still prices from opus.
+    const out = resolveUsageDefaultPrices("u", [{ provider: "anthropic", model: "claude-opus-9-9" }]);
+    expect(out).toMatchObject([{ input_cost_per_mtok: 5, output_cost_per_mtok: 25 }]);
+  });
+
+  it("omits models with no shipped default (they stay unpriced → missing_price_count)", () => {
+    const out = resolveUsageDefaultPrices("u", [
+      { provider: "openai", model: "unknown" },
+      { provider: "anthropic", model: "claude-nova-1" },
+      { provider: "openai", model: "gpt-5.5" },
+    ]);
+    // Only gpt-5.5 resolves; the unpriced pairs contribute nothing.
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ provider: "openai", model: "gpt-5.5" });
+  });
+
+  it("returns an empty array for empty usage", () => {
+    expect(resolveUsageDefaultPrices("u", [])).toEqual([]);
   });
 });
