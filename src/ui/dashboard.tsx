@@ -2,6 +2,7 @@ import { DataTable, EmptyState, MetricCard, Notice, Panel, ProgressRow } from ".
 import { RankedBarChart, VerticalBarChart, type ChartDatum } from "./charts";
 import type { EmbedSettings } from "../utils/embed-settings";
 import type { components } from "../types/generated";
+import { detectUnattributedTools, type AttributionStatus } from "../utils/ai/attribution";
 
 export type AiUsageSummary = components["schemas"]["AIUsageSummary"];
 export type AiTokenTotals = components["schemas"]["AITokenTotals"];
@@ -424,8 +425,56 @@ function UsageTile({ label, value, detail }: { label: string; value: string; det
   );
 }
 
+/**
+ * Actionable, non-intrusive setup guidance shown when recent AI usage is
+ * attributed to a known provider but an unknown model (Issue #201). It is an
+ * advisory `role="note"` (not an interrupting `alert`): it names the cause, gives
+ * the exact one-time local command for tools with tailored guidance (else generic
+ * troubleshooting), and links to the canonical instructions. It self-resolves —
+ * once no such usage remains in the window, `detectUnattributedTools` returns
+ * nothing and this renders null. It never shows a secret or client configuration.
+ */
+function AttributionGuidance({ status }: { status: AttributionStatus }) {
+  if (!status.hasUnattributed) return null;
+  return (
+    <div role="note" class="alert alert-info flex-col items-start gap-3 rounded-lg text-sm">
+      {status.affected.map((tool) => (
+        <div class="w-full space-y-1">
+          <div class="font-semibold">
+            {tool.tool} usage isn't attributed to a model ({formatHeartbeatCount(tool.heartbeatCount)})
+          </div>
+          {tool.hasTailoredGuidance && tool.command ? (
+            <>
+              <div>
+                {tool.tool} heartbeats currently arrive without the active model, so this usage
+                buckets under "unknown" and is left out of the estimated cost. Run this once on the
+                machine where you use {tool.tool}, then start a new {tool.tool} session:
+              </div>
+              <code class="block w-full overflow-x-auto rounded bg-base-300/60 px-2 py-1 font-mono text-xs">
+                {tool.command}
+              </code>
+            </>
+          ) : (
+            <div>
+              These {tool.provider} heartbeats arrive without a model, so this usage buckets under
+              "unknown" and is left out of the estimated cost.
+            </div>
+          )}
+          <div class="text-xs">
+            <a class="link" href={tool.docUrl} target="_blank" rel="noopener noreferrer">
+              {tool.hasTailoredGuidance ? `${tool.tool} model attribution setup` : "AI attribution troubleshooting"}
+            </a>{" "}
+            — you run this on your own machine; CloudTime only shows the steps.
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AiUsageSummarySection({ usage }: { usage: AiUsageSummary }) {
   const totals = usage.totals;
+  const attribution = detectUnattributedTools(usage);
   const totalTokens = sumTokenClasses(totals);
   const hasUsage = totals.heartbeat_count > 0 || totalTokens > 0;
 
@@ -485,6 +534,7 @@ function AiUsageSummarySection({ usage }: { usage: AiUsageSummary }) {
               Some priced usage is in a different currency and is excluded from the {usage.currency} total.
             </Notice>
           ) : null}
+          <AttributionGuidance status={attribution} />
 
           <div class="grid gap-6 lg:grid-cols-2">
             <div class="space-y-3">
