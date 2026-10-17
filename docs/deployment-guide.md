@@ -3,7 +3,7 @@
 This guide walks an operator through deploying CloudTime to Cloudflare Workers
 from a local checkout. "Local" here means this PC is the deployment
 workstation; the application itself runs on Cloudflare Workers, D1, and KV.
-It assumes you have a Cloudflare account and Node.js 22+ on the workstation.
+It assumes you have a Cloudflare account and Node.js 22.12+ (22.x), 24.x, or 26+ on the workstation.
 
 > **Critical**: read the [First-login owner race](#critical-first-login-owner-race) section before you announce or share the deployment URL. The instance becomes "owned" by whoever completes OAuth login first.
 
@@ -13,7 +13,7 @@ It assumes you have a Cloudflare account and Node.js 22+ on the workstation.
 
 - Cloudflare account (free plan is sufficient for personal use)
 - Wrangler via this project's npm dependency (`npx wrangler ...`)
-- Node.js 22+
+- Node.js 22.12+ (22.x), 24.x, or 26+
 - A registered OAuth app on at least one provider (GitHub / Google / Discord) configured with a redirect URI matching your future Worker URL
 - For multi-user mode: a Resend API key and a verified sender domain (see [`email-setup.md`](./email-setup.md))
 
