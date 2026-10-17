@@ -43,7 +43,7 @@ Think in English, interact with the user in Japanese.
 - Never mix spec changes and implementation in the same PR
 
 ## Testing
-- `npm test` runs Vitest inside the Workers runtime via `@cloudflare/vitest-pool-workers`.
+- `npm test` runs Vitest inside the Workers runtime via `@cloudflare/vitest-plugin`.
 - `npm run typecheck` runs `tsc --noEmit` for project + tests.
 - Unit-style tests live next to the area they cover under `tests/`:
   - `tests/security/` — pure logic (crypto, rate-limit IP keying, OAuth utilities).

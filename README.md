@@ -20,7 +20,7 @@ Designed for **individual developers** who want full control over their coding m
 
 ### 1. Prerequisites
 
-- [Node.js](https://nodejs.org/) 22+
+- [Node.js](https://nodejs.org/) 22.12+ (22.x), 24.x, or 26+
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) via this project's npm dependency
 - A Cloudflare account
 - OAuth app credentials for at least one provider ([GitHub](https://github.com/settings/developers) / [Google](https://console.cloud.google.com/apis/credentials) / [Discord](https://discord.com/developers/applications))
