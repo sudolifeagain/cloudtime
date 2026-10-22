@@ -76,7 +76,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: "22.23.4"
 
       - name: Install wrangler
         run: npm install -g wrangler@latest
